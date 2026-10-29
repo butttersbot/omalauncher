@@ -12,7 +12,7 @@ class ServiceInventoryTest {
         if (extra) checks.put(JSONObject().put("check", "missing_scope").put("result", "unsupported"))
         return ConnectionReply(200, JSONObject().put("ok", true).put("host", "fictional-mac").put("checked_at", 100_000)
             .put("services", JSONArray().put(JSONObject().put("id", "canvas").put("state", "running").put("pid", 123)
-                .put("probe", JSONObject().put("checks", checks)))).toString())
+                .put("probe", JSONObject().put("checks", checks).put("checked_at", 100_000).put("pending", false)))).toString())
     }
     private fun state(reply: ConnectionReply, now: Long = 100_000) = serviceInventoryReadings(reply, "Fictional Mac", "fictional", now).single().state
     @Test fun processAndHttpSuccessDoNotReplaceRequiredProof() {
@@ -24,4 +24,12 @@ class ServiceInventoryTest {
         assertEquals(ConnectionState.Stale, state(reply("pass"), 200_000))
         assertTrue(serviceInventoryReadings(ConnectionReply(200, "{}"), "Mac", "mac", 100_000).isEmpty())
     }
+    @Test fun cachedProofKeepsItsOwnAgeAndPendingHasNoInventedReadyState() {
+        val body = JSONObject(reply("pass").text)
+        body.put("checked_at", 200_000)
+        assertEquals(ConnectionState.Stale, state(ConnectionReply(200, body.toString()), 200_000))
+        body.getJSONArray("services").getJSONObject(0).getJSONObject("probe").put("checked_at", JSONObject.NULL).put("pending", true)
+        assertEquals(ConnectionState.Unknown, state(ConnectionReply(200, body.toString()), 200_000))
+    }
+
 }

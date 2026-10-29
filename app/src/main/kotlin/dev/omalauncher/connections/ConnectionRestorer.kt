@@ -67,7 +67,13 @@ internal class ConnectionRestorer(private val context: Context, private val runt
                         val service = services.getJSONObject(i)
                         val id = service.getString("id")
                         require(id in CONNECTION_SERVICE_IDS && seen.add(id))
-                        val checks = service.optJSONObject("probe")?.optJSONArray("checks") ?: JSONArray()
+                        val probe = service.optJSONObject("probe")
+                        val proofAge = System.currentTimeMillis() - (probe?.optLong("checked_at", 0) ?: 0)
+                        if (probe == null || probe.optBoolean("pending", true) || proofAge !in 0..30_000) {
+                            blocked += ConnectionCheck(id, host, result = "unverified", fields = mapOf("reason" to "Service proof is pending, absent or stale; no repair inferred."))
+                            continue
+                        }
+                        val checks = probe.optJSONArray("checks") ?: JSONArray()
                         val failed = (0 until checks.length()).any { checks.getJSONObject(it).optString("result") == "fail" }
                         if (!failed) continue // Unknown, unsupported or stale never authorize an inferred repair.
                         if ((0 until checks.length()).any { checks.getJSONObject(it).optString("result") !in setOf("pass", "fail", "auth") }) {

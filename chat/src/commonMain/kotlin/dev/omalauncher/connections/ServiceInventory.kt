@@ -23,7 +23,9 @@ fun serviceInventoryReadings(reply: ConnectionReply, displayHost: String, source
             val row = services.getJSONObject(i)
             val id = row.getString("id"); require(id in CONNECTION_SERVICE_IDS && seen.add(id))
             val capability = serviceCapabilities.getValue(id)
-            val wireChecks = row.optJSONObject("probe")?.optJSONArray("checks")
+            val probe = row.optJSONObject("probe")
+            val proofTime = probe?.optLong("checked_at", 0) ?: 0
+            val wireChecks = probe?.optJSONArray("checks")
             require((wireChecks?.length() ?: 0) <= 32)
             val checks = (0 until (wireChecks?.length() ?: 0)).map { j ->
                 val check = wireChecks!!.getJSONObject(j)
@@ -33,6 +35,7 @@ fun serviceInventoryReadings(reply: ConnectionReply, displayHost: String, source
                         "launchd_state" to row.optString("state").take(100)), check.optString("stderr_tail").take(2048))
             }
             val state = when {
+                proofTime <= 0 -> ConnectionState.Unknown
                 checks.any { it.code in setOf(401, 403) || it.result == "auth" } -> ConnectionState.Auth
                 checks.any { it.result == "fail" } -> ConnectionState.Failed
                 checks.isNotEmpty() && checks.all { it.result == "pass" } -> ConnectionState.Ready
@@ -44,7 +47,7 @@ fun serviceInventoryReadings(reply: ConnectionReply, displayHost: String, source
                 ConnectionState.Failed -> "$id: a required capability check failed."
                 else -> "$id: capability evidence is incomplete; a running process is not sufficient."
             }
-            ConnectionReading(capability, state, detail, checked,
+            ConnectionReading(capability, state, detail, if (proofTime > 0) proofTime else checked,
                 if (state in setOf(ConnectionState.Failed, ConnectionState.Auth, ConnectionState.Ready)) "service:$host:$id" else null,
                 displayHost, sourceHost, checks).current(now)
         }

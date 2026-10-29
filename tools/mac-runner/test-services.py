@@ -595,6 +595,84 @@ class Redaction(unittest.TestCase):
         self.assertNotIn('SSSS', tail)
 
 
+class Inventory(unittest.TestCase):
+    def test_a_slow_probe_never_holds_the_reply_and_its_row_is_honest(self):
+        release, calls = threading.Event(), []
+        def probe(service):
+            calls.append(service)
+            if service == 'herd':
+                release.wait(5)
+            return [S.mkcheck(service + '_x', service, 'ok', 'pass')]
+        clock = iter(range(1000, 100000, 10))
+        cache = S.ProbeCache(probe, lambda s: {'loaded': True, 'state': 'running', 'pid': 1}, lambda: next(clock))
+        started = time.monotonic()
+        rows = cache.snapshot(list(S.SERVICES), budget=0.3)
+        self.assertLess(time.monotonic() - started, 1.5)
+        self.assertEqual((rows['herd']['pending'], rows['herd']['checked_at'], rows['herd']['checks'][0]['result']), (True, None, 'unverified'))
+        self.assertEqual((rows['soma']['pending'], rows['soma']['checks'][0]['result']), (False, 'pass'))
+        self.assertIsNotNone(rows['soma']['checked_at'])
+        cache.snapshot(['herd'], budget=0.05)  # still in flight: not probed twice
+        self.assertEqual(calls.count('herd'), 1)
+        release.set()
+        rows = cache.snapshot(['herd'], budget=2)
+        self.assertEqual(rows['herd']['checks'][0]['result'], 'pass')  # finished late, recorded as it was, not cut to failed
+        self.assertIsNotNone(rows['herd']['checked_at'])
+
+    def test_a_cached_row_keeps_its_own_time_while_a_new_probe_is_slow(self):
+        slow, n = threading.Event(), {'n': 0}
+        def probe(service):
+            n['n'] += 1
+            if n['n'] > 1:
+                slow.wait(5)
+            return [S.mkcheck('x', service, 'ok', 'pass')]
+        times = iter([111, 999])
+        cache = S.ProbeCache(probe, lambda s: {}, lambda: next(times))
+        self.assertEqual(cache.snapshot(['canvas'], budget=2)['canvas']['checked_at'], 111)
+        row = cache.snapshot(['canvas'], budget=0.1)['canvas']
+        self.assertEqual((row['checked_at'], row['pending']), (111, True))
+        slow.set()
+
+
+class OwnerKeysForTheInstaller(unittest.TestCase):
+    def entry(self, **over):
+        private, key_id, public = owner_key()
+        entry = {'key_id': key_id, 'algorithm': 'SHA256withECDSA-P256', 'public_key': public, 'label': 'Fold', 'device': 'galaxy-z-fold8',
+                 'added_at': 5, 'revoked': False, 'private_key': 'never-kept'}
+        entry.update(over)
+        return entry
+
+    def test_the_phones_algorithm_name_is_mapped_and_unknown_fields_dropped(self):
+        out = json.loads(S.normalize_trust(json.dumps({'version': 1, 'keys': [self.entry()]})))
+        self.assertEqual(out['keys'][0]['algorithm'], 'ecdsa-p256-sha256')
+        self.assertNotIn('private_key', out['keys'][0])
+        folder = pathlib.Path(tempfile.mkdtemp()).resolve()
+        (folder / 'keys.json').write_text(json.dumps(out))
+        os.chmod(folder / 'keys.json', 0o644)
+        self.assertEqual(S.load_trust(folder / 'keys.json', require_root=False).state, 'ready')
+
+    def test_bad_files_are_refused_not_copied(self):
+        p384 = ec.generate_private_key(ec.SECP384R1()).public_key().public_bytes(serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
+        bad = [{'version': 2, 'keys': [self.entry()]}, {'version': 1, 'keys': []}, {'version': 1, 'keys': [self.entry(algorithm='rsa')]},
+               {'version': 1, 'keys': [self.entry(key_id='0' * 64)]},
+               {'version': 1, 'keys': [self.entry(public_key=base64.b64encode(p384).decode(), key_id=hashlib.sha256(p384).hexdigest())]}]
+        twin = self.entry()
+        bad.append({'version': 1, 'keys': [twin, dict(twin)]})
+        for data in bad:
+            with self.assertRaises(Exception, msg=str(data)[:80]):
+                S.normalize_trust(json.dumps(data))
+
+    def test_the_cli_prints_only_the_canonical_file(self):
+        import subprocess
+        folder = pathlib.Path(tempfile.mkdtemp())
+        (folder / 'in.json').write_text(json.dumps({'version': 1, 'keys': [self.entry()]}))
+        r = subprocess.run([sys.executable, '-I', str(HERE / 'soma_services.py'), 'normalize-trust', str(folder / 'in.json')], capture_output=True, text=True, timeout=20)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(json.loads(r.stdout)['keys'][0]['algorithm'], 'ecdsa-p256-sha256')
+        (folder / 'bad.json').write_text('{"version": 1, "keys": [{"algorithm": "rsa"}]}')
+        r = subprocess.run([sys.executable, '-I', str(HERE / 'soma_services.py'), 'normalize-trust', str(folder / 'bad.json')], capture_output=True, text=True, timeout=20)
+        self.assertEqual((r.returncode, r.stdout), (1, ''))
+
+
 class PrivilegedHelperSource(unittest.TestCase):
     """The helper and its installer are only read or run in modes that change nothing; install/remove are never run."""
     helper, installer = HERE / 'soma-service-helper', HERE / 'install-service-helper.sh'

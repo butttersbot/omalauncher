@@ -11,7 +11,7 @@ Boss-approved scope (Phone A 20261028-215622, refined 220739; Phone B 20261028-2
 Nothing here enrolls or replaces owner keys, runs a shell, takes a path or command from a request, or restarts a
 service whose restart cannot be verified by that service's own capability check. Times are epoch milliseconds.
 """
-import base64, contextlib, fcntl, hashlib, hmac, json, os, pathlib, re, secrets, socket, stat, subprocess, tempfile, threading, time
+import base64, concurrent.futures, contextlib, fcntl, hashlib, hmac, json, os, pathlib, re, secrets, socket, stat, subprocess, tempfile, threading, time
 import http.client, urllib.error, urllib.parse, urllib.request
 
 HOME = pathlib.Path.home()
@@ -218,6 +218,35 @@ def load_trust(path=TRUST_FILE, require_root=True, lstat=os.lstat):
     if not keys:
         return Trust('missing', 'Owner trust has no active keys. Restore stays blocked.')
     return Trust('ready', f'{len(keys)} pinned owner key(s).', keys)
+
+
+ALGORITHM_NAMES = {'ecdsa-p256-sha256': 'ecdsa-p256-sha256', 'SHA256withECDSA-P256': 'ecdsa-p256-sha256'}  # the phone's export names
+
+
+def normalize_trust(raw):
+    """The owner-key file Boss gives the installer, checked and rewritten canonically: every key parses as P-256, its
+    key_id is its SPKI digest, the algorithm maps to the one name load_trust accepts, and only known fields survive."""
+    data = json.loads(raw)
+    if not isinstance(data, dict) or data.get('version') != 1 or not isinstance(data.get('keys'), list) or not 0 < len(data['keys']) <= MAX_KEYS:
+        raise ValueError('version 1 with 1 to %d keys expected' % MAX_KEYS)
+    out, seen = [], set()
+    for entry in data['keys']:
+        algorithm = ALGORITHM_NAMES.get(entry.get('algorithm'))
+        if not algorithm:
+            raise ValueError('unsupported algorithm %r' % str(entry.get('algorithm'))[:40])
+        der = base64.b64decode(entry['public_key'], validate=True)
+        _spki_key(der)
+        key_id = hashlib.sha256(der).hexdigest()
+        if not hmac.compare_digest(key_id, str(entry.get('key_id', ''))) or key_id in seen:
+            raise ValueError('key_id is not sha256(SPKI DER), or repeats')
+        seen.add(key_id)
+        out.append({'key_id': key_id, 'algorithm': algorithm, 'public_key': base64.b64encode(der).decode(),
+                    'label': str(entry.get('label', ''))[:80], 'device': str(entry.get('device', ''))[:80],
+                    'added_at': int(entry.get('added_at') or 0), 'revoked': entry.get('revoked') is True})
+    text = json.dumps({'version': 1, 'keys': out}, indent=2) + '\n'
+    if len(text) > 65_536:
+        raise ValueError('larger than 64 KB')
+    return text
 
 
 def verify_signature(public_key, message: bytes, signature_der: bytes) -> bool:
@@ -690,6 +719,55 @@ class Records:
         return out
 
 
+INVENTORY_BUDGET_S = 2.5  # under the phone's 3.5 s read timeout, with room for the reply
+
+
+class ProbeCache:
+    """Inventory never waits on a slow dependency: every service is probed in parallel (one probe in flight per service), the
+    reply waits at most its budget, and a row not back in time shows its last result with that result's own checked_at, or
+    pending/unverified with none. A probe outliving the budget keeps running and fills the cache; it is never cut to failed."""
+
+    def __init__(self, probe, state, clock, workers=6):
+        self.probe, self.state, self.clock = probe, state, clock
+        self.lock = threading.Lock()
+        self.rows, self.running = {}, {}  # service -> its in-flight future
+        self.pool = concurrent.futures.ThreadPoolExecutor(max_workers=workers, thread_name_prefix='service-probe')
+
+    def _one(self, service):
+        try:
+            launchd = {'loaded': False, 'state': 'unknown', 'pid': None}
+            with contextlib.suppress(Exception):
+                launchd = self.state(service)
+            try:
+                checks = self.probe(service)
+            except Exception as e:  # noqa: BLE001
+                checks = [mkcheck(service + '_probe', service, 'probe_error', 'fail', {}, stderr=str(e))]
+            with self.lock:
+                self.rows[service] = {'checks': checks, 'checked_at': self.clock(), 'launchd': launchd}
+        finally:
+            with self.lock:
+                self.running.pop(service, None)
+
+    def snapshot(self, services, budget=None):
+        with self.lock:
+            for service in services:
+                if service not in self.running:
+                    self.running[service] = self.pool.submit(self._one, service)
+            futures = [self.running[s] for s in services if s in self.running]  # new and already in flight alike
+        concurrent.futures.wait(futures, timeout=INVENTORY_BUDGET_S if budget is None else budget)
+        with self.lock:
+            out = {}
+            for service in services:
+                row = self.rows.get(service)
+                pending = service in self.running
+                if row is None:
+                    out[service] = {'checks': [mkcheck(service + '_probe', service, 'probe_pending', 'unverified', {})], 'checked_at': None,
+                                    'pending': True, 'launchd': {'loaded': False, 'state': 'unknown', 'pid': None}}
+                else:
+                    out[service] = {**row, 'pending': pending}
+            return out
+
+
 # ---- the controller -----------------------------------------------------------------------------------------------
 class Controller:
     def __init__(self, backend, work, records=None, trust=load_trust, gate=None, probe=capability_probe, state=launchd_state,
@@ -699,17 +777,18 @@ class Controller:
         self.trust, self.gate, self.probe, self.state = trust, gate or WorkGate(), probe, state
         self.challenges = Challenges(host=host, clock=clock)
         self.host, self.clock, self.sleep = self.challenges.host, clock, sleep
+        self.probes = ProbeCache(probe, state, clock)
 
-    def inventory(self):
+    def inventory(self, budget=None):
         trust = self.trust()
         counts = None
         with contextlib.suppress(Exception):
             counts = self.work()
         services = []
+        rows = self.probes.snapshot(list(SERVICES), budget)
         for service, (domain, label, mode) in SERVICES.items():
-            launchd = {'loaded': False, 'state': 'unknown', 'pid': None}
-            with contextlib.suppress(Exception):
-                launchd = self.state(service)
+            row = rows[service]
+            launchd = row['launchd']
             blocked = None
             if mode == 'privileged':
                 blocked = 'owner_verifying_privileged_helper_unavailable'
@@ -718,7 +797,7 @@ class Controller:
             services.append({'id': service, 'label': label, 'domain': domain, 'plist': str(plist_path(service)),
                              'installed': plist_path(service).exists(), 'state': launchd['state'], 'pid': launchd['pid'],
                              'restart': {'mode': mode, 'supported': blocked is None and trust.state == 'ready', **({'blocked_reason': blocked} if blocked else {})},
-                             'probe': {'checks': self.probe(service)}})
+                             'probe': {'checks': row['checks'], 'checked_at': row['checked_at'], 'pending': row['pending']}})
         return redact({'ok': True, 'host': self.host, 'checked_at': self.clock(), 'owner_trust': {'state': trust.state, 'detail': trust.detail},
                        'work': {**(counts or {'unknown': True}), 'locks': self.gate.lock_state(), 'admission': 'open' if self.gate.admit() else 'closed'},
                        'services': services})
@@ -796,3 +875,14 @@ class Controller:
         """On start: finish operations a previous process left mid-restart (the runner's own relaunch, a lost route)."""
         for op in self.records.unfinished():
             self.spawn(self._verify, op)
+
+
+if __name__ == '__main__':  # install-service-helper.sh runs this as the invoking user, never as root
+    import sys
+    if len(sys.argv) == 3 and sys.argv[1] == 'normalize-trust':
+        try:
+            sys.stdout.write(normalize_trust(pathlib.Path(sys.argv[2]).read_bytes()[:65_537]))
+        except Exception as e:  # noqa: BLE001
+            sys.exit('owner keys refused: %s' % str(e)[:200])
+    else:
+        sys.exit('usage: soma_services.py normalize-trust KEYS.json')
