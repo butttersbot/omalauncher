@@ -37,11 +37,11 @@ private fun ConnectionAction(label: String, action: () -> Unit, modifier: Modifi
     }
 }
 private fun repairCardSummary(text: String): String = when {
-    text.startsWith("Restored", ignoreCase = true) -> "Restored · view details"
-    text.startsWith("Failed", ignoreCase = true) || text.startsWith("Restore failed", ignoreCase = true) -> "Repair failed · view details"
-    text.contains("unverified", ignoreCase = true) || text.startsWith("Restore interrupted", ignoreCase = true) -> "Result unverified · view details"
-    text.contains("blocked", ignoreCase = true) || text.startsWith("No verified", ignoreCase = true) -> "Repair blocked · view details"
-    text.startsWith("Owner approval", ignoreCase = true) -> "Owner confirmation needed"
+    text.startsWith("Restored", ignoreCase = true) -> "Restored"
+    text.startsWith("Failed", ignoreCase = true) || text.startsWith("Restore failed", ignoreCase = true) -> "Repair failed"
+    text.contains("unverified", ignoreCase = true) || text.startsWith("Restore interrupted", ignoreCase = true) -> "Result unverified"
+    text.contains("blocked", ignoreCase = true) || text.startsWith("No verified", ignoreCase = true) -> "Repair blocked"
+    text.startsWith("Owner approval", ignoreCase = true) -> "Owner confirmation"
     text.startsWith("Verifying", ignoreCase = true) -> "Verifying repair…"
     text.startsWith("Already", ignoreCase = true) || text.contains("in progress", ignoreCase = true) -> "Repair in progress…"
     else -> text

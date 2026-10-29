@@ -10,7 +10,7 @@ expect Canvas
 shot connections-small-cover
 tap [ Restore ]
 expect Restore utility used
-expect Blocked
+expect Repair blocked
 # Utility must not open the modal.
 absent Close Connections
 tap Connections
@@ -53,7 +53,7 @@ shot connections-failed-details-cover
 key BACK
 tap Successful repair
 tap [ Restore ]
-expect Restored · view details
+expect Restored
 shot connections-restored-cover
 tap Connections
 expect Restored: fictional
