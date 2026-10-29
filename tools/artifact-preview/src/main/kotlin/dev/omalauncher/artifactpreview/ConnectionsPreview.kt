@@ -29,8 +29,10 @@ fun ConnectionsPreview() {
             when { affected -> "Fictional runner evidence; agent runs and builds share one incident."
                 c == Capability.Canvas -> "Fictional CORE Design Canvas board and workspace sync verified."
                 c == Capability.Optional -> "Fictional optional tools disabled."
-                else -> "Fictional end-to-end capability verified." }, clock, if (affected) "runner:fixture" else null, if (affected) "Fictional Mac" else "")
-    }, clock)
+                else -> "Fictional end-to-end capability verified." }, clock, if (affected) "runner:fixture" else null, if (affected) "Fictional Mac" else "",
+            if (affected) "fictional-mac" else "")
+    } + ConnectionReading(Capability.Network, ConnectionState.Ready, "Fictional route to the Mac responded; capability status is checked separately.",
+        clock, "network", "Fictional Mac", "fictional-mac"), clock)
     fun show(s: String) {
         scenario = s; ConnectionsSource.repair = null; ConnectionsSource.guide = null
         ConnectionsSource.diagnostic = org.json.JSONObject().put("schema", 1).put("service", "fictional-runner")

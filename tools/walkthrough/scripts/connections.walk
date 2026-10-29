@@ -1,4 +1,7 @@
-# Approved Connections v6. Isolated fictional checks; no production monitors, network or real notifications.
+# Canvas soma-widgets / Soma Connections v6 (8 cards) + Expanded · Unfolded upright (proposed 2026-10-29).
+# Isolated fictional checks; no production monitors, network or real notifications.
+# Every shot is one Canvas card (canvas.json beside the shots); look at each against its card: green ✓ and
+# statuses, accent △ and count, body sans for lines and rows, mono only for small captions, rules above [ Restore ].
 fold folded
 shell am force-stop dev.omalauncher.artifactpreview
 shell am start -n dev.omalauncher.artifactpreview/.PreviewActivity --ez connections true
@@ -7,6 +10,7 @@ expect Connections
 expect Network
 expect Agents
 expect Canvas
+expect runner not responding
 shot connections-small-cover
 tap [ Restore ]
 expect Restore utility used
@@ -15,16 +19,26 @@ expect Repair blocked
 absent Close Connections
 tap Connections
 expect All capabilities
+expect Your Fictional Mac is connected.
+expect Its runner needs a restart.
+expect Restart the agent runner
+expect One repair. Two features back.
 shot connections-expanded-cover
+scrollto Details for agents
+expect Check again
 tap Details for agents
 expect fixture_only
 shot connections-agent-details-cover
 tap Details for agents
+scrollto Builds & installs
+expect Affected
+expect Needs repair
 scrollto Optional tools
 tap Design Canvas
 expect CORE Design Canvas
-scrollto Enable outage alerts
-tap Enable outage alerts
+scrollto Notify me about unexpected outages and recovery
+expect After 60 seconds · one alert per incident
+tap Notify me about unexpected outages and recovery
 scrollto Fixture only
 expect Fixture only
 key BACK
@@ -35,6 +49,8 @@ expect Sync
 shot connections-medium-cover
 tap Large
 expect Device connections
+expect Connected
+expect Synced
 expect Design Canvas
 shot connections-large-cover
 tap Active jobs
@@ -54,9 +70,11 @@ key BACK
 tap Successful repair
 tap [ Restore ]
 expect Service restored
+expect Everything is ready
 shot connections-restored-cover
 tap Connections
 expect Restored: fictional
+expect Back in working order.
 shot connections-restored-details-cover
 key BACK
 tap Auth check
@@ -85,10 +103,14 @@ expect Design Canvas
 shot connections-large-unfolded
 tap Connections
 expect All capabilities
+expect Your Fictional Mac is connected.
+expect Notify me about unexpected outages and recovery
 shot connections-expanded-unfolded
 rotate portrait
 expect Connections
 expect All capabilities
+expect Your Fictional Mac is connected.
+expect Optional tools
 shot connections-expanded-portrait
 swipe 0.50 0.70 0.50 0.30 500
 scrollto Pause monitoring for 1 hour

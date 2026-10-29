@@ -1,0 +1,11 @@
+{
+  "connections-small-cover": "connections-small-cover",
+  "connections-medium-cover": "connections-medium-cover",
+  "connections-large-cover": "connections-large-cover",
+  "connections-expanded-cover": "connections-expanded-cover",
+  "connections-small-unfolded": "connections-small-unfolded",
+  "connections-medium-unfolded": "connections-medium-unfolded",
+  "connections-large-unfolded": "connections-large-unfolded",
+  "connections-expanded-unfolded": "connections-expanded-unfolded",
+  "connections-expanded-portrait": "connections-expanded-upright"
+}
