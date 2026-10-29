@@ -26,7 +26,8 @@ class RunnerFault(val code: Int, override val message: String) : RuntimeExceptio
 data class RunnerResponse(val code: Int, val body: JSONObject)
 
 /** Auth happens before route dispatch: an unpaired caller learns nothing, even from /health. */
-class PhoneRunnerProtocol(private val sessions: PhoneRunnerSessions) {
+/** [paired] gives the paired computers' names; GET /devices says only those (soma --mesh), never a digest or address. */
+class PhoneRunnerProtocol(private val sessions: PhoneRunnerSessions, private val paired: () -> List<String> = { emptyList() }) {
     fun handle(method: String, path: String, body: String, authorized: Boolean, device: String = ""): RunnerResponse {
         if (!authorized) return RunnerResponse(401, JSONObject().put("ok", false).put("error", "unauthorized"))
         return try {
@@ -40,6 +41,7 @@ class PhoneRunnerProtocol(private val sessions: PhoneRunnerSessions) {
                     .put("waiting", rows.count { it.optString("status") == "waiting" })
                     .put("kinds", JSONArray(rows.map { it.optString("kind") }.filter(String::isNotEmpty).distinct())))
             }
+            if (method == "GET" && parts == listOf("devices")) return ok(JSONObject().put("runner", PHONE_RUNNER_DEVICE).put("devices", JSONArray(paired().distinct().sorted())))
             if (method == "GET" && parts == listOf("threads")) return ok(JSONObject().put("threads", JSONArray(sessions.list())))
             if (parts.size !in 2..4 || parts[0] != "threads") throw RunnerFault(404, "not found")
             val id = parts[1]
