@@ -113,3 +113,11 @@ class FreshAccessibilityTrees(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WholeLabelBounds(unittest.TestCase):
+    def test_partial_footer_fails_until_scrolled_into_safe_band(self):
+        for bounds, expected in [([10, 790, 190, 910], False), ([10, 600, 190, 720], True)]:
+            with patch.object(walk, "size", return_value=(200, 1000)), patch.object(walk, "nodes", return_value=[("Fixture only", bounds)]):
+                ok, _, _ = walk.run_step("emu", "within", ["0.1", "0.85", "Fixture", "only"], "/tmp", 1)
+                self.assertEqual(expected, ok)

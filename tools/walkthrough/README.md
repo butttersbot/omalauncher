@@ -38,6 +38,7 @@ pixels (`540 1800`).
 | `expect TEXT` / `absent TEXT` | fails unless TEXT is (is not) on screen; takes a screenshot |
 | `clearlog`, `log TEXT`, `nolog TEXT` | the app's own account of drawn UI (Log tag `SomaWalk`): clear it, wait for a line with TEXT, or fail if one has come |
 | `swipefrom TEXT DX DY [MS]` | a swipe that starts on what says TEXT and moves by DX DY (fractions of the screen; negative DY scrolls a list up): scrolls a panel whose place differs between the cover and unfolded |
+| `within TOP BOTTOM TEXT` | asserts the label’s entire reported bounds are inside a vertical screen band (fractions 0..1); review the screenshot too, since Android may report clipped bounds |
 | `scrollto TEXT` | swipes up until TEXT shows (a WebView reports only what is on screen) |
 | `shot NAME` | a screenshot to look at (canvas-drawn UI, like the keyboard, has no text to expect) |
 | `[phone] …` | a step in words for the real Fold, after promotion |

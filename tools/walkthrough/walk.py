@@ -236,6 +236,18 @@ def run_step(serial, op, args, out, n):
         adb(serial, "shell", "input", "text", " ".join(args).replace(" ", "%s")); time.sleep(0.5); return True, "", None
     if op == "key":
         adb(serial, "shell", "input", "keyevent", "KEYCODE_" + args[0].upper()); time.sleep(0.6); return True, "", None
+    if op == "within":
+        # Assert the whole reported label rectangle, not just its centre, is in a safe vertical band.
+        top, bottom = float(args[0]), float(args[1])
+        if not 0 <= top < bottom <= 1:
+            raise ValueError("within requires 0 <= top < bottom <= 1")
+        wanted = " ".join(args[2:]).casefold()
+        w, h = size(serial)
+        matches = [(label, bounds) for label, bounds in nodes(serial)
+                   if wanted in label.casefold()]
+        ok = any(0 <= l < r <= w and top * h <= t < b <= bottom * h
+                 for _, (l, t, r, b) in matches)
+        return ok, "" if ok else f"“{wanted}” is not wholly inside {top}..{bottom}: {matches}", None
     if op == "scrollto":
         # Swipes up until TEXT is on screen (a WebView only reports what shows).
         wanted = " ".join(args)
