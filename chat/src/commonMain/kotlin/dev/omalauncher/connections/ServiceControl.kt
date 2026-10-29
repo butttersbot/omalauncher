@@ -77,3 +77,29 @@ class ServiceControlClient(private val base: ConnectionEndpoint,
         return get(endpoint("/services/operations/$id"))
     }
 }
+
+/** A response is evidence only for the exact operation submitted; transport success is never restoration. */
+data class ServiceOperation(val id: String, val approval: String, val service: String, val host: String,
+    val stage: String, val verified: Boolean, val checks: List<ConnectionCheck>) {
+    val terminal get() = stage in setOf("restored", "failed", "blocked", "interrupted")
+    val restored get() = stage == "restored" && verified && checks.isNotEmpty() && checks.all { it.result == "pass" }
+    companion object {
+        fun parse(json: JSONObject, expectedId: String?, approval: ServiceApproval): ServiceOperation {
+            val id = json.getString("id")
+            require(id.matches(Regex("op-[A-Za-z0-9_-]{8,100}")) && (expectedId == null || id == expectedId)) { "Operation identity changed" }
+            require(json.getString("approval") == approval.id && json.getString("service") == approval.service && json.getString("host") == approval.host) { "Operation target changed" }
+            val stage = json.getString("stage")
+            require(stage in setOf("checking", "restoring", "verifying", "restored", "failed", "blocked", "interrupted")) { "Unknown operation state" }
+            val a = json.optJSONArray("checks") ?: JSONArray()
+            require(a.length() <= 128) { "Too many verification checks" }
+            val checks = (0 until a.length()).map { i ->
+                val c = a.getJSONObject(i)
+                ConnectionCheck(c.optString("code").take(100), approval.host, result = c.optString("state").take(40),
+                    fields = mapOf("detail" to c.optString("detail").take(2048)))
+            }
+            val result = ServiceOperation(id, approval.id, approval.service, approval.host, stage, json.optBoolean("verified", false), checks)
+            require(stage != "restored" || result.restored) { "Restoration lacks complete capability verification" }
+            return result
+        }
+    }
+}
