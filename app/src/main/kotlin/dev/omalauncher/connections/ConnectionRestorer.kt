@@ -97,7 +97,7 @@ internal class ConnectionRestorer(private val context: Context, private val runt
                 val description = targets.joinToString("\n") { "${it.approval.host}: ${it.approval.service}" }
                 main.post {
                     publish("Owner approval required for ${targets.size} targeted repair(s).")
-                    ConnectionRestoreActivity.launch(context, plan, description) { result -> io.execute {
+                    ConnectionRestoreActivity.launch(context, plan, description) { result -> io.execute repair@ {
                         try {
                             val signed = result.getOrThrow()
                             require(plan.fresh(System.currentTimeMillis())) { "Owner repair approval expired" }
@@ -114,6 +114,17 @@ internal class ConnectionRestorer(private val context: Context, private val runt
                                     if (definitiveServiceRefusal(reply)) removePending(target.approval.id)
                                 }
                                 // Non-HTTP or 5xx: retain the pre-submit marker and reconcile, never retry.
+                                // Serialize the signed plan: another restart must not race this one's work/admission gate.
+                                val deadline = System.nanoTime() + 25_000_000_000L
+                                do {
+                                    resumePending()
+                                    if (pending().length() == 0) break
+                                    if (System.nanoTime() >= deadline) {
+                                        publish("Repair still unverified · remaining restarts were not sent.")
+                                        return@repair
+                                    }
+                                    Thread.sleep(2000)
+                                } while (true)
                             }
                             resumePending()
                         } catch (error: Exception) {
