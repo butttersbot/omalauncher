@@ -1,5 +1,5 @@
 widget "Deco" {
-  meta { owl: 10; description: "Home network: speed, traffic and devices from the Deco mesh"; version: "0.2.0"; category: "home"; license: "MIT" }
+  meta { owl: 10; description: "Home network: line speed and devices from the Deco mesh"; version: "0.3.0"; category: "home"; license: "MIT" }
   size: 6x3
   minSize: 3x3
   padding: 10
@@ -22,16 +22,19 @@ widget "Deco" {
   let nodes = live ? (net.nodes ?? []) : []
   let compact = (tileWidth ?? 220) < 300
   let large = (tileHeight ?? 180) >= 260 && !compact
-  // A short tile keeps the reading and Test speed; live usage and the note go first.
+  // A short tile keeps the reading and Test speed; the second lines go first.
   let short = (tileHeight ?? 180) < 170
   let t = net.lastTestMbps
   let testBig = t == null ? "—" : t >= 1000 ? fixed(t / 1000, 2) : "${round(t)}"
   let testUnit = t == null ? "" : t >= 1000 ? "Gbps" : "Mbps"
-  let down = net.downMbps == null ? "—" : "${net.downMbps >= 10 ? round(net.downMbps) : fixed(net.downMbps, 1)} Mbps"
-  let up = net.upMbps == null ? "—" : "${net.upMbps >= 10 ? round(net.upMbps) : fixed(net.upMbps, 1)} Mbps"
+  // The headline is the router's own test (the internet line). Test speed measures this phone's Wi-Fi, so it shows
+  // only on a small second line, and only while it is newer, so ~300 Mbps never reads as the line being slow.
+  let p = net.phoneTestMbps
+  let phoneNewer = p != null && net.phoneTestAt != null && (net.lastTestAt == null || net.phoneTestAt > net.lastTestAt)
+  let phoneLine = phoneNewer ? "PHONE WI-FI · ${round(p)} MBPS · ${now - net.phoneTestAt < 60 ? "JUST NOW" : fmtAgo(net.phoneTestAt, now) + " AGO"}" : ""
   let health = live ? "All good" : state == "unlinked" ? "Not linked" : state == "unreachable" ? "Can't reach Deco" : state == "auth-failed" ? "Sign-in refused" : fresh ? "Error" : "No reading"
   let healthColor = live ? green : muted
-  let tested = net.lastTestAt != null ? "${net.lastTestSource == "phone" ? "PHONE" : "ROUTER"} TEST · ${fmtAgo(net.lastTestAt, now)} AGO" : "NO SPEED TEST YET"
+  let tested = net.lastTestAt != null ? "ROUTER TEST · ${now - net.lastTestAt < 60 ? "JUST NOW" : fmtAgo(net.lastTestAt, now) + " AGO"}" : "NO ROUTER TEST YET"
   let pr = parseJson(plan)
 
   Column {
@@ -50,25 +53,18 @@ widget "Deco" {
       Spacer { weight: 1 }
       if !compact && live { Text { text: "${len(devices)} devices online"; style: body } }
     }
-    if !short { Text { text: testing ? "TESTING FROM THIS PHONE…" : tested; style: label; color: muted } }
+    if !short { Text { text: tested; style: label; color: muted; maxLines: 1 } }
+    if !short && (testing || phoneNewer) { Text { text: testing ? "TESTING PHONE WI-FI…" : compact ? "PHONE WI-FI · ${round(p)} MBPS" : phoneLine; style: label; color: muted; maxLines: 1 } }
     if short {
     } else if live {
       if compact { Text { text: "${len(devices)} devices online"; style: body } }
-      Row {
-        gap: 10
-        Text { text: "↓ ${down}"; style: body }
-        Text { text: "↑ ${up}"; style: body }
-        if !compact { Text { text: "· LIVE USAGE"; style: label; color: muted } }
-      }
     } else {
       Text { text: state == "unlinked" ? "Link your router to see live readings." : (net.message ?? "No reading from the router yet."); style: small; color: muted; maxLines: 2 }
     }
     if large && live {
       Spacer { height: 4 }
-      Text { text: "TOP DEVICES · DOWNLOAD"; style: label; color: muted }
-      for d in take(devices, 3) key d.id {
-        Row { Text { text: d.name; weight: 1; maxLines: 1 } Text { text: d.downMbps == null ? "—" : "${d.downMbps >= 10 ? round(d.downMbps) : fixed(d.downMbps, 1)} Mbps"; bold: true } }
-      }
+      Text { text: "ONLINE NOW"; style: label; color: muted }
+      Text { text: join(take(net.deviceNames ?? [], 4), " · ") + (len(devices) > 4 ? " · +${len(devices) - 4}" : ""); maxLines: 2 }
       Text { text: "${len(nodes)} Decos online"; style: small; color: muted }
     }
     Spacer { weight: 1 }
@@ -103,17 +99,16 @@ widget "Deco" {
         Spacer { weight: 1 }
         if live { Text { text: "${len(devices)} devices online" } }
       }
-      Text { text: testing ? "TESTING FROM THIS PHONE…" : tested; style: label; color: muted }
+      Text { text: tested; style: label; color: muted }
+      if testing || phoneNewer { Text { text: testing ? "TESTING PHONE WI-FI…" : phoneLine; style: label; color: muted } }
       if live {
-        Text { text: "TRAFFIC RIGHT NOW"; style: label; color: muted }
-        Row { gap: 16; Text { text: "↓ ${down}"; style: title } Text { text: "↑ ${up}"; style: title } }
-        Row { Text { text: "USING THE NETWORK"; style: label; color: muted; weight: 1 } Text { text: "DOWNLOAD"; style: label; color: muted } }
+        Text { text: "ONLINE NOW"; style: label; color: muted }
         Column {
           height: min(300, screenHeight * 0.45)
           scroll: true
           gap: 6
           for d in (showAll ? devices : take(devices, 3)) key d.id {
-            Row { Text { text: d.name; weight: 1; bold: true; maxLines: 1 } Text { text: d.downMbps == null ? "—" : "${d.downMbps >= 10 ? round(d.downMbps) : fixed(d.downMbps, 1)} Mbps"; font: mono } }
+            Text { text: d.name; bold: true; maxLines: 1 }
           }
           if len(devices) > 3 {
             Text { text: showAll ? "[ Show fewer ]" : "[ ${len(devices) - 3} other devices ]"; onTap: showAll = !showAll }
