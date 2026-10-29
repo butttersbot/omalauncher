@@ -2709,6 +2709,34 @@ def codex_servers():
 changed = threading.Condition()  # guards every thread's state; told whenever an event is added
 threads = {}
 closing = False
+_services = None
+
+
+def runner_work():
+    """Every kind of runner work the owner-approved service restart must wait for (soma_services.WorkGate)."""
+    with changed:
+        counts = {'working': 0, 'waiting': 0, 'queued': 0, 'background': 0}
+        for thread in threads.values():
+            counts['working'] += thread.meta.get('status') == 'working'
+            counts['waiting'] += thread.meta.get('status') == 'waiting' or bool(thread.pending)
+            counts['queued'] += len(thread.queue)
+            kept = getattr(thread, 'kept', None)
+            if kept is not None and not kept.done:
+                counts['background'] += len(kept.driver.background)
+        return counts
+
+
+def services():
+    """The Connections service controller (tools/mac-runner/soma_services.py, installed beside this file)."""
+    global _services
+    if _services is None:
+        import importlib.util
+        here = pathlib.Path(__file__).resolve().parent / 'soma_services.py'
+        spec = importlib.util.spec_from_file_location('soma_services', here)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _services = module.Controller(module.LiveBackend(), runner_work)
+    return _services
 
 
 class Thread:
@@ -3560,6 +3588,9 @@ def thread_env(thread, driver):
 def take(thread, text):
     """The owner's words: at once when the thread is free, otherwise when the turn before them ends."""
     with changed:
+        # An owner-approved service restart holds admission closed from its idle check until it is verified.
+        if _services is not None and not _services.gate.admit():
+            return {'taken': 'refused', 'error': 'maintenance: an owner-approved service restart is in progress; try again shortly'}
         holder = claude_holder_state(thread)
         if holder not in (None, 'busy', 'idle'):
             return {'taken': 'refused', 'error': holder}
@@ -4137,6 +4168,11 @@ class Runner(BaseHTTPRequestHandler):
                                      'bots': [{key: bot[key] for key in ('id', 'name', 'emoji', 'problem')} for bot in found.values()]})
         if len(parts) == 2 and parts[0] == 'phone-runner' and parts[1] in ('tailnet', 'whois'):
             return self.phone_runner(parts[1], query, None)
+        if parts == ['services']:
+            return self.answer(200, services().inventory())
+        if len(parts) == 3 and parts[:2] == ['services', 'operations']:
+            op = services().records.get_operation(parts[2])
+            return self.answer(200, {'ok': True, 'operation': op}) if op else self.answer(404, {'ok': False, 'error': 'no such operation'})
         if parts == ['threads']:
             with changed:
                 sync_bots()
@@ -4230,6 +4266,15 @@ class Runner(BaseHTTPRequestHandler):
             return self.answer(400, {'ok': False, 'error': 'a JSON object is needed'})
         if parts == ['phone-runner', 'taildrop']:
             return self.phone_runner('taildrop', {}, body)
+        if len(parts) == 3 and parts[0] == 'services' and parts[2] == 'restart':
+            # {} asks for a challenge (changes nothing); an answer executes only with a verified pinned-owner signature.
+            control = services()
+            try:
+                if not body:
+                    return self.answer(202, {'ok': True, 'approval': control.request(parts[1])})
+                return self.answer(202, control.approve(parts[1], body))
+            except Exception as e:  # soma_services.Refused carries its own status and code
+                return self.answer(getattr(e, 'status', 400), {'ok': False, 'error': getattr(e, 'code', 'refused'), 'detail': str(getattr(e, 'message', e))[:300]})
         if parts == ['threads']:
             name = str(body.get('name') or '').strip()[:80]
             project = allowed_project(body.get('project') or '')
@@ -4607,6 +4652,9 @@ def serve():
     (STATE / 'threads').mkdir(parents=True, exist_ok=True)
     own_name_kept()  # before any request holds the lock while tailscale is asked
     load()
+    # Verifies any owner-approved service restart a previous process left mid-way (the runner's own relaunch).
+    with contextlib.suppress(Exception):
+        services().resume()
     if CODEX_DISCOVER and program('codex'):
         codex_discovery_start()
         threading.Thread(target=watch_codex, daemon=True).start()
@@ -4707,6 +4755,8 @@ def install():
     INSTALLED.parent.mkdir(parents=True, exist_ok=True)
     if pathlib.Path(__file__).resolve() != INSTALLED.resolve():
         shutil.copyfile(__file__, INSTALLED)
+        # The Connections service controller is imported from beside the installed runner.
+        shutil.copyfile(pathlib.Path(__file__).resolve().parent / 'soma_services.py', INSTALLED.parent / 'soma_services.py')
     INSTALLED.chmod(0o755)
     LOGS.mkdir(parents=True, exist_ok=True)
     path = ':'.join([str(HOME / '.local/bin'), str(HOME / '.local/share/mise/shims'), str(HOME / '.bun/bin'), '/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin'])
