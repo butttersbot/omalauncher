@@ -51,9 +51,11 @@ fun ConnectionsPreview() {
         show("Outage")
         ConnectionsSource.restore = {
             ConnectionsSource.repair = if (scenario in setOf("Active jobs", "Failed repair", "Successful repair")) {
-                val result = ConnectionsFakeRunner(scenario).run()
+                val runner = ConnectionsFakeRunner(scenario)
+                val result = runner.run()
                 ConnectionsSource.diagnostic = org.json.JSONObject().put("fixture_only", true).put("stage", result.stage)
-                    .put("verified", result.verified).put("restart_posts", 1).put("owner_signature_verified", true).toString(2)
+                    .put("verified", result.verified).put("restart_posts", runner.posts).put("backend_calls", runner.backendCalls)
+                    .put("fictional_owner_signature_verified", true).toString(2)
                 when {
                     result.restored -> { ConnectionsSource.snapshot = snapshot(ConnectionState.Ready); "Restored: fictional authenticated agent access and build connection verified." }
                     result.stage == "blocked" -> "Blocked: active or queued fictional work; nothing restarted."

@@ -37,7 +37,7 @@ private fun ConnectionAction(label: String, action: () -> Unit, modifier: Modifi
     }
 }
 private fun repairCardSummary(text: String): String = when {
-    text.startsWith("Restored", ignoreCase = true) -> "Restored"
+    text.startsWith("Restored", ignoreCase = true) -> "Service restored"
     text.startsWith("Failed", ignoreCase = true) || text.startsWith("Restore failed", ignoreCase = true) -> "Repair failed"
     text.contains("unverified", ignoreCase = true) || text.startsWith("Restore interrupted", ignoreCase = true) -> "Result unverified"
     text.contains("blocked", ignoreCase = true) || text.startsWith("No verified", ignoreCase = true) -> "Repair blocked"
