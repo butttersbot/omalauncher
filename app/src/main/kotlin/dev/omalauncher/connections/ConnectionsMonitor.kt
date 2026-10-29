@@ -192,7 +192,7 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
             PhoneService.instance != null && PhoneDisplays.helperUp() -> ConnectionState.Ready
             else -> ConnectionState.Unknown
         }
-        if (!phonePaused && awake && PhoneService.instance != null) add(Capability.Phone, ConnectionState.Ready,
+        if (!phonePaused && awake && link != dev.omalauncher.phone.PhoneLink.Off && PhoneService.instance != null) add(Capability.Phone, ConnectionState.Ready,
             "Android accessibility binding verified; ADB/helper evidence remains separate.", "phone-binding")
         add(Capability.Phone, phone, when (phone) {
             ConnectionState.Paused -> "Phone control intentionally paused."
@@ -344,10 +344,12 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
                 else -> null
             }
             if (intentional != null && c.optLong("until") > System.currentTimeMillis()) {
+                rows.removeAll { it.capability == capability }
                 rows += ConnectionReading(capability, intentional, "Owner-configured ${intentional.label.lowercase()} until ${java.util.Date(c.getLong("until"))}; no outage inferred.", System.currentTimeMillis())
                 checks.removeAll { it.capability == capability }; continue
             }
             if (!c.optBoolean("enabled", true)) {
+                rows.removeAll { it.capability == capability }
                 rows += ConnectionReading(capability, ConnectionState.Disabled, "Explicitly disabled in Connections configuration.", System.currentTimeMillis())
                 checks.removeAll { it.capability == capability }; continue
             }
