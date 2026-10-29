@@ -72,7 +72,12 @@ internal class HyperliquidOrders(val testnet: Boolean) {
             return when (val state = reply.getJSONObject("order").getString("status")) {
                 "open", "triggered" -> OrderStage.Resting
                 "filled" -> OrderStage.Filled
-                "rejected" -> OrderStage.Rejected
+                "rejected", "tickRejected", "minTradeNtlRejected", "perpMarginRejected", "reduceOnlyRejected",
+                "badAloPxRejected", "iocCancelRejected", "badTriggerPxRejected", "marketOrderNoLiquidityRejected",
+                "positionIncreaseAtOpenInterestCapRejected", "positionFlipAtOpenInterestCapRejected",
+                "tooAggressiveAtOpenInterestCapRejected", "openInterestIncreaseRejected", "insufficientSpotBalanceRejected",
+                "oracleRejected", "perpMaxPositionRejected", "tooManyOpenOrdersRejected" -> OrderStage.Rejected
+                "scheduledCancel", "internalCancel" -> OrderStage.Cancelled
                 else -> if (state.endsWith("Canceled") || state == "canceled") OrderStage.Cancelled else OrderStage.Unknown
             }
         }

@@ -51,7 +51,7 @@ internal class OrderJournal(private val file: File) : java.io.Closeable {
                     check(id !in rows) { "Duplicate journal id" }
                     val stage = OrderStage.valueOf(row.getString("stage"))
                     rows[id] = JournalOrder(id, row.getString("cloid"),
-                        if (stage == OrderStage.Submitting || stage == OrderStage.Signing) OrderStage.Unknown else stage,
+                        when(stage) { OrderStage.Submitting -> OrderStage.Unknown; OrderStage.Signing -> OrderStage.Cancelled; else -> stage },
                         row.getJSONObject("ticket"), row.getLong("updated"), row.optString("venueId").takeIf { it.isNotEmpty() })
                 }
                 save()
@@ -80,7 +80,7 @@ internal class OrderJournal(private val file: File) : java.io.Closeable {
         persistOrRollback(id, null)
         return row.copy(ticket = JSONObject(row.ticket.toString()))
     }
-    @Synchronized fun transition(id: String, stage: OrderStage, now: Long, venueId: String? = null): JournalOrder {
+    @Synchronized fun transition(id: String, stage: OrderStage, now: Long, venueId: String? = null, venueConfirmed: Boolean = false): JournalOrder {
         usable()
         val old = checkNotNull(rows[id]) { "Unknown order" }
         val allowed = when (old.stage) {
@@ -92,6 +92,9 @@ internal class OrderJournal(private val file: File) : java.io.Closeable {
             else -> emptySet()
         }
         require(stage in allowed && now >= 0) { "Unsafe order transition" }
+        if (old.stage in setOf(OrderStage.Submitting, OrderStage.Unknown, OrderStage.Resting) && stage != OrderStage.Unknown) {
+            require(venueConfirmed) { "An in-flight order needs a confirmed venue result" }
+        }
         if (stage == OrderStage.Signing || stage == OrderStage.Submitting) {
             require(now >= old.ticket.getLong("reviewedAt") && now - old.ticket.getLong("reviewedAt") <= 30_000) { "Review expired; prepare a new ticket" }
             check(rows.values.none { it.id != id && it.stage in setOf(OrderStage.Signing, OrderStage.Submitting, OrderStage.Unknown, OrderStage.Resting) }) { "Another order needs reconciliation" }

@@ -123,7 +123,13 @@ class TradeActivity : PaperActivity() {
         finally { if(!signing)review.isEnabled=journal!=null }
         }
     }
-    private fun cancelReview() { reviewed?.let { runCatching { journal!!.transition(it.first.id,OrderStage.Cancelled,System.currentTimeMillis()) } };reviewed=null }
+    private fun cancelReview() {
+        if(signing)return
+        reviewed?.let { current -> runCatching {
+            if(journal!!.all().single{it.id==current.first.id}.stage==OrderStage.Reviewed)
+                journal!!.transition(current.first.id,OrderStage.Cancelled,System.currentTimeMillis())
+        } };reviewed=null
+    }
     private fun confirm(row: JournalOrder,ticket: OrderTicket) {
         if(signing || reviewed?.first?.id!=row.id)return
         try {
@@ -134,7 +140,7 @@ class TradeActivity : PaperActivity() {
                 .put("price",ticket.limitPrice.stripTrailingZeros().toPlainString()).put("shares",ticket.shares.stripTrailingZeros().toPlainString())
                 .put("tif",ticket.timeInForce).put("testnet",ticket.testnet).put("cloid",row.cloid).put("nonce",nonce).put("expiresAfter",ticket.reviewedAt+30_000)
             paper.evaluateJavascript("window.HunchSdk.send($data)",null); message.text="Signing the confirmed order…"
-        } catch(e:Exception) { message.text=e.message;cancelReview() }
+        } catch(e:Exception) { message.text=e.message;if(signing)uncertain("Signing did not start. Review again.") else cancelReview() }
     }
     override fun command(data: JSONObject) {
         when(data.optString("type")) {
@@ -168,7 +174,7 @@ class TradeActivity : PaperActivity() {
             val signature=wallet.provider.request(EthereumRpcRequest.ethSignTypedDataV4(ticket.wallet,typed.toString())).getOrThrow().data
             check(Regex("0x[0-9a-fA-F]{130}").matches(signature)) { "Invalid signature response" }
             reply(call,signature)
-        }catch(e:Exception){reply(call,error=e.message?:"Signing failed");uncertain("Signing interrupted; check status before another order.")}
+        }catch(e:Exception){reply(call,error=e.message?:"Signing failed");uncertain("Signing cancelled or failed before submission. Nothing sent; review a new order when ready.")}
         }
     }
     private fun submit(data:JSONObject) {
@@ -183,7 +189,7 @@ class TradeActivity : PaperActivity() {
                 try {
                     val result=withContext(Dispatchers.IO){if(demo)JSONObject("""{"status":"ok","response":{"type":"order","data":{"statuses":[{"filled":{"oid":1,"totalSz":"${ticket.shares}","avgPx":"${ticket.limitPrice}"}}]}}}""") else checkNotNull(api).submit(body)}
                     val stage=HyperliquidOrders.replyStage(result)
-                    journal!!.transition(row.id,stage.first,System.currentTimeMillis(),stage.second)
+                    journal!!.transition(row.id,stage.first,System.currentTimeMillis(),stage.second,venueConfirmed=true)
                     reply(call,result);message.text="${stage.first}: ${result.toString().take(1800)}\nUse Check previous order status to read back from the venue."
                     signing=false;reviewed=null;review.isEnabled=true
                 } catch(e:Exception){reply(call,error="Result unclear; no retry");uncertain("Result unclear: ${e.message}. Check status; do not submit again.")}
@@ -191,7 +197,7 @@ class TradeActivity : PaperActivity() {
         } catch(e:Exception){reply(call,error=e.message?:"Unsafe request");uncertain("Order could not be sent. Check status before another order.")}
     }
     private fun uncertain(reason:String) {
-        reviewed?.let { runCatching { journal!!.transition(it.first.id,OrderStage.Unknown,System.currentTimeMillis()) } }
+        reviewed?.let { runCatching { journal!!.transition(it.first.id,if(submitted)OrderStage.Unknown else OrderStage.Cancelled,System.currentTimeMillis()) } }
         signing=false;reviewed=null;review.isEnabled=journal!=null;message.text=reason
     }
     private fun reconcile() {
@@ -206,7 +212,7 @@ class TradeActivity : PaperActivity() {
                 val service=HyperliquidOrders(row.ticket.optBoolean("testnet"))
                 val result=if(demo)JSONObject("""{"status":"order","order":{"status":"filled"}}""") else service.status(row.ticket.getString("wallet"),row.cloid)
                 val stage=HyperliquidOrders.statusStage(result)
-                if(stage!=OrderStage.Unknown && row.stage in setOf(OrderStage.Unknown,OrderStage.Resting,OrderStage.Submitting,OrderStage.Signing) && stage!=row.stage)journal!!.transition(row.id,stage,System.currentTimeMillis())
+                if(stage!=OrderStage.Unknown && row.stage in setOf(OrderStage.Unknown,OrderStage.Resting,OrderStage.Submitting,OrderStage.Signing) && stage!=row.stage)journal!!.transition(row.id,stage,System.currentTimeMillis(),venueConfirmed=true)
                 "${row.cloid}: $stage\n${result.toString().take(1200)}"
             }}
             message.text=notes.joinToString("\n\n")

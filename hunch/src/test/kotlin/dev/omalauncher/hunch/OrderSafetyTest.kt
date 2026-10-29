@@ -64,12 +64,38 @@ class OrderSafetyTest {
             assertEquals(first.cloid, row.cloid); assertEquals(OrderStage.Unknown, row.stage)
             refuses { recovered.transition(row.id, OrderStage.Submitting, now) }
             try { recovered.review(ticket(), now); fail("Uncertain send must block another order") } catch (_: IllegalStateException) {}
-            recovered.transition(row.id, OrderStage.Filled, now - 1000, "fixture-order-id")
+            recovered.transition(row.id, OrderStage.Filled, now - 1000, "fixture-order-id", venueConfirmed=true)
             assertEquals(now, recovered.all().single().updated) // reconciliation can record truth after clock rollback
             assertEquals("fixture-order-id", recovered.all().single().venueId)
             assertEquals(2, recovered.run { review(ticket(), now + 2); all().size })
             recovered.close()
             OrderJournal(file).use { assertEquals("fixture-order-id", it.all().first().venueId) }
+        } finally { dir.deleteRecursively() }
+    }
+    @Test fun knownPreSendCancellationDoesNotPoisonTradingButInFlightNeedsVenueProof() {
+        val dir=Files.createTempDirectory("hunch-stage-test").toFile()
+        try {
+            val file=dir.resolve("orders.json")
+            OrderJournal(file).use { journal ->
+                val first=journal.review(ticket(),now)
+                journal.transition(first.id,OrderStage.Signing,now)
+                journal.transition(first.id,OrderStage.Cancelled,now)
+                val second=journal.review(ticket(),now)
+                journal.transition(second.id,OrderStage.Signing,now)
+                // A crash before Submitting is known not to have touched HTTP.
+            }
+            OrderJournal(file).use { journal ->
+                assertTrue(journal.all().all{it.stage==OrderStage.Cancelled})
+                val next=journal.review(ticket(),now)
+                journal.transition(next.id,OrderStage.Signing,now)
+                journal.transition(next.id,OrderStage.Submitting,now)
+                refuses{journal.transition(next.id,OrderStage.Cancelled,now)}
+                refuses{journal.transition(next.id,OrderStage.Rejected,now)}
+                journal.transition(next.id,OrderStage.Unknown,now)
+                refuses{journal.transition(next.id,OrderStage.Cancelled,now)}
+                journal.transition(next.id,OrderStage.Rejected,now,venueConfirmed=true)
+                assertEquals(OrderStage.Reviewed,journal.review(ticket(),now).stage)
+            }
         } finally { dir.deleteRecursively() }
     }
     @Test fun expiredReviewNeverSignsAndCorruptJournalNeverStartsEmpty() {

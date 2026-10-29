@@ -24,6 +24,13 @@ class HyperliquidOrdersTest {
         assertEquals(OrderStage.Unknown,HyperliquidOrders.statusStage(JSONObject("""{"status":"unknownOid"}""")))
         assertEquals(OrderStage.Cancelled,HyperliquidOrders.statusStage(JSONObject("""{"status":"order","order":{"status":"iocCancelCanceled"}}""")))
     }
+    @Test fun venueSpecificRejectionsAreTerminalButUnknownOidNeverMeansCancelled() {
+        for(status in listOf("rejected","tickRejected","minTradeNtlRejected","iocCancelRejected","insufficientSpotBalanceRejected","tooManyOpenOrdersRejected")) {
+            assertEquals(OrderStage.Rejected,HyperliquidOrders.statusStage(JSONObject("""{"status":"order","order":{"status":"$status"}}""")))
+        }
+        for(status in listOf("outcomeSettledCanceled","scheduledCancel","internalCancel"))assertEquals(OrderStage.Cancelled,HyperliquidOrders.statusStage(JSONObject("""{"status":"order","order":{"status":"$status"}}""")))
+        assertEquals(OrderStage.Unknown,HyperliquidOrders.statusStage(JSONObject("""{"status":"unknownOid"}""")))
+    }
     @Test fun sdkEnvelopeCannotChangeTheNativeReviewOrAddAnOrder() {
         val now=1800000000000L
         val ticket=OrderTicket("0x1111111111111111111111111111111111111111",100000010,"Fixture","Yes",BigDecimal("0.5"),BigDecimal("20"),BigDecimal("10"),BigDecimal.ZERO,BigDecimal("10"),now)
