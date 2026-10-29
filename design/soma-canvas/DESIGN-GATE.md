@@ -57,3 +57,27 @@ For every shot with a card:
 - Walk side (Phone C, tools/walkthrough + lanes): `shot … card=`, auto publish after PASS, run the check, DESIGN
   FAIL in reports and walk mail, the take/install gate.
 - Builders (all): build only from Approved cards; done = PASS + match.
+
+## Amendment, 2026-10-29 ~16:50: approving must be easy, and forgetting must not block
+
+Boss: "my approval in chat should absolutely work. So I should be able to say something like approve all in chat
+and then that should reflect in the Soma Canvas … the solution isn't to force me into looking at like 10 different
+screens and just clicking approve … I don't want things to be blocked if I forgot to click a few approve buttons …
+I can click the buttons, but also I can tell the agents that I approve."
+
+1. Chat approval counts. When Boss types an approval in a Soma chat ("approve all", "approve the Connections
+   ones", "looks good, approve"), the agent records it on Canvas for the cards it refers to, as Approved, with his
+   words quoted on the card. Proof it was Boss and not an agent: Soma signs his own typed messages (the same device
+   key as the signed receipts in canvas-record-approved.md: message id, conversation, text hash, time) and the agent
+   passes that receipt: `soma-canvas approve-from-chat CARD... --receipt R`. Canvas verifies the signature, that the
+   text is recent (< 7 days) and reads as an approval, and records which cards it covered. Agents still can never
+   approve on their own: no receipt, no approval. "All" means the cards the agent had just put in front of him (or the
+   page/app he names); the card shows "approved in chat: '<his words>'" and he can undo it on the card.
+   Native question cards (AskUserQuestion) answered "Approve" count the same way.
+2. Unapproved never blocks. A carded shot with nothing Approved is `DESIGN UNAPPROVED`, not FAIL: take/install go
+   ahead, print it, and the agent asks Boss once, in chat, with one native question card for the whole batch
+   ("Approve these N designs? [ Approve all ] [ Let me look ] …"), linking the Canvas page. His answer is recorded as
+   in 1. Nobody calls the build done while it shows UNAPPROVED without saying so.
+3. Drift still blocks: a shipped screen that differs from an Approved design is the builder's job to fix, not his to
+   click through. Only he can waive a difference, and he can do that in chat too ("that's fine, keep it" → waiver with
+   receipt, same mechanism).
