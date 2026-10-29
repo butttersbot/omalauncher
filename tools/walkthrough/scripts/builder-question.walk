@@ -37,7 +37,7 @@ tap Choice 2:
 swipe 0.78 0.55 0.78 0.30 400
 scrollto Choice 3:
 tap Choice 3:
-swipe 0.78 0.55 0.78 0.30 400
+swipe 0.78 0.70 0.78 0.15 500
 scrollto Choice 4:
 expect Send answers
 shot builder-question-four-unfolded
