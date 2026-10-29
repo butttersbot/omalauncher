@@ -16,6 +16,10 @@ internal data class OrderTicket(
     val feeCeiling: BigDecimal, val maximumDebit: BigDecimal, val reviewedAt: Long,
     val buy: Boolean = true, val timeInForce: String = "Ioc", val testnet: Boolean = false,
 ) {
+    // Sale fees rise with an improved fill price, so subtracting the global fee
+    // ceiling from limit proceeds would falsely reject low-price owned shares.
+    val minimumProceeds: BigDecimal get() = if (buy) BigDecimal.ZERO else
+        notional.multiply(BigDecimal.ONE.subtract(feeCeiling.divide(shares)))
     fun fresh(now: Long) = now >= reviewedAt && now - reviewedAt <= 30_000
 }
 
@@ -32,7 +36,7 @@ internal object OrderTickets {
         } else {
             require(funding.wallet.equals(owner.wallet, true) && now >= funding.checkedAt && now - funding.checkedAt <= 30_000) { "Refresh the signing wallet balances" }
             require(availableShares != null && availableShares >= shares) { "Not enough available outcome shares; selling never opens a short" }
-            require(ticket.notional > ticket.feeCeiling) { "Proceeds must cover fees" }
+            require(feeRateCeiling < BigDecimal.ONE) { "Proceeds must cover fees" }
         }
         return ticket
     }

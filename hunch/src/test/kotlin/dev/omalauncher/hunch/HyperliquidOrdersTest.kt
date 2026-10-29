@@ -68,6 +68,9 @@ class HyperliquidOrdersTest {
         val sell=ticket("4","4")
         assertFalse(sell.buy);assertTrue(sell.testnet);assertEquals("Gtc",sell.timeInForce)
         assertEquals(BigDecimal.ZERO,sell.maximumDebit);assertEquals(BigDecimal("0.04"),sell.feeCeiling)
+        assertEquals(0,sell.minimumProceeds.compareTo(BigDecimal("1.980")))
+        val cheap=OrderTickets.prepareFunded(OrderWallet(wallet),rules.copy(priceTick=BigDecimal("0.0001")),BigDecimal("0.0001"),BigDecimal("10000"),BigDecimal("0.01"),funds,now,false,"Ioc",true,BigDecimal("10000"))
+        assertEquals(0,cheap.minimumProceeds.compareTo(BigDecimal("0.99")))
         refuses{ticket("5","4")};refuses{ticket("4","4",now+30001)}
     }
 }
