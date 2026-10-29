@@ -46,6 +46,8 @@ internal class ConnectionRestorer(private val context: Context, private val runt
                         continue
                     }
                     val inventory = JSONObject(reply.text)
+                    val age = System.currentTimeMillis() - inventory.getLong("checked_at")
+                    require(age in 0..30_000) { "Service inventory is stale or clock differs" }
                     val host = inventory.getString("host")
                     if (!host.matches(Regex("[A-Za-z0-9._-]{1,100}"))) error("Invalid runner identity")
                     val trust = inventory.optJSONObject("owner_trust")?.optString("state")
@@ -64,6 +66,14 @@ internal class ConnectionRestorer(private val context: Context, private val runt
                         val checks = service.optJSONObject("probe")?.optJSONArray("checks") ?: JSONArray()
                         val failed = (0 until checks.length()).any { checks.getJSONObject(it).optString("result") == "fail" }
                         if (!failed) continue // Unknown, unsupported or stale never authorize an inferred repair.
+                        val authRequired = (0 until checks.length()).any {
+                            val check = checks.getJSONObject(it)
+                            check.optString("result") == "auth" || check.optJSONObject("fields")?.optInt("http_status") in setOf(401, 403)
+                        }
+                        if (authRequired) {
+                            blocked += ConnectionCheck(id, host, result = "auth", fields = mapOf("reason" to "Authentication requires a separate diagnostic; no restart inferred."))
+                            continue
+                        }
                         if (service.optJSONObject("restart")?.optBoolean("supported") != true) {
                             blocked += ConnectionCheck(id, host, result = "blocked", fields = mapOf("reason" to service.optJSONObject("restart")?.optString("blocked_reason").orEmpty()))
                             continue
