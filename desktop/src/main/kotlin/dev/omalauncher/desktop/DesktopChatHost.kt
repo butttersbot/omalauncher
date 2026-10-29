@@ -54,6 +54,7 @@ class DesktopChatHost(
 ) : ChatHost {
     override val attaches: Boolean get() = true
     override val dictates: Boolean get() = false
+    override val enterSends: Boolean get() = true
 
     // No Soma tab and no front agent here (Boss, 2026-10-19): it opens to a new chat, and he starts each one himself.
     override val somaTab: Boolean get() = false

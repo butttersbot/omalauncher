@@ -83,6 +83,9 @@ interface ChatHost {
     /** Whether the field's microphone works here. Where it doesn't (the desktop, whose own dictation types into any field), it isn't shown. */
     val dictates: Boolean get() = true
 
+    /** Whether a hardware Enter sends (Shift+Enter a new line). Not on the phone, where Return starts a new line (Boss, 2026-10-25). */
+    val enterSends: Boolean get() = false
+
     /** A bot's instructions and notes ([MacBotFiles]), read from its computer; null when they can't be read now. */
     fun botFiles(thread: String, told: (dev.omalauncher.assist.MacBotFiles?) -> Unit) = told(null)
 
