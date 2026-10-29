@@ -148,3 +148,26 @@ Primary platform reference for auth-per-use CryptoObject signing:
 Local checks for the new read-only diagnostic CLI: 2/2 Python tests PASS
 (traversal/symlink rejection and no restart/approve verbs); Kotlin redaction,
 canonical dedup and journal tests await the next compile checkpoint.
+
+Prior UI checkpoint 20eec09d: app/desktop/preview compile PASS, 23 targeted tests
+PASS (critic confirmed real-shape runner/Soma outage recovery is fixed). The
+committed walk still failed 36/27 because of script errors, not app failures.
+Critic proved four script adjustments on the unmodified app/tool: exact bracketed
+Restore button label, key BACK (not unsupported back), scroll past Optional tools
+before the Canvas disclosure, and scroll to the fixture alert copy. That scratch
+run passed 64/64; it is recorded as scratch evidence, not an official-script PASS.
+Phone B reviewed all 12 LOOKs in the contact sheet from Pocket
+20261028223312-160d2b: compact/medium/large, fixed utility, core rows, centered
+modal header and unfolded repair/inventory columns look correct. Those script
+fixes are now in the repository; agent-details disclosure is added to the next
+slice's accumulated walkthrough. New actual Restore/auth paths still need their
+own fake-runner success/failure/blocked coverage; no phone install was performed.
+
+Native owner-control protocol source added: fixed service IDs and request paths,
+strict host/service/nonce/expiry/payload binding, bounded sorted approval plan,
+no redirect or arbitrary command support, and auth-per-use P-256 Keystore signing
+through the OS CryptoObject. The public export is separate from incidents and
+contains no private key. New local-source tests exercise target substitution,
+expiry and whole-plan signature binding using in-memory test keys; no live
+service request is made. The controller is not wired into production Restore
+until the Mac endpoint contract and guarded operation status are integrated.

@@ -55,8 +55,8 @@ class OmaCommandTest {
             val text = moduleFile("src/main/kotlin/dev/omalauncher/$source").readText()
             assertTrue(source, text.contains("Managed(File(rootfs, \"$OMA_LIB/$lib\"), Policy.Owned, executable = true) { context.assets.open(\"$script\")"))
         }
-        assertEquals(listOf("thread", "keep", "connections", "agents", "drop", "msg", "front"), OMA_PARTS.map { it.lib })
-        assertEquals(listOf("oma-thread", "oma-keep", null, "oma-agents", null, null, null), OMA_PARTS.map { it.oldName })
+        assertEquals(listOf("thread", "keep", "agents", "connections", "drop", "msg", "front"), OMA_PARTS.map { it.lib })
+        assertEquals(listOf("oma-thread", "oma-keep", "oma-agents", null, null, null, null), OMA_PARTS.map { it.oldName })
     }
 
     @Test fun theDispatchersSubcommandsAreTheTables() {
@@ -70,7 +70,7 @@ class OmaCommandTest {
             val branch = cases.substringAfter("\n  ${part.word})").substringBefore(";;")
             assertTrue(branch, branch.contains("exec \"\$lib/${part.lib}\""))
         }
-        assertEquals(listOf("threads", "keep", "status", "drop", "msg", "front"), OMA_PARTS.map { it.word })
+        assertEquals(listOf("threads", "keep", "status", "connections", "drop", "msg", "front"), OMA_PARTS.map { it.word })
     }
 
     @Test fun theLauncherInstallsItWithLinuxAndTellsTheAgents() {
