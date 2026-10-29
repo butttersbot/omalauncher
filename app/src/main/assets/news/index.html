@@ -267,7 +267,21 @@ function chips(list) {
   return `<div class="chips" role="tablist">${list.map(t => `<button onclick="jump('${topicId(t.name)}')">${esc(t.name)}</button>`).join('')}</div>`;
 }
 window.jump = id => { const el = $(id), sc = $('scroll'); if (el && sc) sc.scrollTo({ top: el.offsetTop - sc.offsetTop, behavior: 'smooth' }); };
-window.toggleMore = name => { const sc = $('scroll'), at = sc ? sc.scrollTop : 0; S.more[name] = !S.more[name]; draw(); if ($('scroll')) $('scroll').scrollTop = at; };
+// Show more / Show less keeps the button where his finger was: the stream is drawn anew, so its scroll is set again
+// to put the topic's button at the same height on the screen (once at once, once after the next layout). Restoring
+// the old scroll offset alone left the 2c50cef5 walk near the top of Top stories after the tap.
+window.toggleMore = name => {
+  const button = () => document.querySelector(`#${topicId(name)} .more`);
+  const was = button() ? button().getBoundingClientRect().top : null;
+  const sc = $('scroll'), at = sc ? sc.scrollTop : 0;
+  S.more[name] = !S.more[name]; draw();
+  const place = () => {
+    const sc = $('scroll'), b = button();
+    if (!sc) return;
+    if (b && was !== null) sc.scrollTop += b.getBoundingClientRect().top - was; else sc.scrollTop = at;
+  };
+  place(); requestAnimationFrame(() => requestAnimationFrame(place));
+};
 function moreButton(t) {
   if (t.all.length <= SHOWN) return '';
   return `<button class="more" onclick="toggleMore(${esc(JSON.stringify(t.name))})">${S.more[t.name] ? 'Show less' : `Show ${t.all.length - SHOWN} more`}</button>`;
