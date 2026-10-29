@@ -406,6 +406,8 @@
             </intent-filter>
         </activity-alias>
 
+        <activity android:name=".connections.ConnectionRestoreActivity" android:exported="false"
+            android:excludeFromRecents="true" android:theme="@android:style/Theme.Material.Dialog.NoActionBar" />
         <activity android:name=".assist.AgentApprovalActivity" android:exported="false"
             android:theme="@android:style/Theme.Material.Dialog.NoActionBar" />
         <activity android:name=".assist.AssistantPromptActivity" android:exported="true"

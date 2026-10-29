@@ -72,6 +72,10 @@ class ServiceControlClient(private val base: ConnectionEndpoint,
         return post(endpoint("/services/${approval.service}/restart"), JSONObject().put("approval", approval.id).put("nonce", approval.nonce)
             .put("decision", "allow").put("owner_key_id", keyId).put("owner_signature", signature).put("owner_payloads", JSONArray(plan.encodedPayloads)))
     }
+    fun operationForApproval(id: String): ConnectionReply {
+        require(id.matches(Regex("[A-Za-z0-9_-]{8,128}")))
+        return get(endpoint("/services/approvals/$id/operation"))
+    }
     fun operation(id: String): ConnectionReply {
         require(id.matches(Regex("[A-Za-z0-9_-]{8,128}")))
         return get(endpoint("/services/operations/$id"))

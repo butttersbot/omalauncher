@@ -171,3 +171,8 @@ contains no private key. New local-source tests exercise target substitution,
 expiry and whole-plan signature binding using in-memory test keys; no live
 service request is made. The controller is not wired into production Restore
 until the Mac endpoint contract and guarded operation status are integrated.
+
+### Owner-only service-control integration checkpoint
+Native Restore now obtains fixed-service challenges only for fresh failed capability checks whose runner inventory advertises a supported repair. The non-exported Activity takes an opaque in-memory ticket; neither an exported intent nor the guest CLI accepts signing plans. OS auth-per-use signs the exact bounded host/service/nonce/expiry plan. Public-key export occurs on the owner's tap; it does not enroll trust on a Mac.
+
+Before the only settle POST, native SharedPreferences durably records a pending marker without nonce/signature/token. Monitoring resumes operation GETs; a missing reply never retries a restart. A dropped submission needs the runner's read-only approval-to-operation lookup. Unknown/unsupported/stale checks do not infer a restart target. Restoration requires matching operation/approval/host/service plus verified=true and nonempty all-pass capability evidence. Mac server source is imported, never deployed here. Remaining work: complete Mac probes/privileged-helper installer source, admission/trust review fixes, phone keeper/helper recovery, fake-runner integration tests, compile and final cover/unfolded walkthroughs. No new walkthrough PASS is claimed.

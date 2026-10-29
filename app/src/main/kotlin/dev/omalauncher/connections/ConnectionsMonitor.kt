@@ -43,6 +43,7 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
         }
         values
     }
+    private val restorer by lazy { ConnectionRestorer(context, runtime, incidents) }
     @Volatile private var working: Int? = null
     @Volatile private var queued: Int? = null
     private val nm get() = context.getSystemService(NotificationManager::class.java)
@@ -61,7 +62,7 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
         }
         nm.createNotificationChannel(NotificationChannel(channel, "Connections outages & recovery", NotificationManager.IMPORTANCE_DEFAULT))
         ConnectionsSource.refresh = { check(false) }
-        ConnectionsSource.restore = { check(true) }
+        ConnectionsSource.restore = { restorer.start() }
         ConnectionsSource.togglePause = {
             preferences.edit().putLong("paused-until", if (paused) 0 else System.currentTimeMillis() + 3_600_000).apply()
             updateSettings(); check(false)
@@ -101,6 +102,7 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
         main.post { ConnectionsSource.checking = true; if (restore) { ConnectionsSource.repair = "Checking device and active jobs…"; ConnectionsSource.guide = null } }
         readers.execute {
             try {
+                restorer.resume()
                 val result = collect()
                 val now = System.currentTimeMillis()
                 val diagnostic = recordChecks(result, now)
