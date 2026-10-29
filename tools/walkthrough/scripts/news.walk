@@ -17,8 +17,10 @@ expect Technology
 shot stream-cover-new-stories-pill-clear-of-chips
 # Look: the clock, signal and battery are drawn DARK on the cream paper (135: white, unseen).
 shot status-icons-dark-on-paper
+# A refresh started just before scrolling down lands while he is down the stream: its new stories must wait behind
+# the pill, not push the stream under the tap (175: 'Show 20 more' opened a Politico story).
+tap Refresh
 scrollto Show 20 more
-# A refresh reflows the stream as pictures load: let it settle so the tap lands on the button.
 wait 1500
 scrollto Show 20 more
 tap Show 20 more
