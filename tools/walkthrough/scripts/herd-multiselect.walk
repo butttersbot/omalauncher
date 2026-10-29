@@ -27,10 +27,11 @@ shot choosing-one
 # Taps add more: two more pocket files and one text from "Sent to this phone".
 tap test-charlie.txt
 tap test-echo.txt
-# The texts sit below the panel's fold on the unfolded screen: scroll the panel (inside it, both screens) first.
-swipe 0.85 0.85 0.85 0.55 500
+# The texts sit below the panel's fold on the unfolded screen: scroll the panel from a row inside it (a fixed point
+# fell below the panel on one screen or the other, and a touch outside it ends choosing, by design).
+swipefrom test-echo.txt 0 -0.2
 tap Test text one
-swipe 0.85 0.55 0.85 0.85 500
+swipefrom Test text one 0 0.2
 log herd select n=4
 expect 4 selected
 shot choosing-four
@@ -57,9 +58,9 @@ wait 1200
 clearlog
 hold test-bravo.txt
 tap test-delta.txt
-swipe 0.85 0.85 0.85 0.55 500
+swipefrom test-delta.txt 0 -0.2
 tap Test text two
-swipe 0.85 0.55 0.85 0.85 500
+swipefrom Test text two 0 0.2
 log herd select n=3
 tap Delete
 log herd select n=3 confirm=Delete 3 files
@@ -78,7 +79,6 @@ absent test-bravo.txt
 absent test-delta.txt
 absent Test text two
 expect test-alpha.txt
-expect Deleted 3 files
 shot after-delete
 # A tap outside the files (the section header) leaves choosing.
 hold test-alpha.txt

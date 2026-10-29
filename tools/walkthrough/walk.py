@@ -220,6 +220,18 @@ def run_step(serial, op, args, out, n):
         x1, y1 = point(serial, args[0], args[1]); x2, y2 = point(serial, args[2], args[3])
         ms = args[4] if len(args) > 4 else "350"
         adb(serial, "shell", "input", "swipe", str(x1), str(y1), str(x2), str(y2), ms); time.sleep(0.8); return True, "", None
+    if op == "swipefrom":
+        # swipefrom TEXT DX DY [MS]: a swipe that starts on what says TEXT and moves by DX DY (fractions of the screen),
+        # for scrolling a panel that sits in different places on the cover and unfolded (a fixed point can miss it).
+        ms = args[-1] if len(args) > 3 and args[-1].isdigit() else "500"
+        rest = args[:-1] if ms == args[-1] and len(args) > 3 and args[-1].isdigit() else args
+        wanted, fdx, fdy = " ".join(rest[:-2]), float(rest[-2]), float(rest[-1])
+        p = find(serial, wanted, wait_ms=8000)
+        if not p:
+            return False, f"nothing says “{wanted}”", None
+        w, h = size(serial)
+        x2, y2 = int(min(max(p[0] + fdx * w, 1), w - 2)), int(min(max(p[1] + fdy * h, 1), h - 2))
+        adb(serial, "shell", "input", "swipe", str(p[0]), str(p[1]), str(x2), str(y2), ms); time.sleep(0.8); return True, "", None
     if op == "type":
         adb(serial, "shell", "input", "text", " ".join(args).replace(" ", "%s")); time.sleep(0.5); return True, "", None
     if op == "key":
