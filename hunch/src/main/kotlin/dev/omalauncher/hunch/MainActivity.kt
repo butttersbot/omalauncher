@@ -35,6 +35,7 @@ class MainActivity:PaperActivity(){
         "ready"->{tell(JSONObject().put("type","config").put("chapter",chapter).put("fixture",fixture));if(design.isEmpty())loadMarkets()}
         "markets"->if(design.isEmpty())loadMarkets()
         "route"->if(data.optString("chapter") in listOf("today","bets","money"))chapter=data.getString("chapter")
+        "trade"->{val m=markets.singleOrNull{it.id.toString()==data.optString("id")};val side=data.optInt("side",-1);if(m!=null&&side in 0..1)startActivity(Intent(this,TradeActivity::class.java).putExtra("market",m.id).putExtra("side",side).putExtra("title",m.title).putExtra("sideLabel",m.sideLabel(side)))}
         "book"->if(design.isEmpty())loadBook(data)
         "listingQuotes"->if(design.isEmpty())loadListingQuotes(data)
         "account"->if(design.isEmpty())startActivity(Intent(this,AccountActivity::class.java).putExtra("demo",BuildConfig.DEBUG&&fixture=="demo"))

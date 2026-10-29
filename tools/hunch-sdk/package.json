@@ -1,0 +1,7 @@
+{
+  "dependencies": {
+    "@nktkas/hyperliquid": "0.33.3",
+    "esbuild": "0.25.12",
+    "viem": "2.38.5"
+  }
+}

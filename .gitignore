@@ -18,3 +18,5 @@ keystore.properties
 # captured by scripts/collage-captures.sh
 store/collage/raw/
 __pycache__/
+
+node_modules/

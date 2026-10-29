@@ -72,7 +72,7 @@ internal class OrderJournal(private val file: File) : java.io.Closeable {
     @Synchronized fun review(ticket: OrderTicket, now: Long): JournalOrder {
         usable()
         require(ticket.fresh(now)) { "Review expired" }
-        check(rows.values.none { it.stage in setOf(OrderStage.Signing, OrderStage.Submitting, OrderStage.Unknown) }) { "Reconcile the previous order first" }
+        check(rows.values.none { it.stage in setOf(OrderStage.Signing, OrderStage.Submitting, OrderStage.Unknown, OrderStage.Resting) }) { "Reconcile the previous order first" }
         check(rows.size < 1000) { "Archive reconciled orders before continuing" }
         val id = UUID.randomUUID().toString()
         val row = JournalOrder(id, "0x" + id.replace("-", ""), OrderStage.Reviewed, ticketJson(ticket), now, null)
@@ -94,7 +94,7 @@ internal class OrderJournal(private val file: File) : java.io.Closeable {
         require(stage in allowed && now >= 0) { "Unsafe order transition" }
         if (stage == OrderStage.Signing || stage == OrderStage.Submitting) {
             require(now >= old.ticket.getLong("reviewedAt") && now - old.ticket.getLong("reviewedAt") <= 30_000) { "Review expired; prepare a new ticket" }
-            check(rows.values.none { it.id != id && it.stage in setOf(OrderStage.Signing, OrderStage.Submitting, OrderStage.Unknown) }) { "Another order needs reconciliation" }
+            check(rows.values.none { it.id != id && it.stage in setOf(OrderStage.Signing, OrderStage.Submitting, OrderStage.Unknown, OrderStage.Resting) }) { "Another order needs reconciliation" }
         }
         val next = old.copy(stage = stage, updated = maxOf(now, old.updated), venueId = venueId ?: old.venueId)
         rows[id] = next
@@ -119,5 +119,5 @@ internal class OrderJournal(private val file: File) : java.io.Closeable {
     private fun ticketJson(t: OrderTicket) = JSONObject().put("wallet", t.wallet).put("asset", t.asset)
         .put("market", t.market).put("side", t.side).put("price", t.limitPrice.toPlainString()).put("shares", t.shares.toPlainString())
         .put("notional", t.notional.toPlainString()).put("feeCeiling", t.feeCeiling.toPlainString())
-        .put("maximumDebit", t.maximumDebit.toPlainString()).put("reviewedAt", t.reviewedAt).put("timeInForce", t.timeInForce)
+        .put("buy", t.buy).put("testnet", t.testnet).put("maximumDebit", t.maximumDebit.toPlainString()).put("reviewedAt", t.reviewedAt).put("timeInForce", t.timeInForce)
 }
