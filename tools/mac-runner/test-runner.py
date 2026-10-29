@@ -1095,15 +1095,23 @@ try:
     events = stream(tooly['id'], after=card['id'], until=('result', 'error'))
     check('shell: a command past its limit is stopped and the bot is told', 'stopped at its 1-minute limit' in [m['content'] for m in venice_calls[-1][3]['messages'] if m['role'] == 'tool'][-1])
     settle(tooly['id'], 'idle')
-    last = ask_bot('TOOL:sleep 40')
+    # This run's unique fractional duration + anchored argv cannot match another session's shell/debug script.
+    sleep_duration = '40.' + str(port)
+    sleep_pattern = r'^(/[^ ]*/)?sleep ' + re.escape(sleep_duration) + '$'
+    last = ask_bot('TOOL:sleep ' + sleep_duration)
     card = stream(tooly['id'], after=last, until=('approval',))[-1]
     environment_minute = environment['OMA_RUNNER_MINUTE']
     call('POST', '/threads/%s/approvals/%s' % (tooly['id'], card['approval']), {'decision': 'allow', 'nonce': card['nonce']})
-    time.sleep(0.5)
+    running = ''
+    deadline = time.monotonic() + 3
+    while not running and time.monotonic() < deadline:
+        running = subprocess.run(['pgrep', '-f', sleep_pattern], capture_output=True, text=True).stdout.strip()
+        if not running:
+            time.sleep(0.05)
     call('POST', '/threads/%s/stop' % tooly['id'], {})
     settle(tooly['id'], 'idle', 10)
-    left = subprocess.run(['pgrep', '-f', 'sleep 40'], capture_output=True, text=True).stdout.strip()
-    check('shell: Stop ends a command the bot is running', settle(tooly['id'], 'idle', 10) and not left)
+    left = subprocess.run(['pgrep', '-f', sleep_pattern], capture_output=True, text=True).stdout.strip()
+    check('shell: Stop ends a command the bot is running', bool(running) and settle(tooly['id'], 'idle', 10) and not left)
     last = ask_bot('TOOL:' + '||'.join(['uname -a'] * 41))
     events = stream(tooly['id'], after=last, until=('result', 'error'), limit=60)
     check('shell: a turn has no cap on commands: 41 all run', events[-1]['type'] == 'result' and len([e for e in events if e['type'] == 'step']) == 41)
