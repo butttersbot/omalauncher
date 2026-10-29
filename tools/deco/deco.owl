@@ -21,7 +21,7 @@ widget "Deco" {
   let devices = live ? (net.devices ?? []) : []
   let nodes = live ? (net.nodes ?? []) : []
   let compact = (tileWidth ?? 220) < 300
-  let large = (tileHeight ?? 180) >= 260 && !compact
+  let large = ((rows ?? 3) >= 4 || (tileHeight ?? 180) >= 230) && !compact
   // A short tile keeps the reading and Test speed; the second lines go first.
   let short = (tileHeight ?? 180) < 170
   let t = net.lastTestMbps
@@ -35,6 +35,8 @@ widget "Deco" {
   let health = live ? "All good" : state == "unlinked" ? "Not linked" : state == "unreachable" ? "Can't reach Deco" : state == "auth-failed" ? "Sign-in refused" : fresh ? "Error" : "No reading"
   let healthColor = live ? green : muted
   let tested = net.lastTestAt != null ? "ROUTER TEST · ${now - net.lastTestAt < 60 ? "JUST NOW" : fmtAgo(net.lastTestAt, now) + " AGO"}" : "NO ROUTER TEST YET"
+  // As many devices as the tile has room for beside Test speed: two at 4 rows, three from 5 (the mockup's large).
+  let listed = (rows ?? 4) >= 5 ? 3 : (phoneNewer ? 1 : 2)
   let pr = parseJson(plan)
 
   Column {
@@ -68,10 +70,10 @@ widget "Deco" {
       Box { fill: width; height: 1; background: foreground }
       Spacer { height: 2 }
       Text { text: "ONLINE NOW"; style: label; color: muted }
-      for d in take(devices, 3) key d.id {
+      for d in take(devices, listed) key d.id {
         Row { align: center; Text { text: d.name; weight: 1; maxLines: 1 } Text { text: d.link ?? "—"; bold: true } }
       }
-      Text { text: "${len(nodes)} Decos online${len(devices) > 3 ? " · ${len(devices) - 3} more devices" : ""}"; style: small; color: muted; maxLines: 1 }
+      Text { text: "${len(nodes)} Decos online${len(devices) > listed ? " · ${len(devices) - listed} more devices" : ""}"; style: small; color: muted; maxLines: 1 }
     }
     Spacer { weight: 1 }
     if !short { Box { fill: width; height: 1; background: foreground } }
