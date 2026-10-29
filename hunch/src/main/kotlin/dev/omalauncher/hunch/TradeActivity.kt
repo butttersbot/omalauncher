@@ -34,6 +34,13 @@ class TradeActivity : PaperActivity() {
         typeface = Typeface.createFromAsset(assets, "fonts/ZenKakuGothicNew-Regular.ttf")
         setPadding(0, 8, 0, 8)
     }
+    private fun styleButton(button:Button) {
+        button.setTextColor(Color.rgb(17,17,19)); button.isAllCaps=false
+        button.typeface=Typeface.createFromAsset(assets,"fonts/ZenKakuGothicNew-Bold.ttf")
+        button.background=GradientDrawable().apply{setColor(bg);setStroke(3,Color.rgb(17,17,19))}
+        button.setPadding(12,12,12,12)
+        button.minHeight=56
+    }
     private fun choice(values: List<String>) = Spinner(this).apply { adapter = ArrayAdapter(this@TradeActivity, android.R.layout.simple_spinner_dropdown_item, values) }
     private fun field(label: String) = EditText(this).apply { hint = label; contentDescription = label; setSingleLine(); inputType = 8194; textSize = 20f }
     override fun onCreate(saved: Bundle?) {
@@ -58,6 +65,7 @@ class TradeActivity : PaperActivity() {
         root.addView(Button(this).apply { text = "Check previous order status"; setOnClickListener { reconcile() } })
         message = text("Choose the network, action, price and size. Nothing is signed or sent when you open this ticket."); root.addView(message)
         root.addView(Button(this).apply { text = "Back to market"; setOnClickListener { if(!signing)finish() } })
+        for(i in 0 until root.childCount)(root.getChildAt(i) as? Button)?.let{styleButton(it)}
         try { journal = OrderJournal(File(filesDir,if(demo)"orders-fixture.json" else "orders.json")) }
         catch (_: Exception) { review.isEnabled=false; message.text="Trading disabled: the journal could not be opened. Reconcile before continuing." }
     }
@@ -194,13 +202,15 @@ class TradeActivity : PaperActivity() {
         if(signing || journal==null)return
         review.isEnabled=false
         scope.launch {try {
-            val rows=journal!!.all().filter {it.stage in setOf(OrderStage.Unknown,OrderStage.Resting,OrderStage.Submitting,OrderStage.Signing)}
+            val all=journal!!.all()
+            val active=all.filter {it.stage in setOf(OrderStage.Unknown,OrderStage.Resting,OrderStage.Submitting,OrderStage.Signing)}
+            val rows=if(active.isNotEmpty())active else all.takeLast(1)
             if(rows.isEmpty()){message.text="No unresolved order in the journal.";return@launch}
             val notes=withContext(Dispatchers.IO){rows.map {row ->
                 val service=HyperliquidOrders(row.ticket.optBoolean("testnet"))
                 val result=if(demo)JSONObject("""{"status":"order","order":{"status":"filled"}}""") else service.status(row.ticket.getString("wallet"),row.cloid)
                 val stage=HyperliquidOrders.statusStage(result)
-                if(stage!=OrderStage.Unknown)journal!!.transition(row.id,stage,System.currentTimeMillis())
+                if(stage!=OrderStage.Unknown && row.stage in setOf(OrderStage.Unknown,OrderStage.Resting,OrderStage.Submitting,OrderStage.Signing) && stage!=row.stage)journal!!.transition(row.id,stage,System.currentTimeMillis())
                 "${row.cloid}: $stage\n${result.toString().take(1200)}"
             }}
             message.text=notes.joinToString("\n\n")

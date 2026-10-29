@@ -1,4 +1,31 @@
-# Hunch · read-only edition
+# Hunch · owner-confirmed order development slice
+
+Current source 0.7.0 adds a separate exact-size Hyperliquid outcome ticket with
+Buy / sell owned shares and IOC / GTC limit choices. Native review displays the
+wallet, market, size, limit, conservative fee ceiling and maximum loss/debit
+(or minimum sale proceeds and value relinquished). Only native Confirm starts
+one journaled signing/submission attempt. Privy signs EIP-712 through the pinned,
+offline SDK bridge. Unknown results never retry; a status check reads by cloid.
+GTC resting orders also block a new ticket until resolved, conservatively.
+
+No deposits, withdrawals, leverage, shorts, positions UI or delegated trading.
+No application per-order/nightly caps. Exact size must meet venue precision and
+balance checks; the venue may reject its own notional minimum, never enlarged.
+The server remains authoritative for current minimums and fees; the displayed
+fee is a conservative ceiling from the user's spot fee schedule and feeScale,
+not a promise of the eventual charged fee. Sells require free owned tokens.
+Portfolio-margin accounts are refused pending their separate balance accounting.
+
+Validation is recorded in docs/hunch/owner-first-order.md. The standalone SDK
+probe only used an ephemeral, unfunded **testnet** key. Testnet correctly recovered
+that key's address and refused the nonexistent account; status was unknownOid.
+This proves request signing/network wiring, **not a funded accepted order** or a
+real embedded-wallet signature. The emulator order fixture has a separate
+journal, fictional balances and dummy signatures: zero real SDK wallet calls,
+HTTP submissions or funds. Its launch extra is debug-only.
+
+Historical implementation notes follow; their old disconnected-state statements
+are superseded by the above current source slice, not claims about installation.
 
 Standalone Android package `dev.omalauncher.hunch`. Optional Gradle module:
 
