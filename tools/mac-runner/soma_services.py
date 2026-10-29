@@ -11,7 +11,7 @@ Boss-approved scope (Phone A 20261028-215622, refined 220739; Phone B 20261028-2
 Nothing here enrolls or replaces owner keys, runs a shell, takes a path or command from a request, or restarts a
 service whose restart cannot be verified by that service's own capability check. Times are epoch milliseconds.
 """
-import base64, concurrent.futures, contextlib, fcntl, hashlib, hmac, ipaddress, json, os, pathlib, plistlib, re, secrets, socket, stat, subprocess, tempfile, threading, time
+import base64, concurrent.futures, contextlib, fcntl, hashlib, hmac, ipaddress, json, os, pathlib, plistlib, re, secrets, socket, stat, subprocess, sys, tempfile, threading, time
 import http.client, urllib.error, urllib.parse, urllib.request
 
 HOME = pathlib.Path.home()
@@ -26,7 +26,7 @@ MAX_PAYLOAD = 2048
 MAX_KEYS = 8
 KEEP_RECORDS = 200
 LAUNCHCTL = '/bin/launchctl'
-PRIVILEGED_HELPER = pathlib.Path('/Library/PrivilegedHelperTools/soma-service-helper')  # install-service-helper.sh (Boss, by hand)
+PRIVILEGED_HELPER = pathlib.Path('/var/run/soma-control/broker.sock')  # the root control broker (install-control-broker.sh, Boss, by hand)
 
 
 def now_ms():
@@ -190,9 +190,15 @@ def stderr_tail(text, limit=400):
     return redact(text or '')[-limit:]
 
 
+CAPABILITY_SCOPES = {'provider_auth.': 'Agents', 'build_toolchain.': 'Builds', 'source_freshness.': 'Sync'}
+
+
 def mkcheck(check, target, code, result, fields=None, stderr=None):
     """One check in the phone incident schema: {check, target, code, result, fields, stderr_tail}.
     result is pass | fail | unverified (reachable, evidence incomplete) | unsupported (no probe exists)."""
+    scope = next((name for prefix, name in CAPABILITY_SCOPES.items() if check.startswith(prefix)), None)
+    if scope:  # the runner's own scoped rows say which capability they belong to (a JDK problem is Builds, not Agents)
+        fields = {'capability': scope, **(fields or {})}
     return {'check': check, 'target': target, 'code': code, 'result': result, 'fields': redact(fields or {}),
             'stderr_tail': stderr_tail(stderr) if stderr else ''}
 
@@ -503,7 +509,7 @@ class LiveBackend:
             raise RuntimeError(f'launchctl kickstart exited {r.returncode}: {stderr_tail(r.stderr, 300)}')
 
     def privileged(self, service, proof):
-        # Independent owner proof is implemented in Swift; trusted work/admission caller enforcement is not ready.
+        # The independent root broker is not approved or installed in this checkout.
         raise Blocked('owner_verified_control_broker_unavailable')
 
     def exit_for_relaunch(self):
@@ -548,14 +554,30 @@ class Unverified(Exception):
     """Reachable (a reply arrived) but its evidence is incomplete: never a pass, never network-down."""
 
 
-def http_json(url, timeout=4, headers=None):
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None  # a 3xx comes back as an HTTPError: reachable, never followed (a bearer must not travel elsewhere)
+
+
+# Every probe goes straight to its fixed address: no redirects followed, and no proxy from the environment.
+_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect)
+
+
+def http_json(url, timeout=4, headers=None, limit=262_144):
     request = urllib.request.Request(url, headers={'Accept': 'application/json', **(headers or {})})
-    with urllib.request.urlopen(request, timeout=timeout) as reply:  # noqa: S310 -- fixed local/tailnet URLs only
+    try:
+        reply_cm = _OPENER.open(request, timeout=timeout)  # noqa: S310 -- fixed local/tailnet URLs only
+    except urllib.error.HTTPError as e:
+        if 300 <= e.code < 400:
+            e.close()
+            raise Unverified('redirected (%d); not followed' % e.code) from None
+        raise
+    with reply_cm as reply:
         try:
-            body = reply.read(262_145)
+            body = reply.read(limit + 1)
         except (http.client.IncompleteRead, TimeoutError, ConnectionError):
             raise Unverified('reply cut off before its end') from None
-        if len(body) > 262_144:
+        if len(body) > limit:
             raise Unverified('oversized reply')
         try:
             data = json.loads(body)
@@ -593,6 +615,205 @@ def syncthing_folders(fetch=http_json, config=SYNCTHING_CONFIG, base=('127.0.0.1
     ok = folders and not bad and not errors
     return mkcheck('syncthing_folders', 'syncthing', 'ok' if ok else ('no_folders' if not folders else 'folder_problem'),
                    'pass' if ok else 'fail', {'folders': len(folders), 'states': states, 'errors': errors})
+
+
+# ---- the runner's own capabilities: agent sign-ins, build tools, locks, source (all read-only) ------------------------
+def _jwt_exp_ms(token):
+    """The expiry of a JWT, read from its payload without verifying it; nothing else of the token is kept."""
+    with contextlib.suppress(Exception):
+        payload = token.split('.')[1]
+        exp = json.loads(base64.urlsafe_b64decode(payload + '=' * (-len(payload) % 4))).get('exp')
+        if isinstance(exp, (int, float)):
+            return int(exp * 1000)
+    return None
+
+
+def _sign_in(provider, configured, access_expires_ms=None, refresh=None, api_key=False, why=None, now=None):
+    """One provider's sign-in, from local files only. Nothing local proves the provider still accepts it, so the best a
+    sign-in can be here is unverified (remote_unverified) -- never Ready. Expired access with a refresh token is not an
+    owner-login problem; no usable credential at all is."""
+    now = now or now_ms()
+    fields = {'provider': provider, 'configured': configured, 'access_expires_at': access_expires_ms, 'refresh_available': refresh}
+    if not configured:
+        return mkcheck('provider_auth.' + provider, provider, why or 'not_configured', 'not_installed', fields)
+    if why:
+        return mkcheck('provider_auth.' + provider, provider, why, 'unverified', fields)
+    if api_key:
+        return mkcheck('provider_auth.' + provider, provider, 'api_key_remote_unverified', 'unverified', fields)
+    if access_expires_ms and access_expires_ms > now:
+        return mkcheck('provider_auth.' + provider, provider, 'local_valid_remote_unverified', 'unverified', fields)
+    if refresh:
+        return mkcheck('provider_auth.' + provider, provider, 'access_expired_refresh_available', 'unverified', fields)
+    return mkcheck('provider_auth.' + provider, provider, 'owner_login_needed', 'fail', fields)
+
+
+def provider_checks(home=None, platform=None, now=None):
+    """Claude Code, Codex and Grok, as this Mac's runner would start them. Files are read into memory only for expiry
+    and refresh availability; no token, account or email leaves this function, and nothing is refreshed or called."""
+    home = pathlib.Path(home or HOME)
+    out = []
+    # Codex: ~/.codex/auth.json (or CODEX_HOME).
+    codex = pathlib.Path(os.environ.get('CODEX_HOME') or home / '.codex') / 'auth.json'
+    try:
+        data = json.loads(codex.read_text()[:65_536])
+        tokens = data.get('tokens') if isinstance(data.get('tokens'), dict) else {}
+        out.append(_sign_in('codex', True, _jwt_exp_ms(str(tokens.get('access_token') or '')), bool(tokens.get('refresh_token')),
+                            api_key=bool(data.get('OPENAI_API_KEY')) and not tokens, now=now))
+    except FileNotFoundError:
+        out.append(_sign_in('codex', False, now=now))
+    except Exception:  # noqa: BLE001
+        out.append(_sign_in('codex', True, why='credentials_unreadable', now=now))
+    # Claude Code: on macOS its sign-in lives in the login Keychain, which is never read here (it could ask the owner).
+    claude = home / '.claude/.credentials.json'
+    if (platform or sys.platform) == 'darwin':
+        out.append(_sign_in('claude', True, why='keychain_not_read', now=now))
+    else:
+        try:
+            oauth = json.loads(claude.read_text()[:65_536]).get('claudeAiOauth') or {}
+            expires = oauth.get('expiresAt')
+            out.append(_sign_in('claude', bool(oauth), int(expires) if isinstance(expires, (int, float)) else None, bool(oauth.get('refreshToken')), now=now))
+        except FileNotFoundError:
+            out.append(_sign_in('claude', False, now=now))
+        except Exception:  # noqa: BLE001
+            out.append(_sign_in('claude', True, why='credentials_unreadable', now=now))
+    # Grok CLI: ~/.grok/auth.json exists or not; its format is not documented, so its validity stays unverified.
+    grok = home / '.grok/auth.json'
+    out.append(_sign_in('grok', grok.exists(), why='format_undocumented' if grok.exists() else None, now=now))
+    return out
+
+
+def _run_quiet(run, argv, timeout):
+    try:
+        return run(argv, capture_output=True, text=True, timeout=timeout, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+
+SOURCE_MIRROR = HOME / 'Projects/omalauncher-fold'
+SYNC_STATUS = HOME / 'agents/luna/phone-source-sync/status.txt'
+
+
+def toolchain_checks(run=subprocess.run, env=None, home=None, mirror=None):
+    """What a build lane needs, each actually run where it can be without building: a JDK 17+ that answers -version, an
+    Android SDK whose adb answers `adb version` (which starts no server), and the Gradle wrapper's distribution already
+    on disk. Nothing is installed or downloaded."""
+    env, home, mirror = env or os.environ, pathlib.Path(home or HOME), pathlib.Path(mirror or SOURCE_MIRROR)
+    out = []
+    javas = []
+    for version in ('17', '21'):
+        r = _run_quiet(run, ['/usr/libexec/java_home', '-v', version], 10)
+        if r is not None and r.returncode == 0 and r.stdout.strip():
+            javas.append(r.stdout.strip() + '/bin/java')
+    javas += ['/opt/homebrew/opt/openjdk@17/bin/java', '/usr/local/opt/openjdk@17/bin/java']
+    major = None
+    for java in javas:
+        if os.access(java, os.X_OK):
+            r = _run_quiet(run, [java, '-version'], 15)
+            found = re.search(r'version "(\d+)', (r.stderr + r.stdout) if r is not None else '')
+            if r is not None and r.returncode == 0 and found and int(found.group(1)) >= 17:
+                major = int(found.group(1))
+                break
+    out.append(mkcheck('build_toolchain.jdk', 'runner', 'ok' if major else 'no_usable_jdk', 'pass' if major else 'fail', {'major': major}))
+    sdk = None
+    local = mirror / 'local.properties'  # what the builds themselves use (sdk.dir), before any environment guess
+    configured = re.search(r'^sdk\.dir=(.+)$', local.read_text(), re.M) if local.exists() else None
+    for candidate in ((configured.group(1).strip() if configured else None), env.get('ANDROID_HOME'), env.get('ANDROID_SDK_ROOT'),
+                      str(home / 'Library/Android/sdk'), '/opt/homebrew/share/android-commandlinetools'):
+        if candidate and pathlib.Path(candidate, 'platform-tools/adb').exists():
+            sdk = pathlib.Path(candidate)
+            break
+    if sdk is None:
+        out.append(mkcheck('build_toolchain.android_sdk', 'runner', 'no_sdk', 'fail', {}))
+    else:
+        r = _run_quiet(run, [str(sdk / 'platform-tools/adb'), 'version'], 10)
+        build_tools = sorted(p.name for p in (sdk / 'build-tools').glob('*'))[-4:] if (sdk / 'build-tools').is_dir() else []
+        platforms = sorted(p.name for p in (sdk / 'platforms').glob('android-*'))[-4:] if (sdk / 'platforms').is_dir() else []
+        ok = r is not None and r.returncode == 0 and bool(build_tools) and bool(platforms)
+        out.append(mkcheck('build_toolchain.android_sdk', 'runner', 'ok' if ok else 'sdk_incomplete', 'pass' if ok else 'fail',
+                           {'adb_answers': r is not None and r.returncode == 0, 'build_tools': build_tools, 'platforms': platforms}))
+    props = mirror / 'gradle/wrapper/gradle-wrapper.properties'
+    found = re.search(r'distributionUrl=.*/(gradle-[\w.-]+)\.zip', props.read_text()) if props.exists() else None
+    if not found:
+        out.append(mkcheck('build_toolchain.gradle_wrapper', 'runner', 'no_wrapper', 'unverified', {'mirror': str(mirror)}))
+    else:
+        name = found.group(1)
+        unpacked = name.rsplit('-', 1)[0] if name.endswith(('-bin', '-all')) else name
+        present = any(p.exists() for p in (home / '.gradle/wrapper/dists' / name).glob('*/%s/bin/gradle' % unpacked))
+        out.append(mkcheck('build_toolchain.gradle_wrapper', 'runner', 'distribution_present' if present else 'distribution_not_downloaded',
+                           'pass' if present else 'unverified', {'distribution': name}))
+    return out
+
+
+def build_locks(gate=None):
+    state = (gate or WorkGate()).lock_state()
+    return mkcheck('build_toolchain.locks', 'runner', 'readable', 'pass', {'locks': len(state), 'held': [x['name'] for x in state if x['held']][:16]})
+
+
+def source_mirror(run=subprocess.run, mirror=None, status_file=None):
+    """The source the lanes build from: the Mac mirror that mac-sync.py fast-forwards to the phone's branch every minute,
+    if this Mac has that agent. Evidence: its branch, HEAD against the fetched phone branch, the last fetch time, and the
+    sync agent's own status line. No fetch is made here; freshness is reported as it is, never judged by a made-up limit."""
+    mirror, status_file = pathlib.Path(mirror or SOURCE_MIRROR), pathlib.Path(status_file or SYNC_STATUS)
+
+    def git(*args):
+        r = _run_quiet(run, ['/usr/bin/git', '-C', str(mirror), *args], 10)
+        return r.stdout.strip() if r is not None and r.returncode == 0 else None
+
+    if not (mirror / '.git').exists():
+        return mkcheck('source_freshness.mirror', 'runner', 'no_mirror', 'unverified', {'mirror': str(mirror), 'next': 'clone the mirror at this path'})
+    common = git('rev-parse', '--git-common-dir')
+    fetch_head = (mirror / common / 'FETCH_HEAD') if common else None
+    fields = {'branch': git('branch', '--show-current'), 'head': git('rev-parse', '--short', 'HEAD'),
+              'phone_branch': git('rev-parse', '--short', '--verify', '--quiet', 'refs/remotes/fork/phone/fold-development'),
+              'fetched_at': int(fetch_head.stat().st_mtime * 1000) if fetch_head and fetch_head.exists() else None}
+    try:
+        status = status_file.read_text()[:200].strip()
+        fields.update(sync_status=status[:80], sync_status_since=int(status_file.stat().st_mtime * 1000))
+    except OSError:
+        return mkcheck('source_freshness.mirror', 'runner', 'no_sync_agent', 'unverified',
+                       {**fields, 'next': 'this Mac has no mirror sync agent; builders bring the mirror up to date before each build'})
+    if status.startswith('Paused'):
+        return mkcheck('source_freshness.mirror', 'runner', 'mirror_sync_paused', 'fail',
+                       {**fields, 'next': "mac-sync.py is paused (the mirror left branch fold-sync or has local edits); an agent must not move another session's branch -- the owner decides"})
+    synced = status.startswith('Mac Fold source synced') and fields['branch'] == 'fold-sync' and fields['head'] and fields['head'] == fields['phone_branch']
+    return mkcheck('source_freshness.mirror', 'runner', 'synced' if synced else 'mirror_behind_or_unknown', 'pass' if synced else 'unverified', fields)
+
+
+CANVAS_TOKEN_FILE = 'agent-token.txt'
+
+
+def canvas_boards(fetch, host_port, load=None):
+    """A real board load with Canvas's own configured agent token (its data folder, from the installed plist): list the
+    boards, then load one board's snapshot. Only counts leave; the token never does."""
+    folder = None
+    with contextlib.suppress(Exception):
+        with open(plist_path('canvas'), 'rb') as f:
+            data = (load or plistlib.load)(f)
+        env = data.get('EnvironmentVariables') or {}
+        if isinstance(env.get('CANVAS_DATA_DIR'), str):
+            folder = pathlib.Path(env['CANVAS_DATA_DIR'])
+        else:
+            args = [str(a) for a in data.get('ProgramArguments') or []]
+            command = args[-1] if args else ''
+            found = re.match(r'\s*cd\s+([^;&|\s]+)\s*&&', command)
+            workdir = data.get('WorkingDirectory') or (found and os.path.expanduser(found.group(1)))
+            if workdir:
+                folder = pathlib.Path(workdir) / 'data'
+    token = _read_secret(folder / CANVAS_TOKEN_FILE) if folder else None
+    if not token:
+        return mkcheck('canvas_boards', 'canvas', 'no_agent_token', 'unverified', {'missing': 'Canvas agent token (data/agent-token.txt beside its server)'})
+    status, data = fetch('http://%s:%d/api/apps' % host_port, headers={'x-canvas-token': token})
+    apps = data.get('apps') if isinstance(data.get('apps'), list) else None
+    if status != 200 or apps is None:
+        return mkcheck('canvas_boards', 'canvas', 'board_list_failed', 'fail', {'http_status': status})
+    if not apps:
+        return mkcheck('canvas_boards', 'canvas', 'no_boards', 'unverified', {'boards': 0})
+    board = apps[0].get('id') if isinstance(apps[0], dict) else None
+    if not isinstance(board, str) or not re.fullmatch(r'[a-z0-9]{8,40}', board):
+        return mkcheck('canvas_boards', 'canvas', 'board_list_shape', 'unverified', {'boards': len(apps)})
+    status, snapshot = fetch('http://%s:%d/api/boards/%s/snapshot' % (*host_port, board), headers={'x-canvas-token': token}, limit=16_000_000)
+    return mkcheck('canvas_boards', 'canvas', 'ok' if status == 200 else 'board_load_failed', 'pass' if status == 200 else 'fail',
+                   {'boards': len(apps), 'board_loaded': status == 200, 'http_status': status})
 
 
 def tailscale_status(run=subprocess.run):
@@ -654,11 +875,18 @@ def _probe(service, fetch=http_json, run=subprocess.run, state=None, keys=None):
 
     try:
         if service == 'runner':
-            return [check('runner_self', 'ok', True, {'host': host_identity()})]
+            return ([check('runner_self', 'ok', True, {'host': host_identity()})] + provider_checks() + toolchain_checks(run)
+                    + [build_locks(), source_mirror(run)])
         if service == 'soma':
             base = os.environ.get('OMA_RUNNER_SOMA_SERVICE', '').rstrip('/')
             if not base:
                 return [mkcheck('soma_identity', 'soma', 'not_configured', 'unverified', {'missing': 'OMA_RUNNER_SOMA_SERVICE'})]
+            split = urllib.parse.urlsplit(base)
+            trusted = split.scheme in ('http', 'https') and not split.username and not split.password and split.hostname is not None
+            if trusted and split.hostname not in ('127.0.0.1', '::1', 'localhost'):
+                trusted = split.hostname == tailnet_ip(run)  # only this Mac's own Soma, never another host
+            if not trusted:
+                return [mkcheck('soma_identity', 'soma', 'soma_url_untrusted', 'unverified', {'reason': 'Soma URL is not this Mac (loopback or its own tailnet address)'})]
             key = (keys.get('soma') or (lambda: None))()
             if not key:
                 return [mkcheck('soma_identity', 'soma', 'no_runner_key', 'unverified', {'missing': "the runner's Soma device key"})]
@@ -671,8 +899,9 @@ def _probe(service, fetch=http_json, run=subprocess.run, state=None, keys=None):
             return [check('syncthing_health', 'unhealthy', status == 200 and data.get('status') == 'OK', {'http_status': status}),
                     syncthing_folders(fetch, base=base)]
         if service == 'canvas':
-            status, data = fetch('http://%s:%d/healthz' % endpoint(service, run))
-            return [check('canvas_health', 'unhealthy', status == 200 and data.get('ok') is True, {'http_status': status})]
+            host_port = endpoint(service, run)
+            status, data = fetch('http://%s:%d/healthz' % host_port)
+            return [check('canvas_health', 'unhealthy', status == 200 and data.get('ok') is True, {'http_status': status}), canvas_boards(fetch, host_port)]
         if service == 'embeddings':
             status, data = fetch('http://%s:%d/health' % endpoint(service, run))
             dim = data.get('dim')
@@ -681,11 +910,18 @@ def _probe(service, fetch=http_json, run=subprocess.run, state=None, keys=None):
         if service == 'whisper':
             status, data = fetch('http://%s:%d/health' % endpoint(service, run))  # whisper.cpp: 200 {"status":"ok"} once the model is loaded
             return [check('whisper_model', 'model_not_loaded', status == 200 and data.get('status') == 'ok', {'http_status': status})]
-        if service in ('herd', 'tailshare-serve'):
-            # Both admit only the owner's own tailnet devices (tailscale whois); this Mac is one. Only the identity field is kept.
-            path, field = ('/v1/status?closed=0', 'machine') if service == 'herd' else ('/v1/hello', 'name')
-            status, data = fetch('http://%s:%d%s' % (*endpoint(service, run), path))
-            return [check(service + '_identity', 'wrong_identity', status == 200 and bool(data.get(field)), {'http_status': status, field: str(data.get(field, ''))[:64]})]
+        if service == 'herd':
+            # Herd's reporter builds /v1/status when asked: it reads the session files and the running agents right then. A
+            # 200 with a machine and a session list IS a report made now (age 0), not a cached one. Only counts are kept.
+            status, data = fetch('http://%s:%d/v1/status?closed=0' % endpoint(service, run))
+            me, sessions = data.get('machine'), data.get('sessions')
+            ok = status == 200 and isinstance(me, dict) and bool(me.get('herd')) and isinstance(sessions, list)
+            return [check('herd_reporter', 'no_report', ok, {'http_status': status, 'reported_now': ok, 'sessions': len(sessions) if isinstance(sessions, list) else None,
+                                                              'herd_version': str((me or {}).get('herd', ''))[:16] if isinstance(me, dict) else None})]
+        if service == 'tailshare-serve':
+            # Admits only the owner's own tailnet devices (tailscale whois); this Mac is one. Only the identity field is kept.
+            status, data = fetch('http://%s:%d/v1/hello' % endpoint(service, run))
+            return [check('tailshare-serve_identity', 'wrong_identity', status == 200 and bool(data.get('name')), {'http_status': status, 'name': str(data.get('name', ''))[:64]})]
         if service == 'tailscaled':
             data = tailscale_status(run)
             me = data.get('Self') or {}
@@ -724,14 +960,9 @@ def _probe(service, fetch=http_json, run=subprocess.run, state=None, keys=None):
 # check in every probe, so identity, health or process evidence alone never reads as Ready or Restored, and a restart is
 # refused before it starts (nothing is restarted that could only be half-verified). Remove an entry only with a real probe.
 MISSING_EVIDENCE = {
-    'runner': [('provider_auth', 'agent provider sign-in validity, without reading token bodies'),
-               ('build_toolchain', 'JDK, Android SDK/adb and Gradle wrapper usable by the build lanes'),
-               ('source_freshness', 'age of the source mirrors the lanes build from')],
     'soma': [('soma_sync', 'a Soma sync cursor or ack; /health shows identity and public-URL liveness only')],
-    'canvas': [('canvas_boards', 'a read-only board list/load with the runner\'s canvas key; /healthz shows the process only')],
     'tailshare-serve': [('tailshare_delivery', 'a delivery ack; /v1/hello shows identity only')],
     'tailshare-receive': [('receive_freshness', 'a worker heartbeat or last-delivery ack; the receive loop has no endpoint')],
-    'herd': [('herd_reporter_age', "the reporter's last-report age; /v1/status shows identity and sessions only")],
     'embeddings': [('embed_inference', 'a model answer; /health checks the model file exists, not that it loads')],
     'imessage-transport': [('transport_traversal', 'an API health that crosses the transport socket; process and socket only today')],
 }
@@ -836,13 +1067,13 @@ class ProbeCache:
         self.rows, self.running = {}, {}  # service -> its in-flight future
         self.pool = concurrent.futures.ThreadPoolExecutor(max_workers=workers, thread_name_prefix='service-probe')
 
-    def _one(self, service):
+    def _one(self, service, keys=None):
         try:
             launchd = {'loaded': False, 'state': 'unknown', 'pid': None}
             with contextlib.suppress(Exception):
                 launchd = self.state(service)
             try:
-                checks = self.probe(service)
+                checks = self.probe(service, keys=keys) if keys else self.probe(service)
             except Exception as e:  # noqa: BLE001
                 checks = [mkcheck(service + '_probe', service, 'probe_error', 'fail', {}, stderr=str(e))]
             with self.lock:
@@ -851,11 +1082,12 @@ class ProbeCache:
             with self.lock:
                 self.running.pop(service, None)
 
-    def snapshot(self, services, budget=None):
+    def snapshot(self, services, budget=None, keys=None):
+        """keys: the asking device's own credentials for this one probe round (held only by its probes, never cached)."""
         with self.lock:
             for service in services:
                 if service not in self.running:
-                    self.running[service] = self.pool.submit(self._one, service)
+                    self.running[service] = self.pool.submit(self._one, service, keys)
             futures = [self.running[s] for s in services if s in self.running]  # new and already in flight alike
         concurrent.futures.wait(futures, timeout=INVENTORY_BUDGET_S if budget is None else budget)
         with self.lock:
@@ -882,13 +1114,13 @@ class Controller:
         self.host, self.clock, self.sleep = self.challenges.host, clock, sleep
         self.probes = ProbeCache(probe, state, clock)
 
-    def inventory(self, budget=None):
+    def inventory(self, budget=None, keys=None):
         trust = self.trust()
         counts = None
         with contextlib.suppress(Exception):
             counts = self.work()
         services = []
-        rows = self.probes.snapshot(list(SERVICES), budget)
+        rows = self.probes.snapshot(list(SERVICES), budget, keys)
         for service in SERVICES:
             domain, label, mode = placement(service)
             row = rows[service]
@@ -913,7 +1145,7 @@ class Controller:
         challenge = self.challenges.create(service)
         return challenge  # the caller returns it to the owner's device; it carries the nonce on purpose
 
-    def approve(self, service, body):
+    def approve(self, service, body, keys=None):
         challenge = self.challenges.settle(service, body, self.trust())
         if challenge is None:
             return {'ok': True, 'cancelled': True}
@@ -924,7 +1156,7 @@ class Controller:
         proof = {'approval': challenge['id'], 'nonce': challenge['nonce'], 'service': service, 'host': challenge['host'],
                  'expires_at': challenge['expires_at'], 'owner_key_id': body['owner_key_id'], 'owner_signature': body['owner_signature'],
                  **({'owner_payloads': body['owner_payloads']} if body.get('owner_payloads') is not None else {})}
-        self.spawn(self._run, op, proof)
+        self.spawn(self._run, op, proof, keys)  # the approving device's own key verifies Soma afterwards; memory only
         return {'ok': True, 'operation': {k: op[k] for k in ('id', 'approval', 'service', 'host', 'stage')}}
 
     def _save(self, op, **changes):
@@ -943,7 +1175,7 @@ class Controller:
         op['incident'] = incident['id']
         self._save(op)
 
-    def _run(self, op, proof=None):
+    def _run(self, op, proof=None, keys=None):
         service = op['service']
         _, _, mode = placement(service)
         try:
@@ -968,7 +1200,7 @@ class Controller:
                     self.backend.exit_for_relaunch()  # launchd relaunches; resume() verifies from the journal
                     return
                 self._save(op, stage='verifying')
-                self._verify(op)
+                self._verify(op, keys=keys)
         except Refused as e:
             self._fail(op, 'blocked', e.code, e.message + ' Nothing was restarted.')
         except Blocked as e:
@@ -978,13 +1210,13 @@ class Controller:
         except Exception as e:  # noqa: BLE001
             self._fail(op, 'failed', 'restart_error', redact(str(e))[:300])
 
-    def _verify(self, op, attempts=10):
+    def _verify(self, op, attempts=10, keys=None):
         service = op['service']
         for _ in range(attempts):
             self.sleep(3)
             checks = []
             with contextlib.suppress(Exception):
-                checks = self.probe(service)
+                checks = self.probe(service, keys=keys) if keys else self.probe(service)
             if checks and all(c['result'] == 'pass' for c in checks):  # unsupported or unverified is never success
                 op['checks'].extend(checks)
                 return self._save(op, stage='restored', verified=True)

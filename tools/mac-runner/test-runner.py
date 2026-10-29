@@ -32,6 +32,7 @@ environment = {**os.environ, 'OMA_RUNNER_PORT': str(port), 'OMA_RUNNER_TOKEN': s
 # Soma Canvas 8a: a stand-in canvas service on the loopback that writes down every token registration and revocation.
 import http.server, threading
 service_calls = []
+soma_health = {'mode': 'ok'}  # the fake Soma's /health: 'ok' answers as soma-serve; 'redirect' sends the caller elsewhere
 
 
 class Service(http.server.BaseHTTPRequestHandler):
@@ -56,6 +57,21 @@ class Service(http.server.BaseHTTPRequestHandler):
     do_POST = do_DELETE = answer
 
     def do_GET(self):
+        if self.path == '/health':
+            service_calls.append((self.command, self.path, self.headers.get('Authorization'), None))
+            if soma_health['mode'] == 'redirect':
+                self.send_response(302)
+                self.send_header('Location', '/stolen')
+                self.send_header('Content-Length', '0')
+                self.end_headers()
+                return
+            body = json.dumps({'ok': True, 'service': 'soma-serve', 'machine': 'testhost'}).encode()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         self.answer()
 
 
@@ -1576,6 +1592,31 @@ try:
           and operation['host'] == 'testhost' and all(c['result'] == 'pass' for c in operation['checks']))
     code, got = call('POST', '/threads/%s/messages' % service_thread, {'text': 'after the restart'}, token=now)
     check('services: admission reopens after verification', code == 200 and idle_now())
+    # Soma's identity, proved with the asking device's own key at this Mac's own Soma (no Keychain), never a redirect.
+    (services_dir / 'live-soma').write_text('')
+    time.sleep(0.5)  # let any probe round already in flight finish
+    before = len(service_calls)
+    code, inventory = call('GET', '/services', token=now)
+    soma = next(row for row in inventory['services'] if row['id'] == 'soma')
+    asked = [c for c in service_calls[before:] if c[1] == '/health']
+    check('services: Soma health is asked with the paired device key, and passes on it',
+          code == 200 and asked and all(c[2] == 'Bearer ' + now for c in asked)
+          and any(c['check'] == 'soma_identity' and c['result'] == 'pass' for c in soma['probe']['checks']) and now not in json.dumps(inventory))
+    before = len(service_calls)
+    thread_token = given['canvas_token']
+    code, _ = call('GET', '/services', token=thread_token)
+    check('services: a thread or agent token is refused, and never reaches Soma',
+          code == 401 and not any(c[2] and thread_token in c[2] for c in service_calls[before:]))
+    soma_health['mode'] = 'redirect'
+    time.sleep(0.5)
+    before = len(service_calls)
+    code, inventory = call('GET', '/services', token=now)
+    soma = next(row for row in inventory['services'] if row['id'] == 'soma')
+    check('services: a Soma redirect is not followed: the key never reaches the redirect target',
+          code == 200 and not any(c[1] == '/stolen' for c in service_calls[before:])
+          and any(c['code'] == 'reachable_unverified' for c in soma['probe']['checks']))
+    soma_health['mode'] = 'ok'
+    (services_dir / 'live-soma').unlink()
     challenge = call('POST', '/services/soma/restart', {}, token=now)[1]['approval']
     code, got = call('POST', '/services/soma/restart', owner_answer(challenge), token=now)
     code, found = operation_by_approval(challenge['id'], ('blocked', 'failed', 'restored'), now)

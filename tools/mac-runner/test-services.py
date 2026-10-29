@@ -22,9 +22,39 @@ def _guarded_urlopen(request, *a, **k):
 
 
 _request.urlopen = _guarded_urlopen
+_real_open = _request.OpenerDirector.open
+
+
+def _guarded_open(self, request, *a, **k):  # soma_services' own no-redirect opener goes through here
+    _guarded_urlopen.__wrapped_check__(request)
+    return _real_open(self, request, *a, **k)
+
+
+def _check_url(request):
+    url = urllib.parse.urlsplit(request.full_url if hasattr(request, 'full_url') else request)
+    if url.hostname != '127.0.0.1' or url.port not in OWN_PORTS:
+        raise AssertionError('a test tried to reach a real service: ' + url.geturl())
+
+
+_guarded_urlopen.__wrapped_check__ = _check_url
+_request.OpenerDirector.open = _guarded_open
+
 spec = importlib.util.spec_from_file_location('soma_services', HERE / 'soma_services.py')
 S = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(S)
+
+
+# No test may read a real credential: secrets are read only from temporary test folders.
+_real_read_secret = S._read_secret
+
+
+def _guarded_read_secret(path):
+    if str(pathlib.Path(path).resolve()).startswith(str(pathlib.Path.home())):
+        raise AssertionError('a test tried to read a real credential: ' + str(path))
+    return _real_read_secret(path)
+
+
+S._read_secret = _guarded_read_secret
 
 
 def owner_key():
@@ -511,6 +541,54 @@ class Probes(unittest.TestCase):
         finally:
             server.shutdown(); server.server_close()
 
+    def test_a_redirect_is_never_followed_and_the_bearer_never_reaches_the_second_listener(self):
+        import http.server, threading
+        seen = []
+        class Second(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                seen.append(dict(self.headers))
+                self.send_response(200); self.send_header('Content-Length', '2'); self.end_headers(); self.wfile.write(b'{}')
+            def log_message(self, *a): pass
+        second = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Second)
+        target = 'http://127.0.0.1:%d/health' % second.server_address[1]
+        class First(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(302); self.send_header('Location', target); self.send_header('Content-Length', '0'); self.end_headers()
+            def log_message(self, *a): pass
+        first = http.server.ThreadingHTTPServer(('127.0.0.1', 0), First)
+        for server in (first, second):
+            OWN_PORTS.add(server.server_address[1])
+            threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            with self.assertRaises(S.Unverified) as caught:
+                S.http_json('http://127.0.0.1:%d/health' % first.server_address[1], headers={'Authorization': 'Bearer device-key-SECRET'})
+            self.assertIn('redirected (302)', str(caught.exception))
+            self.assertEqual(seen, [])  # the second listener never got a request, let alone the bearer
+            os.environ['OMA_RUNNER_SOMA_SERVICE'] = 'http://127.0.0.1:%d' % first.server_address[1]
+            (check,) = S._probe('soma', run=self.run, keys={'soma': lambda: 'device-key-SECRET'})
+            self.assertEqual((check['code'], check['result']), ('reachable_unverified', 'unverified'))
+            self.assertEqual(seen, [])
+        finally:
+            os.environ.pop('OMA_RUNNER_SOMA_SERVICE', None)
+            for server in (first, second):
+                server.shutdown(); server.server_close()
+
+    def test_soma_is_asked_only_at_this_macs_own_address(self):
+        def fetch(url, **k): raise AssertionError('asked an untrusted Soma: ' + url)
+        for base in ('http://user:pw@127.0.0.1:8481', 'http://evil.example:8481', 'http://100.64.0.77:8481', 'file:///etc/passwd'):
+            os.environ['OMA_RUNNER_SOMA_SERVICE'] = base
+            try:
+                (check,) = S._probe('soma', fetch=fetch, run=self.run, keys={'soma': lambda: 'k' * 20})
+            finally:
+                del os.environ['OMA_RUNNER_SOMA_SERVICE']
+            self.assertEqual(check['code'], 'soma_url_untrusted', base)
+        os.environ['OMA_RUNNER_SOMA_SERVICE'] = 'http://100.64.0.9:8481'  # this Mac's own tailnet address (self.run)
+        try:
+            (check,) = S._probe('soma', fetch=lambda url, **k: (200, {'ok': True, 'service': 'soma-serve'}), run=self.run, keys={'soma': lambda: 'k' * 20})
+        finally:
+            del os.environ['OMA_RUNNER_SOMA_SERVICE']
+        self.assertEqual(check['result'], 'pass')
+
     def test_unprobed_service_is_structured_unsupported(self):
         (check,) = S.capability_probe('not-a-service')
         self.assertEqual((check['check'], check['target'], check['code'], check['result']), ('not-a-service_capability', 'not-a-service', 'no_capability_probe', 'unsupported'))
@@ -522,10 +600,12 @@ class Probes(unittest.TestCase):
                        'UserID': 7}, 'User': {'7': {'LoginName': 'owner@example.com'}}, 'Peer': {'a': {'Online': True}, 'b': {'Online': False}}}
         self.run = lambda argv, **k: Fake(returncode=0, stdout=json.dumps(self.status), stderr='')
         self.saved_fields, S.plist_fields = S.plist_fields, lambda service, load=None: {}  # the defaults, whatever is installed here
+        self.saved_plist, S.plist_path = S.plist_path, lambda service: pathlib.Path(tempfile.gettempdir()) / 'no-such-dir' / 'none.plist'
 
     def tearDown(self):
         S.TAILSCALE_PATHS = self.saved_paths
         S.plist_fields = self.saved_fields
+        S.plist_path = self.saved_plist
 
     def test_soma_needs_the_runners_key_sends_it_and_never_records_it(self):
         os.environ['OMA_RUNNER_SOMA_SERVICE'] = 'http://127.0.0.1:1'
@@ -549,7 +629,7 @@ class Probes(unittest.TestCase):
     def test_herd_and_tailshare_keep_only_their_identity_field(self):
         def fetch(url, **k):
             self.assertTrue(url.startswith('http://100.64.0.9:'), url)
-            return 200, {'machine': 'jacks-mac-pro', 'name': 'jacks-mac-pro', 'sessions': [{'title': 'PRIVATE prompt text', 'cwd': '/Users/x/secret'}]}
+            return 200, {'machine': {'host': 'jacks-mac-pro', 'herd': '2.1'}, 'name': 'jacks-mac-pro', 'sessions': [{'title': 'PRIVATE prompt text', 'cwd': '/Users/x/secret'}]}
         for service in ('herd', 'tailshare-serve'):
             (check,) = S._probe(service, fetch=fetch, run=self.run)
             self.assertEqual(check['result'], 'pass', service)
@@ -589,8 +669,11 @@ class Probes(unittest.TestCase):
     def test_open_health_routes_and_process_only_services(self):
         replies = {'/healthz': {'ok': True, 'uptime': 5}, '/health': {'ok': True, 'model': 'm', 'dim': 768, 'status': 'ok'}}
         fetch = lambda url, **k: (200, replies[urllib.parse.urlsplit(url).path])
-        for service in ('canvas', 'embeddings', 'whisper'):
+        for service in ('embeddings', 'whisper'):
             self.assertEqual([c['result'] for c in S._probe(service, fetch=fetch, run=self.run)], ['pass'], service)
+        # Canvas: its health passes; with no agent token configured its board load stays unverified, never Ready.
+        self.assertEqual([(c['check'], c['result']) for c in S._probe('canvas', fetch=fetch, run=self.run)],
+                         [('canvas_health', 'pass'), ('canvas_boards', 'unverified')])
         replies['/health'] = {'ok': True, 'model': 'm', 'dim': 0, 'status': 'loading'}
         for service in ('embeddings', 'whisper'):
             self.assertEqual(S._probe(service, fetch=fetch, run=self.run)[0]['result'], 'fail', service)
@@ -628,16 +711,18 @@ class MissingEvidence(Base):
         S.MISSING_EVIDENCE = self.saved_missing
 
     def test_identity_or_process_only_services_carry_required_unverified_checks(self):
-        for service in ('soma', 'canvas', 'tailshare-serve', 'tailshare-receive', 'herd', 'embeddings', 'imessage-transport', 'runner'):
+        for service in ('soma', 'tailshare-serve', 'tailshare-receive', 'embeddings', 'imessage-transport'):
             extra = S.missing_checks(service)
             self.assertTrue(extra, service)
             self.assertTrue(all(c['result'] == 'unverified' and c['fields']['required'] is True and c['fields']['missing'] for c in extra), service)
-        self.assertEqual({c['check'] for c in S.missing_checks('runner')}, {'provider_auth', 'build_toolchain', 'source_freshness'})
+        for service in ('runner', 'canvas', 'herd'):  # real probes now carry this evidence themselves
+            self.assertEqual(S.missing_checks(service), [], service)
         for service in ('syncthing', 'tailscaled', 'whisper', 'imessage-api'):
             self.assertEqual(S.missing_checks(service), [], service)
 
     def test_the_probe_appends_them_so_a_passing_identity_is_not_ready(self):
-        checks = S.capability_probe('canvas', fetch=lambda url, **k: (200, {'ok': True}))
+        up = lambda service: {'loaded': True, 'state': 'running', 'pid': 9, 'last_exit': 0}
+        checks = S.capability_probe('tailshare-receive', state=up)
         self.assertEqual([c['result'] for c in checks], ['pass', 'unverified'])
         self.assertEqual(checks[-1]['code'], 'evidence_missing')
 
@@ -658,6 +743,176 @@ class MissingEvidence(Base):
         by = {x['id']: x for x in self.control.inventory(budget=2)['services']}
         self.assertEqual((by['soma']['restart']['supported'], by['soma']['restart']['blocked_reason']), (False, 'incomplete_capability_proof'))
         self.assertTrue(by['syncthing']['restart']['supported'])
+
+
+def jwt(exp):
+    part = lambda obj: base64.urlsafe_b64encode(json.dumps(obj).encode()).decode().rstrip('=')
+    return part({'alg': 'none'}) + '.' + part({'exp': exp, 'email': 'owner@example.com'}) + '.sig-SECRET'
+
+
+class RunnerCapabilities(unittest.TestCase):
+    """Mock-only: temporary homes, mirrors and SDKs, and a fake `run`; nothing real is read or run."""
+
+    def setUp(self):
+        self.home = pathlib.Path(tempfile.mkdtemp()).resolve()
+        self.saved_env = os.environ.pop('CODEX_HOME', None)
+        self.now = 1_800_000_000_000
+
+    def tearDown(self):
+        if self.saved_env is not None:
+            os.environ['CODEX_HOME'] = self.saved_env
+
+    def codex(self, **data):
+        (self.home / '.codex').mkdir(exist_ok=True)
+        (self.home / '.codex/auth.json').write_text(json.dumps(data))
+
+    def providers(self, platform='darwin'):
+        return {c['target']: c for c in S.provider_checks(home=self.home, platform=platform, now=self.now)}
+
+    def test_sign_ins_are_never_ready_and_expired_access_with_refresh_is_not_an_owner_login(self):
+        future, past = self.now // 1000 + 3600, self.now // 1000 - 3600
+        self.codex(tokens={'access_token': jwt(future), 'refresh_token': 'rt-SECRET', 'id_token': jwt(future), 'account_id': 'acct-SECRET'}, last_refresh='x')
+        got = self.providers()
+        self.assertEqual((got['codex']['code'], got['codex']['result']), ('local_valid_remote_unverified', 'unverified'))
+        self.assertEqual((got['codex']['check'], got['codex']['fields']['capability']), ('provider_auth.codex', 'Agents'))
+        self.assertEqual(got['codex']['fields']['access_expires_at'], future * 1000)
+        self.codex(tokens={'access_token': jwt(past), 'refresh_token': 'rt-SECRET'})
+        self.assertEqual(self.providers()['codex']['code'], 'access_expired_refresh_available')
+        self.assertEqual(self.providers()['codex']['result'], 'unverified')
+        self.codex(tokens={'access_token': jwt(past)})
+        self.assertEqual((self.providers()['codex']['code'], self.providers()['codex']['result']), ('owner_login_needed', 'fail'))
+        self.codex(OPENAI_API_KEY='sk-SECRETSECRET', tokens=None)
+        self.assertEqual(self.providers()['codex']['code'], 'api_key_remote_unverified')
+        (self.home / '.codex/auth.json').unlink()
+        self.assertEqual((self.providers()['codex']['code'], self.providers()['codex']['result']), ('not_configured', 'not_installed'))
+        self.assertEqual(self.providers()['claude']['code'], 'keychain_not_read')  # macOS: the Keychain is never touched
+        (self.home / '.claude').mkdir()
+        (self.home / '.claude/.credentials.json').write_text(json.dumps({'claudeAiOauth': {'accessToken': 'at-SECRET', 'refreshToken': 'rt-SECRET', 'expiresAt': self.now - 1}}))
+        self.assertEqual(self.providers('linux')['claude']['code'], 'access_expired_refresh_available')
+        (self.home / '.grok').mkdir()
+        (self.home / '.grok/auth.json').write_text('{"whatever": "SECRET"}')
+        self.assertEqual(self.providers()['grok']['code'], 'format_undocumented')
+        blob = json.dumps(S.provider_checks(home=self.home, platform='linux', now=self.now))
+        for leak in ('SECRET', 'owner@example.com', 'acct-'):
+            self.assertNotIn(leak, blob)
+
+    def fake_run(self, answers):
+        def run(argv, **k):
+            for prefix, (code, out, err) in answers.items():
+                if tuple(argv[:len(prefix)]) == prefix:
+                    return Fake(returncode=code, stdout=out, stderr=err)
+            raise AssertionError('unexpected command: %r' % (argv,))
+        return run
+
+    def test_toolchain_answers_are_run_not_assumed(self):
+        sdk = self.home / 'sdk'
+        for d in ('platform-tools', 'build-tools/36.0.0', 'platforms/android-36'):
+            (sdk / d).mkdir(parents=True)
+        (sdk / 'platform-tools/adb').write_text('')
+        mirror = self.home / 'mirror'
+        (mirror / 'gradle/wrapper').mkdir(parents=True)
+        (mirror / 'gradle/wrapper/gradle-wrapper.properties').write_text('distributionUrl=https\\://services.gradle.org/distributions/gradle-9.8-bin.zip\n')
+        jdk = self.home / 'jdk'
+        (jdk / 'bin').mkdir(parents=True)
+        (jdk / 'bin/java').write_text('')
+        os.chmod(jdk / 'bin/java', 0o755)
+        answers = {('/usr/libexec/java_home', '-v', '17'): (0, str(jdk) + '\n', ''), ('/usr/libexec/java_home',): (1, '', 'none'),
+                   (str(jdk / 'bin/java'), '-version'): (0, '', 'openjdk version "17.0.12" 2024-07-16\n'),
+                   (str(sdk / 'platform-tools/adb'), 'version'): (0, 'Android Debug Bridge version 1.0.41\n', '')}
+        got = {c['check'].split('.', 1)[1]: c for c in S.toolchain_checks(run=self.fake_run(answers), env={'ANDROID_HOME': str(sdk)}, home=self.home, mirror=mirror)}
+        self.assertEqual((got['jdk']['result'], got['jdk']['fields']['major']), ('pass', 17))
+        self.assertEqual((got['jdk']['check'], got['jdk']['fields']['capability']), ('build_toolchain.jdk', 'Builds'))
+        self.assertEqual((got['android_sdk']['result'], got['android_sdk']['fields']['platforms']), ('pass', ['android-36']))
+        self.assertEqual((got['gradle_wrapper']['code'], got['gradle_wrapper']['result']), ('distribution_not_downloaded', 'unverified'))
+        (self.home / '.gradle/wrapper/dists/gradle-9.8-bin/abc/gradle-9.8/bin').mkdir(parents=True)
+        (self.home / '.gradle/wrapper/dists/gradle-9.8-bin/abc/gradle-9.8/bin/gradle').write_text('')
+        answers[(str(sdk / 'platform-tools/adb'), 'version')] = (1, '', 'broken')
+        got = {c['check'].split('.', 1)[1]: c for c in S.toolchain_checks(run=self.fake_run(answers), env={'ANDROID_HOME': str(sdk)}, home=self.home, mirror=mirror)}
+        self.assertEqual(got['gradle_wrapper']['result'], 'pass')
+        self.assertEqual((got['android_sdk']['code'], got['android_sdk']['result']), ('sdk_incomplete', 'fail'))
+        (mirror / 'local.properties').write_text('sdk.dir=%s\n' % sdk)  # the builds' own setting wins, no environment needed
+        answers[(str(sdk / 'platform-tools/adb'), 'version')] = (0, 'ok', '')
+        got = {c['check'].split('.', 1)[1]: c for c in S.toolchain_checks(run=self.fake_run(answers), env={}, home=self.home, mirror=mirror)}
+        self.assertEqual(got['android_sdk']['result'], 'pass')
+
+    def test_the_source_mirror_reports_what_the_sync_agent_and_git_say(self):
+        mirror = self.home / 'mirror'
+        (mirror / '.git').mkdir(parents=True)
+        (mirror / '.git/FETCH_HEAD').write_text('')
+        status = self.home / 'status.txt'
+
+        def git(branch, head, phone):
+            return self.fake_run({('/usr/bin/git', '-C', str(mirror), 'rev-parse', '--git-common-dir'): (0, '.git\n', ''),
+                                  ('/usr/bin/git', '-C', str(mirror), 'branch'): (0, branch + '\n', ''),
+                                  ('/usr/bin/git', '-C', str(mirror), 'rev-parse', '--short', 'HEAD'): (0, head + '\n', ''),
+                                  ('/usr/bin/git', '-C', str(mirror), 'rev-parse', '--short', '--verify'): (0, phone + '\n', '')})
+        got = S.source_mirror(run=git('fold-sync', 'abc1234', 'abc1234'), mirror=mirror, status_file=status)
+        self.assertEqual((got['code'], got['result']), ('no_sync_agent', 'unverified'))  # e.g. the MacBook
+        status.write_text('Mac Fold source synced: abc1234')
+        got = S.source_mirror(run=git('fold-sync', 'abc1234', 'abc1234'), mirror=mirror, status_file=status)
+        self.assertEqual((got['code'], got['result']), ('synced', 'pass'))
+        self.assertEqual((got['check'], got['fields']['capability']), ('source_freshness.mirror', 'Sync'))
+        self.assertIsInstance(got['fields']['fetched_at'], int)
+        got = S.source_mirror(run=git('fold-sync', 'abc1234', 'def5678'), mirror=mirror, status_file=status)
+        self.assertEqual(got['result'], 'unverified')
+        status.write_text('Paused: mirror branch changed; preserving local work.')
+        got = S.source_mirror(run=git('soma-mesh', 'abc1234', 'def5678'), mirror=mirror, status_file=status)
+        self.assertEqual((got['code'], got['result'], got['fields']['branch']), ('mirror_sync_paused', 'fail', 'soma-mesh'))
+        self.assertIn('owner decides', got['fields']['next'])
+
+    def test_build_locks_are_read_not_taken(self):
+        locks = self.home / 'locks'
+        locks.mkdir()
+        (locks / 'walks.lock').write_text('')
+        import fcntl
+        with open(locks / 'walks.lock', 'a') as held:
+            fcntl.flock(held, fcntl.LOCK_EX)
+            got = S.build_locks(S.WorkGate(locks))
+        self.assertEqual((got['check'], got['result'], got['fields']), ('build_toolchain.locks', 'pass', {'capability': 'Builds', 'locks': 1, 'held': ['walks']}))
+
+
+class CanvasAndHerd(unittest.TestCase):
+    def setUp(self):
+        self.saved = S.plist_path
+        self.dir = pathlib.Path(tempfile.mkdtemp()).resolve()
+        S.plist_path = lambda service: self.dir / 'canvas.plist'
+
+    def tearDown(self):
+        S.plist_path = self.saved
+
+    def test_canvas_loads_a_board_with_its_own_token_which_never_leaves(self):
+        import plistlib
+        server = self.dir / 'soma-canvas'
+        (server / 'data').mkdir(parents=True)
+        (self.dir / 'canvas.plist').write_bytes(plistlib.dumps({'ProgramArguments': ['/bin/zsh', '-lc', 'cd %s && npx tsx src/server/server.ts' % server],
+                                                               'EnvironmentVariables': {'PATH': '/usr/bin'}}))
+        self.assertEqual(S.canvas_boards(lambda *a, **k: None, ('127.0.0.1', 5860))['code'], 'no_agent_token')
+        (server / 'data/agent-token.txt').write_text('canvas-agent-SECRET\n')
+        asked = []
+        def fetch(url, headers=None, **k):
+            asked.append((urllib.parse.urlsplit(url).path, headers))
+            return (200, {'apps': [{'id': 'abcdefgh23456789', 'title': 'PRIVATE board'}]}) if url.endswith('/api/apps') else (200, {'shapes': []})
+        got = S.canvas_boards(fetch, ('127.0.0.1', 5861))
+        self.assertEqual((got['code'], got['result'], got['fields']), ('ok', 'pass', {'boards': 1, 'board_loaded': True, 'http_status': 200}))
+        self.assertEqual([a[0] for a in asked], ['/api/apps', '/api/boards/abcdefgh23456789/snapshot'])
+        self.assertEqual(asked[0][1], {'x-canvas-token': 'canvas-agent-SECRET'})
+        self.assertNotIn('SECRET', json.dumps(got))
+        self.assertNotIn('PRIVATE', json.dumps(got))
+        got = S.canvas_boards(lambda url, **k: (200, {'apps': []}), ('127.0.0.1', 5861))
+        self.assertEqual((got['code'], got['result']), ('no_boards', 'unverified'))
+
+    def test_herd_report_is_made_when_asked_and_keeps_counts_only(self):
+        saved = S.TAILSCALE_PATHS
+        S.TAILSCALE_PATHS = (sys.executable,)
+        run = lambda argv, **k: Fake(returncode=0, stdout=json.dumps({'Self': {'TailscaleIPs': ['100.64.0.9']}}), stderr='')
+        try:
+            (check,) = S._probe('herd', fetch=lambda url, **k: (200, {'machine': {'host': 'h', 'herd': '2.1'}, 'sessions': [{'title': 'PRIVATE'}] * 3}), run=run)
+            self.assertEqual((check['result'], check['fields']['sessions'], check['fields']['reported_now']), ('pass', 3, True))
+            self.assertNotIn('PRIVATE', json.dumps(check))
+            (check,) = S._probe('herd', fetch=lambda url, **k: (200, {'machine': 'h'}), run=run)
+            self.assertEqual(check['result'], 'fail')
+        finally:
+            S.TAILSCALE_PATHS = saved
 
 
 class Presence(unittest.TestCase):
@@ -762,6 +1017,19 @@ class Inventory(unittest.TestCase):
         self.assertEqual(rows['herd']['checks'][0]['result'], 'pass')  # finished late, recorded as it was, not cut to failed
         self.assertIsNotNone(rows['herd']['checked_at'])
 
+    def test_the_asking_devices_key_reaches_its_probe_and_is_never_cached(self):
+        got = []
+        def probe(service, keys=None):
+            got.append((service, keys and keys['soma']()))
+            return [S.mkcheck('x', service, 'ok', 'pass')]
+        cache = S.ProbeCache(probe, lambda s: {}, lambda: 1)
+        rows = cache.snapshot(['soma'], budget=2, keys={'soma': lambda: 'device-key-SECRET'})
+        self.assertEqual(got, [('soma', 'device-key-SECRET')])
+        self.assertNotIn('SECRET', json.dumps(rows))
+        self.assertNotIn('SECRET', json.dumps(cache.rows))
+        cache.snapshot(['soma'], budget=2)
+        self.assertEqual(got[-1], ('soma', None))  # the next asker without a key lends nothing
+
     def test_a_cached_row_keeps_its_own_time_while_a_new_probe_is_slow(self):
         slow, n = threading.Event(), {'n': 0}
         def probe(service):
@@ -815,6 +1083,29 @@ class OwnerKeysForTheInstaller(unittest.TestCase):
         (folder / 'bad.json').write_text('{"version": 1, "keys": [{"algorithm": "rsa"}]}')
         r = subprocess.run([sys.executable, '-I', str(HERE / 'soma_services.py'), 'normalize-trust', str(folder / 'bad.json')], capture_output=True, text=True, timeout=20)
         self.assertEqual((r.returncode, r.stdout), (1, ''))
+
+
+CLIENT = """import json, socket, subprocess, sys
+sock_path, mode = sys.argv[1], sys.argv[2]
+proof = sys.stdin.read()
+if mode == 'child':  # the runner's own child, same interpreter, asks instead
+    r = subprocess.run([sys.executable, '-I', __file__, sock_path, 'direct'], input=proof, capture_output=True, text=True)
+    sys.stdout.write(r.stdout)
+else:
+    s = socket.socket(socket.AF_UNIX)
+    s.settimeout(30)
+    s.connect(sock_path)
+    if mode != 'stall':
+        s.sendall(proof.encode())
+        s.shutdown(socket.SHUT_WR)
+    data = b''
+    while True:
+        chunk = s.recv(4096)
+        if not chunk:
+            break
+        data += chunk
+    sys.stdout.write(data.decode())
+"""
 
 
 class PrivilegedHelper(unittest.TestCase):

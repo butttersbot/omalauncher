@@ -31,8 +31,11 @@ fun serviceInventoryReadings(reply: ConnectionReply, displayHost: String, source
                 val check = wireChecks!!.getJSONObject(j)
                 val fields = check.optJSONObject("fields") ?: JSONObject()
                 val name = check.getString("check").take(100)
-                val scope = if (id == "runner" && (fields.optString("capability").equals("Builds", true) ||
-                    name.startsWith("build_toolchain") || name.startsWith("source_freshness"))) Capability.Builds else capability
+                val scope = if (id == "runner") when {
+                    fields.optString("capability").equals("Sync", true) || name.startsWith("source_freshness") -> Capability.Sync
+                    fields.optString("capability").equals("Builds", true) || name.startsWith("build_toolchain") -> Capability.Builds
+                    else -> capability
+                } else capability
                 val evidence = linkedMapOf("code" to check.optString("code").take(100))
                 for (key in fields.keys().asSequence().filter { it !in setOf("http_status", "capability") }.take(3))
                     evidence[key.take(80)] = fields.optString(key).take(2048)

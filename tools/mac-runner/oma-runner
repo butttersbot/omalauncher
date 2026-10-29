@@ -2744,7 +2744,9 @@ def services():
                 _services = module.Controller(module.MockBackend(), runner_work, records=module.Records(folder / 'state'),
                                               trust=lambda: module.load_trust(folder / 'trust.json', require_root=False),
                                               gate=module.WorkGate(folder / 'locks', admission=changed),
-                                              probe=lambda service: json.loads((folder / 'probe.json').read_text()),
+                                              # Scripted, except Soma once the test asks for the real probe (against its fake Soma).
+                                              probe=lambda service, keys=None: (module._probe('soma', keys=keys) if service == 'soma' and (folder / 'live-soma').exists()
+                                                                                else json.loads((folder / 'probe.json').read_text())),
                                               state=lambda service: {'loaded': True, 'state': 'running', 'pid': 1, 'last_exit': 0}, host='testhost')
             else:
                 probe = functools.partial(module.capability_probe, keys={'soma': soma_service_key})
@@ -4148,16 +4150,24 @@ class Runner(BaseHTTPRequestHandler):
         self.note(code)
 
     def allowed(self):
+        self.device = self.device_key = None  # a kept-alive connection's next request starts with no identity
         given = self.headers.get('Authorization', '')
         key = given[len('Bearer '):].strip() if given.startswith('Bearer ') else ''
         device = DEVICES.owner_of(key) if key else None
         # The key must be this very caller's: whois names the device it came from.
         if device and DEVICES.caller(self.client_address[0]) == device:
             self.device = device
+            self.device_key = key  # this request's own paired-device key: lent to Soma's health proof for this request only
             return True
         time.sleep(1)
         self.answer(401, {'ok': False, 'error': 'no'})
         return False
+
+    def soma_keys(self):
+        # Soma accepts the same paired-device key, so a device asking about Soma's health proves it with its own key; no
+        # Keychain read. Only a device key is lent, never a thread or agent token, and only to this Mac's own Soma.
+        key = getattr(self, 'device_key', None)
+        return {'soma': (lambda: key)} if key and getattr(self, 'device', None) else None
 
     def parts(self):
         address = urllib.parse.urlsplit(self.path)
@@ -4185,7 +4195,7 @@ class Runner(BaseHTTPRequestHandler):
         if len(parts) == 2 and parts[0] == 'phone-runner' and parts[1] in ('tailnet', 'whois'):
             return self.phone_runner(parts[1], query, None)
         if parts == ['services']:
-            return self.answer(200, services().inventory())
+            return self.answer(200, services().inventory(keys=self.soma_keys()))
         if len(parts) == 3 and parts[:2] == ['services', 'operations']:
             op = services().records.get_operation(parts[2])
             return self.answer(200, {'ok': True, 'operation': op}) if op else self.answer(404, {'ok': False, 'error': 'no such operation'})
@@ -4292,7 +4302,7 @@ class Runner(BaseHTTPRequestHandler):
             try:
                 if not body:
                     return self.answer(202, {'ok': True, 'approval': control.request(parts[1])})
-                return self.answer(202, control.approve(parts[1], body))
+                return self.answer(202, control.approve(parts[1], body, keys=self.soma_keys()))
             except Exception as e:  # soma_services.Refused carries its own status and code
                 return self.answer(getattr(e, 'status', 400), {'ok': False, 'error': getattr(e, 'code', 'refused'), 'detail': str(getattr(e, 'message', e))[:300]})
         if parts == ['threads']:
