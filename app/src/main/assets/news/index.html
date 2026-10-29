@@ -267,9 +267,9 @@ function chips(list) {
   return `<div class="chips" role="tablist">${list.map(t => `<button onclick="jump('${topicId(t.name)}')">${esc(t.name)}</button>`).join('')}</div>`;
 }
 window.jump = id => { const el = $(id), sc = $('scroll'); if (el && sc) sc.scrollTo({ top: el.offsetTop - sc.offsetTop, behavior: 'smooth' }); };
-// Show more / Show less keeps the button where his finger was: the stream is drawn anew, so its scroll is set again
-// to put the topic's button at the same height on the screen (once at once, once after the next layout). Restoring
-// the old scroll offset alone left the 2c50cef5 walk near the top of Top stories after the tap.
+// Show more / Show less never throws him elsewhere: the stream is drawn anew, so its scroll is set again, once at once
+// and once after the next layout (set only at once, the 2c50cef5 walk landed near the top of Top stories). Opening keeps
+// the stream where it was, the new stories following below; closing keeps the button where his finger was.
 window.toggleMore = name => {
   const button = () => document.querySelector(`#${topicId(name)} .more`);
   const was = button() ? button().getBoundingClientRect().top : null;
@@ -278,7 +278,8 @@ window.toggleMore = name => {
   const place = () => {
     const sc = $('scroll'), b = button();
     if (!sc) return;
-    if (b && was !== null) sc.scrollTop += b.getBoundingClientRect().top - was; else sc.scrollTop = at;
+    // Opening: the stream stays where it was and the new stories follow on below. Closing: the button stays put.
+    if (S.more[name] || !b || was === null) sc.scrollTop = at; else sc.scrollTop += b.getBoundingClientRect().top - was;
   };
   place(); requestAnimationFrame(() => requestAnimationFrame(place));
 };

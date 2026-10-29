@@ -25,8 +25,7 @@ wait 1500
 scrollto Show 20 more
 tap Show 20 more
 wait 800
-# The tap keeps the button where it was (now Show less) and the list opens below it, not back at the top of the section.
-expect Show less
+# The tap leaves the stream where it was, the list opening below (not back at the top of the section).
 shot after-show-more
 scrollto Show less
 shot topic-expanded
