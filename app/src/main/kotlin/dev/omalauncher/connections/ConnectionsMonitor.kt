@@ -250,6 +250,7 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
             val health = runCatching { JSONObject(reply.text) }.getOrNull()
             // Older runners advertise soma in /health; newer deployments may expose /services.
             val services = if (state == ConnectionState.Ready) connectionGet(ConnectionEndpoint(m.config.url.trimEnd('/') + "/services", m.config.key)) else null
+            services?.let { rows += serviceInventoryReadings(it, m.name, sourceHost, System.currentTimeMillis()) }
             val advertised = services?.takeIf { it.code == 200 }?.let { runCatching { JSONObject(it.text).optString("soma") }.getOrNull() }?.takeIf { it.isNotBlank() }
                 ?: health?.optString("soma")?.takeIf { it.isNotBlank() }
             val service = advertised?.takeIf { runCatching { URI(it).host.equals(URI(m.config.url).host, true) && URI(it).scheme in listOf("http", "https") }.getOrDefault(false) }
