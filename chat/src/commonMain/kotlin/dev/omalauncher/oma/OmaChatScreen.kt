@@ -667,10 +667,16 @@ private fun ChatScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 val shown = if (listening) appendSpeech(before, speech.text) else draft
+                // Whether Shift is down, as the field's own key events say (Shift reaches it as a key even where Return doesn't).
+                val shiftHeld = remember { booleanArrayOf(false) }
                 BasicTextField(
                     value = shown,
                     onValueChange = {
-                        if (!listening) type(it)
+                        // A Return that reached the field as text rather than as a key (macOS hands it so through its input
+                        // method, so the key check below never saw it; Boss, 2026-10-29: "on the Mac Enter still starts a new
+                        // line"): on the desktop, without Shift, it sends instead of being kept.
+                        if (!listening && host.enterSends && newlineTyped(shown, it) && !shiftHeld[0]) send()
+                        else if (!listening) type(it)
                         notice = null
                     },
                     readOnly = listening,
@@ -698,8 +704,9 @@ private fun ChatScreen(
                             // On the desktop ([ChatHost.enterSends]) Enter sends and Shift+Enter starts a new line (Boss,
                             // 2026-10-29, MG1). Ctrl+Enter sends everywhere.
                             .onPreviewKeyEvent { e ->
+                                shiftHeld[0] = e.isShiftPressed
                                 val sends = e.isCtrlPressed || (host.enterSends && !e.isShiftPressed)
-                                if (e.type == KeyEventType.KeyDown && e.key == Key.Enter && sends) {
+                                if (e.type == KeyEventType.KeyDown && (e.key == Key.Enter || e.key == Key.NumPadEnter) && sends) {
                                     send()
                                     true
                                 } else {
@@ -1419,4 +1426,11 @@ private fun AttachmentPreview(
             style = Pack.body(Pack.size.small, Pack.accent),
         )
     }
+}
+
+/** Whether [after] is [before] with one line break typed into it (one Return), not a paste or any other change. */
+internal fun newlineTyped(before: String, after: String): Boolean {
+    if (after.length != before.length + 1) return false
+    val at = before.indices.firstOrNull { before[it] != after[it] } ?: before.length
+    return after[at] == '\n' && after.removeRange(at, at + 1) == before
 }
