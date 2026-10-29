@@ -26,10 +26,10 @@ class OmaCommandTest {
 
     @Test fun theDispatcherAndTheOldNamesAreExecutablesTheLauncherOwns() {
         val rootfs = File(tmp.root, "arch")
-        val tools = omaTools(rootfs, { asset(OMA_ASSET) }, { asset(DROP_ASSET) }, { asset(MSG_ASSET) }, { asset(GROKBOT_ASSET) })
+        val tools = omaTools(rootfs, { asset(OMA_ASSET) }, { asset(DROP_ASSET) }, { asset(MSG_ASSET) }, { asset(GROKBOT_ASSET) }, { asset(CONNECTIONS_ASSET) })
         // `oma drop` was never a command of its own, so it has no old name; its script is installed with `oma`.
         assertEquals(
-            listOf("usr/local/bin/oma", "usr/local/bin/oma-thread", "usr/local/bin/oma-keep", "usr/local/bin/oma-agents", "usr/local/lib/oma/drop", "usr/local/lib/oma/msg", "usr/local/lib/oma/front", "usr/local/bin/grokbot"),
+            listOf("usr/local/bin/oma", "usr/local/bin/oma-thread", "usr/local/bin/oma-keep", "usr/local/bin/oma-agents", "usr/local/lib/oma/drop", "usr/local/lib/oma/msg", "usr/local/lib/oma/connections", "usr/local/lib/oma/front", "usr/local/bin/grokbot"),
             tools.map { it.file.relativeTo(rootfs).path },
         )
         assertTrue(tools.all { it.policy == Policy.Owned && it.executable })
@@ -55,8 +55,8 @@ class OmaCommandTest {
             val text = moduleFile("src/main/kotlin/dev/omalauncher/$source").readText()
             assertTrue(source, text.contains("Managed(File(rootfs, \"$OMA_LIB/$lib\"), Policy.Owned, executable = true) { context.assets.open(\"$script\")"))
         }
-        assertEquals(listOf("thread", "keep", "agents", "drop", "msg", "front"), OMA_PARTS.map { it.lib })
-        assertEquals(listOf("oma-thread", "oma-keep", "oma-agents", null, null, null), OMA_PARTS.map { it.oldName })
+        assertEquals(listOf("thread", "keep", "connections", "agents", "drop", "msg", "front"), OMA_PARTS.map { it.lib })
+        assertEquals(listOf("oma-thread", "oma-keep", null, "oma-agents", null, null, null), OMA_PARTS.map { it.oldName })
     }
 
     @Test fun theDispatchersSubcommandsAreTheTables() {
@@ -91,7 +91,7 @@ class OmaCommandTest {
     @Test fun theOldNamesRunOmaWithTheSameWords() {
         assumeTrue("sh is needed to run the aliases", has("sh"))
         val rootfs = File(tmp.root, "arch")
-        ManagedFiles(tmp.root, File(tmp.root, "managed.json")).sync(omaTools(rootfs, { asset(OMA_ASSET) }, { asset(DROP_ASSET) }, { asset(MSG_ASSET) }, { asset(GROKBOT_ASSET) }))
+        ManagedFiles(tmp.root, File(tmp.root, "managed.json")).sync(omaTools(rootfs, { asset(OMA_ASSET) }, { asset(DROP_ASSET) }, { asset(MSG_ASSET) }, { asset(GROKBOT_ASSET) }, { asset(CONNECTIONS_ASSET) }))
         // Stand-ins for the tools, which print what they were given.
         for (part in OMA_PARTS) File(rootfs, "$OMA_LIB/${part.lib}").apply { parentFile.mkdirs(); writeText("#!/bin/sh\necho \"${part.lib} \$*\"\n"); setExecutable(true) }
         fun run(vararg words: String): Pair<Int, String> {

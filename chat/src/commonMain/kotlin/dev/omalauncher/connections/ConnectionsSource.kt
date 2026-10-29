@@ -10,6 +10,7 @@ object ConnectionsSource {
     var checking by mutableStateOf(false)
     var repair by mutableStateOf<String?>(null)
     var guide by mutableStateOf<Pair<String, () -> Unit>?>(null)
+    var diagnostic by mutableStateOf<String?>(null)
     var alerts by mutableStateOf("Monitoring is not configured on this screen.")
     var enabled by mutableStateOf(false)
     var paused by mutableStateOf(false)

@@ -109,3 +109,42 @@ owner screen; opening it changes no setting. Runner incidents retain the active
 job guard and can name another authenticated runner for a new chat, without
 moving or stopping existing work. Automatic refresh clears stale repair advice
 when incident evidence changes.
+
+## Owner-authorized circuit breaker slice (in progress)
+
+Phone A relayed Boss's approval in 20261028-215622-7fc8ec: build actual fixed
+service controls and chase missing capability probes, without deploying runner
+changes until Boss gives direct approval in the Mac lane at final install.
+The Mac lane now owns runner GET /services, the fixed service allowlist,
+approval/challenge lifecycle, active-work admission guards, audited launchd
+mappings, real capability probes and durable operation status. Native Android
+orchestration/owner-proof and phone recovery are being built on this lane.
+
+Phone A's refinement 20261028-220739-4e46cc supersedes the long owner how-to:
+blocked/failed cases produce redacted JSON for agents and a one-line summary.
+Records live at ~/.local/share/soma/connections/incidents/ID.json and newest.json.
+`oma connections incident [ID]` and `list` are read-only; `owner-key` reads only
+the public-key export when available. There is deliberately no CLI restart or
+approve verb. Journal writes are atomic, fsynced, process-serialized and file
+locked; identical redacted evidence deduplicates across instances, updates
+last_seen/occurrences, and retains at most 256 records. Checks include HTTP code,
+allowlisted result fields and redacted stderr tails; next_steps distinguish agent
+work from owner-required actions. Source sanitization is repeated at final JSON
+serialization; keys/tokens, cookies, nonce/signature material, JWTs and private
+key blocks never belong in incidents. Records never authorize operations.
+
+The proposed owner boundary is stronger than a caller-supplied `owner:true` or
+an approval nonce visible to any paired agent: each specific restart nonce is
+bound to service/host/expiry and signed using a native auth-per-use Android
+Keystore key. One signature may cover a bounded fixed plan. The Macs must pin
+only the public key at the final owner-approved install; there is no remote key
+enrollment or TOFU. The private key never leaves Android. Agent calls without
+owner authentication fail closed, and fake-runner walks use injected test proof
+with mocked service execution only. Implementation and verification remain
+pending; no real restart, enrollment, permission or deployment was performed.
+
+Primary platform reference for auth-per-use CryptoObject signing:
+[Android Keystore key authorization](https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/keystore/java/android/security/keystore/KeyGenParameterSpec.java).
+Local checks for the new read-only diagnostic CLI: 2/2 Python tests PASS
+(traversal/symlink rejection and no restart/approve verbs); Kotlin redaction,
+canonical dedup and journal tests await the next compile checkpoint.
