@@ -159,3 +159,36 @@ Live controller must bind final owner presence to the exact reviewed immutable
 ticket/wallet and recheck freshness before signing; being signed into Privy alone
 must not count as owner confirmation. UI, SDK compatibility, venue constraints,
 funding route and owner decisions remain unresolved.
+
+## Tryable development APK checkpoint: 0.7.2 / code17
+
+Built5e8ba9a5, merged/synced. Parent design cards hunch-market,
+hunch-market-cover and hunch-market-portrait supply the existing paper/ink style;
+the new native review follows Boss's brief182924. Canvas was unreachable at
+final upload attempt, so its reviewed screenshots are retained for a later
+proposal; no new Approved or Shipped state is claimed.
+
+Lane B: compile and37/37 unit tests PASS. Official hunch.walk91/91 PASS,
+including actual cover and inner market entry/return. Native hunch-order.walk
+60/60 PASS at097c0867; controller, SDK and Kotlin sources are byte-identical at
+5e8ba9a5, so this result stands without a redundant rerun. The only app delta is
+the missed original cover CTA, version and license attribution. Critic reviewed
+all22 LOOKs; B viewed both contact sheets, the full cover/inner review images,
+then the updated17 main LOOKs after catching the missing cover route personally.
+Both SDK offline tests passed (including generated Android asset/native RPC).
+
+Mac APK SHA256 d8560401d82fd175124960ce2345a21a204ceb1aadd5ecf0dc25a5a8b4090fec.
+Phone-signed staged APK: /root/Inbox/hunch-5e8ba9a5-17-signed.apk
+SHA256 9f9830ab485b2f808b4b9b525deee485f981e89e050dcea6178085721a2dc54a.
+Verified dev.omalauncher.hunch0.7.2/code17 and signer85a7a713578814a4b779ce4fa7d0ed13aa48a81b61cc8e91b139f32dad576a18,
+matching installed Hunch's key. Not installed by B. A notified in mail
+20261028-201452-61b054 with APK path, checks and exact limitations.
+
+Evidence: /root/Inbox/hunch-5e8ba9a5-reviewed (Pocket20261028201000-464668)
+and /root/Inbox/hunch-097c0867-reviewed (Pocket20261028195531-3079bb).
+No real wallet access, real signatures, funds or mainnet orders by any agent.
+The unfunded disposable-key testnet rejection only proves signer/wire formation;
+funded testnet acceptance, real embedded-wallet signing and physical-phone
+installation/use remain unverified owner-only steps. Unknown results remain
+blocked until authoritative venue status: signature expiry is not evidence an
+order was never accepted before expiry. No expiry-based automatic clearance.

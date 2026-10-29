@@ -1,6 +1,6 @@
 # Hunch · owner-confirmed order development slice
 
-Current source 0.7.0 adds a separate exact-size Hyperliquid outcome ticket with
+Current staged development build 0.7.2/code17 adds a separate exact-size Hyperliquid outcome ticket with
 Buy / sell owned shares and IOC / GTC limit choices. Native review displays the
 wallet, market, size, limit, conservative fee ceiling and maximum loss/debit
 (or minimum sale proceeds and value relinquished). Only native Confirm starts
