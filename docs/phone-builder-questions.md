@@ -78,3 +78,17 @@ walk now scrolls to each actual option, checks landscape Send visibility, return
 to portrait for its final pick (the runner's center swipe otherwise hits chat),
 and repeats the final-choice send on unfolded. No test failure is waived; a clean
 latest-build rerun is required before reporting this slice complete.
+
+Final emulator checkpoint (2026-10-28): official builder-question walk at
+69f50057 with cached f1f3197d preview APK passes 41/41, zero failures. The
+unfolded script swipes inside the form column and reveals Choice 4 above the
+fixed footer. Cover and unfolded both show Answers sent and log the builder
+allow reply with updatedInput and all four answers. Waiting-question 44/44 and
+Skip 26/26 stand; targeted compile/unit checks were 109/109 PASS. Critic reviewed
+all four builder LOOKs; Phone B also inspected the final contact sheet (cover,
+landscape, receipt, unfolded): Send stays visible and the final option explicitly
+says Choose and send answers. Evidence: Pocket 20261028202740-58a3ec; local copy
+/root/Inbox/builder-question-69f50057-reviewed/. No scratch tool results counted.
+Real-phone notification routing, actual builder tool-result delivery and owner
+check remain deferred until the combined install. No real questions answered or
+phone install performed for this checkpoint.
