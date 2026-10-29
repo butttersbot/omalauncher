@@ -137,19 +137,19 @@ class ChatTabsTest {
     private val book = TabMeta(chats = listOf(chatA, chatMac, chatNew))
     private fun chatThread(chat: NewChat, name: String = NEW_CHAT_NAME, state: ThreadState = ThreadState.Idle) = AgentThread(chat.key, name, state, "", "")
 
-    @Test fun theLiveThreadsAreShownAndPinnedOnesComeFirstAfterOma() {
+    @Test fun liveThreadsUseActionPriorityAndPinsKeepMembership() {
         // The live set (liveThreads, AgentTilesTest) has the archived ones out already.
-        val live = listOf(phone, pond)
+        val live = listOf(pond, phone)
         assertEquals(listOf(OMA_TAB, "mac:t-pond", PHONE_THREAD), chatTabs(shownThreads(live, pinned = listOf("mac:t-pond"))))
-        assertEquals(threads, shownThreads(threads, emptyList()))
+        assertEquals(listOf(pond, ff4, phone), shownThreads(threads, emptyList()))
         // A pin of a tab that is not shown changes nothing of the others' order.
         assertEquals(live, shownThreads(live, listOf("mac:t-ff4")))
     }
 
     /** A thread past its 12 hours has no dot, but its tab still opens from a receipt or a tile he keeps on another page. */
     @Test fun theTabAskedForIsShownWhileItIsOpenThoughItsThreadRested() {
-        val live = listOf(phone, pond)
-        assertEquals(listOf(phone, pond, ff4), shownThreads(live, emptyList(), threads, emptySet(), wanted = "mac:t-ff4"))
+        val live = listOf(pond, phone)
+        assertEquals(listOf(pond, ff4, phone), shownThreads(live, emptyList(), threads, emptySet(), wanted = "mac:t-ff4"))
         assertEquals("mac:t-ff4", openTab("mac:t-ff4", shownThreads(live, emptyList(), threads, emptySet(), wanted = "mac:t-ff4")))
         // Not twice, not an archived one, and not one that is no thread's.
         assertEquals(live, shownThreads(live, emptyList(), threads, emptySet(), wanted = "mac:t-pond"))
@@ -164,8 +164,8 @@ class ChatTabsTest {
     /** Boss, 2026-10-21: Phone B's tab always on, to be written to while idle; a builder that rested past its hours stays. */
     @Test fun theBuildersTabsAreAlwaysShown() {
         val b = AgentThread(dev.omalauncher.assist.PHONE_THREAD_B, "Phone B", ThreadState.Idle, "", "idle")
-        assertEquals(listOf(phone, b, pond), shownThreads(listOf(pond), emptyList(), listOf(phone, b, pond)))
-        assertEquals(listOf(phone, b, pond), shownThreads(listOf(phone, pond), emptyList(), listOf(phone, b, pond)))
+        assertEquals(listOf(pond, phone, b), shownThreads(listOf(pond), emptyList(), listOf(phone, b, pond)))
+        assertEquals(listOf(pond, phone, b), shownThreads(listOf(phone, pond), emptyList(), listOf(phone, b, pond)))
     }
 
     /** The critic's case: after ＋ the new tab showed as "NEW C…" and the ＋ was off the strip. */

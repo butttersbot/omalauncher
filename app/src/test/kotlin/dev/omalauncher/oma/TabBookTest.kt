@@ -142,7 +142,7 @@ class TabBookTest {
         val newer = harbour.started("c2", t0 + 3 * 60_000)
         assertEquals("c2", emptyChat(newer, emptyList()))
         assertNull(emptyChat(harbour, emptyList()))
-        assertEquals(listOf("chat:c1", "chat:c2"), strip(newer, emptyList(), t0 + 4 * 60_000))
+        assertEquals(listOf("chat:c2", "chat:c1"), strip(newer, emptyList(), t0 + 4 * 60_000))
     }
 
     /** A new chat lives [AGENT_TILE_IDLE_HOURS] from its last use, as any thread does, and not a moment more. */

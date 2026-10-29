@@ -31,10 +31,10 @@ class PhoneCTest {
         assertEquals(PHONE_THREAD_C, lastTurnTab(listOf(toA, toB, toC)))
         assertEquals(BuilderId.C, tabBuilder(PHONE_THREAD_C))
         assertEquals(TabStop.Builder(BuilderId.C), tabStop(PHONE_THREAD_C, cThread, TabMeta()))
-        // Always on the strip, after A and B, before the Mac's threads.
+        // Always on the strip; active C precedes idle threads, then the rest are newest first.
         val mac = AgentThread("mac:t1234abcd", "work", ThreadState.Idle, "", "idle", worked = 9)
         val strip = shownThreads(listOf(mac), emptyList(), listOf(cThread, AgentThread("phone", "Phone A", ThreadState.Idle, "", "idle"), AgentThread("phone-b", "Phone B", ThreadState.Idle, "", "idle")))
-        assertEquals(listOf("phone", "phone-b", PHONE_THREAD_C, "mac:t1234abcd"), strip.map { it.key })
+        assertEquals(listOf(PHONE_THREAD_C, "mac:t1234abcd", "phone", "phone-b"), strip.map { it.key })
     }
 
     @Test fun theFrontAgentAndTheStatusFileKnowItOnceItHasWorked() {

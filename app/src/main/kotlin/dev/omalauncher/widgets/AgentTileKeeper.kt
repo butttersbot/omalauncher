@@ -73,7 +73,7 @@ class AgentTileKeeper(
                 is AgentWrite.Place -> place(write, scraps(write.page) ?: continue)
             }
         }
-        // In rank order: the threads at work first, then the most recent (Boss, 2026-10-24).
+        // In shared rank order: waiting on Boss, at work, then the rest by recency (Boss, 2026-10-29).
         agentsPage(notebook.pages)?.let { page ->
             val at = notebook.threadTiles().filterValues { it == page }.keys.mapNotNull { key -> notebook.threadTileCell(key)?.let { key to it } }.toMap()
             val moves = agentTileCells(plan.order, at)

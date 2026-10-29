@@ -187,7 +187,7 @@ class AgentThreadsTest {
         assertEquals("Mac", macThreadNow(null, id, emptyList(), emptyList(), false).name)
     }
 
-    @Test fun theBuilderComesFirstThenTheMacsThreadsNewestWorkedFirst() {
+    @Test fun requestsForBossComeFirstThenWorkAndRecentThreads() {
         val view = MacView(
             listOf(thread(threadId = "t-old", name = "Old", lastWorked = 10), thread(threadId = "t-new", name = "New", lastWorked = 30), thread(threadId = "t-never", name = "Never")),
             reachable = true, listed = true,
@@ -195,9 +195,9 @@ class AgentThreadsTest {
         val tasks = listOf(build(1, TaskStatus.Done), mac(25_000, TaskStatus.Done, threadId = "t-gone"), mac(40_000, TaskStatus.Done, threadId = "t-old"))
         val threads = agentThreads(tasks, BuilderNow(), view, mapOf("t-new" to listOf(ThreadAsk("Bash", "git"))))
         // t-old was sent something after t-new last worked; t-gone is known only by the request once handed to it.
-        assertEquals(listOf(PHONE_THREAD, PHONE_THREAD_B, PHONE_THREAD_C, "mac:t-old", "mac:t-new", "mac:t-gone", "mac:t-never"), threads.map { it.key })
-        assertEquals(ThreadState.NeedsOk, threads[4].state)
-        assertEquals("FF4", threads[5].name)
+        assertEquals(listOf("mac:t-new", "mac:t-old", "mac:t-gone", PHONE_THREAD, PHONE_THREAD_B, PHONE_THREAD_C, "mac:t-never"), threads.map { it.key })
+        assertEquals(ThreadState.NeedsOk, threads.single { it.key == "mac:t-new" }.state)
+        assertEquals("FF4", threads.single { it.key == "mac:t-gone" }.name)
         // With no Mac at all there are the builders alone.
         assertEquals(listOf(PHONE_THREAD, PHONE_THREAD_B, PHONE_THREAD_C), agentThreads(listOf(build(1, TaskStatus.Done)), BuilderNow(), MacView()).map { it.key })
     }
@@ -230,8 +230,8 @@ class AgentThreadsTest {
         // B working with no entry yet is shown, and its approval is its own.
         val asking = phoneThreads(listOf(toA), mapOf(BuilderId.B to BuilderNow(working = true, asks = listOf(ThreadAsk("Bash", "git")))))
         assertEquals(ThreadState.Idle, asking[0].state); assertEquals(ThreadState.NeedsOk, asking[1].state)
-        // Among every thread the builders come first, A before B.
-        assertEquals(listOf(PHONE_THREAD, PHONE_THREAD_B, PHONE_THREAD_C), agentThreads(listOf(toA, toB), BuilderNow(), MacView(), second = BuilderNow(working = true)).map { it.key })
+        // Builders remain present; working B outranks idle A.
+        assertEquals(listOf(PHONE_THREAD_B, PHONE_THREAD, PHONE_THREAD_C), agentThreads(listOf(toA, toB), BuilderNow(), MacView(), second = BuilderNow(working = true)).map { it.key })
     }
 
     /** Boss 2026-10-24: a third phone agent, "Phone C", there always as B is, reading only its own entries. */
@@ -239,12 +239,12 @@ class AgentThreadsTest {
         val toA = build(1, TaskStatus.Done, result = "Tile made.")
         val toC = build(2, TaskStatus.Running, "check the news").copy(builder = "C")
         val threads = agentThreads(listOf(toA, toC), BuilderNow(), MacView(), third = BuilderNow(working = true, label = "Using Bash"))
-        assertEquals(listOf(PHONE_THREAD, PHONE_THREAD_B, PHONE_THREAD_C), threads.map { it.key })
-        assertEquals("Phone C", threads[2].name)
-        assertEquals(ThreadState.Working, threads[2].state); assertEquals(2L, threads[2].worked)
-        assertEquals(ThreadState.Idle, threads[1].state); assertNull(threads[1].worked)
-        assertEquals(ThreadState.Idle, threads[0].state)
-        assertFalse(threads[2].mac)
+        assertEquals(listOf(PHONE_THREAD_C, PHONE_THREAD, PHONE_THREAD_B), threads.map { it.key })
+        assertEquals("Phone C", threads.single { it.key == PHONE_THREAD_C }.name)
+        assertEquals(ThreadState.Working, threads.single { it.key == PHONE_THREAD_C }.state); assertEquals(2L, threads.single { it.key == PHONE_THREAD_C }.worked)
+        assertEquals(ThreadState.Idle, threads.single { it.key == PHONE_THREAD_B }.state); assertNull(threads.single { it.key == PHONE_THREAD_B }.worked)
+        assertEquals(ThreadState.Idle, threads.single { it.key == PHONE_THREAD }.state)
+        assertFalse(threads.single { it.key == PHONE_THREAD_C }.mac)
     }
 
     @Test fun separateWorkWaitingForANewThreadIsNotQueuedOnTheBusyOne() {
@@ -273,17 +273,17 @@ class AgentThreadsTest {
         val busy = BuilderNow(working = true, label = "Using Edit", since = 20)
         val view = MacView(listOf(thread(MacThreadStatus.Working, threadId = "t-new", name = "FF4 2"), thread()), reachable = true)
         val all = agentThreads(tasks, busy, view, chats = listOf(onMac, fresh), names = mapOf("chat:c3" to "Worktrees"))
-        assertEquals(listOf(PHONE_THREAD, PHONE_THREAD_B, PHONE_THREAD_C, macThreadKey(id), "chat:c2", "chat:c3"), all.map { it.key })
-        val phone = all[0]
+        assertEquals(listOf("chat:c2", PHONE_THREAD, "chat:c3", PHONE_THREAD_B, PHONE_THREAD_C, macThreadKey(id)), all.map { it.key })
+        val phone = all.single { it.key == PHONE_THREAD }
         assertEquals(ThreadState.Working, phone.state); assertEquals("working", phone.label)
         // The Mac thread made for a chat is that chat, and not a tab of its own besides.
-        val menu = all[4]
+        val menu = all.single { it.key == "chat:c2" }
         assertEquals(NEW_CHAT_NAME, menu.name); assertEquals(ThreadState.Working, menu.state); assertTrue(menu.mac)
-        assertEquals("Worktrees", all[5].name); assertEquals("done", all[5].label); assertEquals("A second checkout.", all[5].doing)
+        assertEquals("Worktrees", all.single { it.key == "chat:c3" }.name); assertEquals("done", all.single { it.key == "chat:c3" }.label); assertEquals("A second checkout.", all.single { it.key == "chat:c3" }.doing)
         // A chat with nothing in it is new; one whose words wait for a new thread on the Mac is at work, and says so.
-        assertEquals("new", agentThreads(emptyList(), BuilderNow(), MacView(), chats = listOf(fresh)).last().label)
+        assertEquals("new", agentThreads(emptyList(), BuilderNow(), MacView(), chats = listOf(fresh)).single { it.key == fresh.key }.label)
         val starting = ChatTask(50, "→ FF4 2", "go", status = TaskStatus.Queued, thread = id, threadName = "FF4 2", fresh = true, chat = "c3")
-        val making = agentThreads(listOf(starting), BuilderNow(), MacView(), chats = listOf(fresh)).last()
+        val making = agentThreads(listOf(starting), BuilderNow(), MacView(), chats = listOf(fresh)).single { it.key == fresh.key }
         assertEquals(ThreadState.Working, making.state); assertEquals(MAC_MAKING, making.doing)
     }
 
@@ -295,15 +295,15 @@ class AgentThreadsTest {
     @Test fun aNewChatIsTheMacsBeforeItHasAThreadThere() {
         val fresh = NewChat("c3", 3)
         val answered = ChatTask(40, QUICK_AGENT, "what is a worktree", result = "A second checkout.", status = TaskStatus.Done, chat = "c3")
-        val waits = agentThreads(listOf(answered), BuilderNow(), MacView(reachable = true), chats = listOf(fresh)).last()
+        val waits = agentThreads(listOf(answered), BuilderNow(), MacView(reachable = true), chats = listOf(fresh)).single { it.key == fresh.key }
         assertTrue(waits.mac); assertTrue(waits.unplaced); assertTrue(waits.reachable)
-        val empty = agentThreads(emptyList(), BuilderNow(), MacView(), chats = listOf(fresh)).last()
+        val empty = agentThreads(emptyList(), BuilderNow(), MacView(), chats = listOf(fresh)).single { it.key == fresh.key }
         assertTrue(empty.mac); assertFalse(empty.reachable)
         val unsent = ChatTask(41, QUICK_AGENT, "list the files", result = MAC_CHAT_UNREACHABLE, status = TaskStatus.Dropped, chat = "c3")
-        val away = agentThreads(listOf(unsent), BuilderNow(), MacView(), chats = listOf(fresh)).last()
+        val away = agentThreads(listOf(unsent), BuilderNow(), MacView(), chats = listOf(fresh)).single { it.key == fresh.key }
         assertEquals(ThreadState.Attention, away.state); assertEquals(NEEDS_ATTENTION, away.label)
         // Bound, it is its thread, and has a place on the Mac.
-        val bound = agentThreads(emptyList(), BuilderNow(), MacView(reachable = true), chats = listOf(NewChat("c2", 2, mac = "t-new"))).last()
+        val bound = agentThreads(emptyList(), BuilderNow(), MacView(reachable = true), chats = listOf(NewChat("c2", 2, mac = "t-new"))).single { it.key == "chat:c2" }
         assertTrue(bound.mac); assertFalse(bound.unplaced)
     }
 

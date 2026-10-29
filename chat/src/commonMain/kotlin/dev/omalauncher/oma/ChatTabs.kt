@@ -40,9 +40,9 @@ fun chatTabs(threads: List<AgentThread>, soma: Boolean = true): List<String> = (
  * it is one of [all], every thread there is, and not [archived], the keys archived now.
  */
 fun shownThreads(live: List<AgentThread>, pinned: List<String>, all: List<AgentThread> = emptyList(), archived: Set<String> = emptySet(), wanted: String? = null): List<AgentThread> {
-    // Bots are always shown, first, however long they have rested (soma-bots PRD §6); then the rest as before.
+    // Bots stay visible however long they rest; the shared action priority determines their position.
     val bots = (all + live).filter { it.bot != null }.distinctBy { it.key }
-    // The phone's builders are always there too, first, however long they have rested, so either can be written to
+    // The phone's builders stay visible too, however long they have rested, so either can be written to
     // while idle (Boss, 2026-10-21: "Phone B's tab always on").
     fun builder(t: AgentThread) = BuilderId.ofThread(t.key) != null
     val builders = (live + all).filter(::builder).distinctBy { it.key }.sortedBy { BuilderId.ofThread(it.key)?.ordinal ?: 0 }

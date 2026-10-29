@@ -9,7 +9,7 @@ import java.util.Locale
 
 /*
  * All chats (desktop parity slice 4, Boss approved the mockup design/soma-all-chats-mockup.html on 2026-10-28): every
- * chat and thread there is, on every computer and the Fold, newest first, in groups by day, with a search over their
+ * chat and thread there is, on every computer and the Fold, requests for Boss first, then work and the rest by recency, with a search over their
  * names, his words and the answers kept here, and each thread's last words as its computer says them. Tapping one opens
  * it as a tab; an archived one comes back. The decisions are plain functions here; AllChatsPanel draws them.
  */
@@ -59,7 +59,7 @@ fun allChatWhen(worked: Long?, now: Long, zone: ZoneId = ZoneId.systemDefault())
 }
 
 /**
- * The rows, newest first: every one of [all] (what the host lists, archived ones too), each with what is known of it:
+ * The rows, in shared session priority: every one of [all] (what the host lists, archived ones too), each with what is known of it:
  * [shown] the keys in the tab strip now, [archived] the archived keys, [kind] the agent of a key ("" when none is known),
  * and [entries] its entries here, whose last answer (or its last words, as its computer said) is what the row shows.
  */
@@ -115,4 +115,4 @@ fun allChatSnippet(text: String, query: String, around: Int = 40): String {
 /** What stands under the list when it is searched: how many of how many match. */
 fun allChatCount(matching: Int, of: Int, query: String): String =
     if (query.isBlank()) "$of ${if (of == 1) "chat" else "chats"}, newest first."
-    else "$matching of $of ${if (of == 1) "chat" else "chats"} match “${query.trim()}”. Clear the field to see them all, newest first."
+    else "$matching of $of ${if (of == 1) "chat" else "chats"} match “${query.trim()}”. Clear the field to see them all, requests for you first."

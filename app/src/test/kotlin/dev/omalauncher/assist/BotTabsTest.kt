@@ -25,7 +25,7 @@ class BotTabsTest {
         assertEquals(100, listed("""{"id": "t3", "bot": {"id": "x", "memory": 900}}""").bot!!.memory)
     }
 
-    @Test fun botsComeFirstNamedWithTheirEmojiAndAreAlwaysShown() {
+    @Test fun botsKeepTheirNamesAndVisibilityInSharedPriorityOrder() {
         val now = System.currentTimeMillis() / 1000
         val view = MacView(threads = listOf(
             thread("t1", "work", now),
@@ -34,11 +34,11 @@ class BotTabsTest {
         ))
         val all = agentThreads(emptyList(), BuilderNow(), view)
         val macs = all.filter { it.mac }
-        assertEquals(listOf("Linux setup", "Writer", "work"), macs.map { it.bot?.name ?: it.name })
-        assertEquals("🐧 Linux setup", macs[0].name)
-        // Live is only the recent one; bots come first, then the always-visible phone builders.
+        assertEquals(listOf("work", "Linux setup", "Writer"), macs.map { it.bot?.name ?: it.name })
+        assertEquals("🐧 Linux setup", macs.single { it.bot?.id == "linux" }.name)
+        // Live is only the recent one; bots and builders stay visible, with rest ranked newest first.
         val shown = shownThreads(live = macs.filter { it.bot == null }, pinned = emptyList(), all = all)
-        assertEquals(listOf("🐧 Linux setup", "Writer", PHONE_THREAD_A_NAME, PHONE_THREAD_B_NAME, PHONE_THREAD_C_NAME, "work"), shown.map { it.name })
+        assertEquals(listOf("work", "🐧 Linux setup", "Writer", PHONE_THREAD_A_NAME, PHONE_THREAD_B_NAME, PHONE_THREAD_C_NAME), shown.map { it.name })
     }
 
     @Test fun aBotsMenuHasNoRenamePinSwitchOrArchive() {

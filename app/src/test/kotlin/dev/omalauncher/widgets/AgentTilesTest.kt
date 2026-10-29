@@ -544,14 +544,14 @@ class AgentTilesTest {
         )
         val threads = listOf(never, ff4, resting, old, AgentThread("chat:c1", "Chat", ThreadState.Idle, "", "done", now - hour, mac = true, unplaced = true))
         val live = liveThreads(threads, stamps, now, listed = false)
-        assertEquals(listOf(ff4.key, resting.key, macThreadKey("t-proof"), "chat:c1"), live.map { it.key })
+        assertEquals(listOf(ff4.key, macThreadKey("t-proof"), "chat:c1", resting.key), live.map { it.key })
         val proof = live.first { it.key == macThreadKey("t-proof") }
         assertEquals("Phone proof", proof.name); assertFalse(proof.reachable); assertEquals(ThreadState.Idle, proof.state); assertEquals(NOT_HEARD_FROM, proof.label)
         // Once the Mac's list is heard without it, it is gone from both.
         assertFalse(macThreadKey("t-proof") in liveThreads(threads, stamps, now, listed = true).map { it.key })
         // Pinned always, archived never.
         val chosen = liveThreads(threads, stamps, now, listed = false, pinned = setOf(old.key), archived = setOf(ff4.key, macThreadKey("t-proof")))
-        assertEquals(listOf(resting.key, old.key, "chat:c1"), chosen.map { it.key })
+        assertEquals(listOf("chat:c1", resting.key, old.key), chosen.map { it.key })
 
         // And the tiles the plan keeps on the Agents page are those very threads.
         val placed = mapOf(threadTileKey(macThreadKey("t-proof")) to "pa", threadTileKey(macThreadKey("t-stale")) to "pa", threadTileKey(old.key) to "pa")
