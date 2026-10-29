@@ -189,6 +189,12 @@ interface ChatHost {
 
     fun canvasOrigin(): String? = null
 
+    /**
+     * What Boss himself just sent, to be signed as his ([BossReceipt]) where this device holds the Canvas key and his
+     * finger sent it. Called only by the composer's send and the question form's; nothing else can make [BossWords].
+     */
+    fun bossSaid(words: BossWords) {}
+
     /** Owner Submit from an artifact, delivered only to its fixed known recipient. */
     fun submitArtifactReply(source: ArtifactReplySource, request: ArtifactReplyRequest, done: (ArtifactReplyResult) -> Unit) {
         done(ArtifactReplyResult(false, "Artifact replies are unavailable on this host."))

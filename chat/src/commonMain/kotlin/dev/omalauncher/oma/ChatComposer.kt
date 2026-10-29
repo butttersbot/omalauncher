@@ -82,6 +82,17 @@ val SendTo.builder: BuilderId? get() = when (this) {
     else -> null
 }
 
+/** Which conversation the field's words go to, as a signed receipt names it ([BossReceipt]). */
+val SendTo.conversation: String get() = when (this) {
+    SendTo.Oma -> "soma"
+    SendTo.Phone -> "phone:A"
+    SendTo.PhoneB -> "phone:B"
+    SendTo.PhoneC -> "phone:C"
+    is SendTo.Mac -> "mac:$thread"
+    is SendTo.Chat -> "chat:$chat"
+    is SendTo.ChatStarting -> "chat:$chat"
+}
+
 /** The new chat the field sends in; empty on every tab that is not one. */
 val SendTo.chat: String get() = when (this) {
     is SendTo.Mac -> chat

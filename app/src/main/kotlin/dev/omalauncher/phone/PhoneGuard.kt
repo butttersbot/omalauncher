@@ -14,6 +14,12 @@ object PhoneGuard {
     /** The commands that touch the screen: each is held to the app the agent opened, and `--in`/`--any` apply to it. */
     val touching = setOf("press", "fill", "click", "type", "scroll", "submit", "tap", "swipe", "back")
 
+    /**
+     * The commands that only look and never change the screen. Every other command marks the next seconds as an
+     * agent's, so nothing Soma's chat sends then is signed as Boss's (BossTouch); an unknown command marks too.
+     */
+    val reading = setOf("status", "screen", "read", "screenshot", "apps", "expect", "find", "plan-receipt", "plan-id", "pages", "board", "stickers", "looks")
+
     /** The commands that put words into a field, which never go into Soma's own chat box unless it is named. */
     val typing = setOf("fill", "type", "submit")
 

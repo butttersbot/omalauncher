@@ -80,14 +80,30 @@ internal class WaitingQuestionDrafts {
 
 /** Re-resolve a saved form's nonce rather than retaining an Activity or an old host callback. */
 internal fun ChatHost.sendWaitingAnswers(key: String, answers: JSONObject, done: (String?) -> Unit) {
+    // His answers, once delivered, are signed as his (BossReceipt): a skip is no answer of his and isn't.
+    // What he was asked, as the card showed it: each question's text, one per line.
+    fun asked(input: String) = runCatching {
+        val qs = JSONObject(input).getJSONArray("questions")
+        (0 until qs.length()).joinToString("\n") { qs.getJSONObject(it).optString("question") }
+    }.getOrDefault("")
+    // Whether his finger sent these is decided now, as he sends: a Mac's answer may come back seconds later.
+    val vouched = BossTouch.mayVouch()
+    fun said(conversation: String, question: String) {
+        if (!dev.omalauncher.assist.questionAnswersSkipped(answers)) bossSaid(BossWords.answered(conversation, key, question, answers, vouched))
+    }
     macPending().firstOrNull { it.ticket == key }?.let { entry ->
-        answerMacQuestions(entry.ticket, answers) { done(dev.omalauncher.assist.macApprovalNotice(it)) }
+        answerMacQuestions(entry.ticket, answers) {
+            val notice = dev.omalauncher.assist.macApprovalNotice(it)
+            if (notice == null) said("mac:${entry.threadId}", asked(entry.request.input))
+            done(notice)
+        }
         return
     }
     builders().values.flatMap { it.pending }.firstOrNull { it.nonce == key }?.let { entry ->
         val outcome = runCatching { answerBuilderQuestions(entry, answers) }.getOrElse {
             done("These answers could not be sent. Review every question and try again."); return
         }
+        if (outcome == dev.omalauncher.assist.ApprovalOutcome.Decided) said("phone", asked(entry.approval.input.toString()))
         done(when (outcome) {
             dev.omalauncher.assist.ApprovalOutcome.Decided -> null
             dev.omalauncher.assist.ApprovalOutcome.Locked -> "Unlock your phone to answer"

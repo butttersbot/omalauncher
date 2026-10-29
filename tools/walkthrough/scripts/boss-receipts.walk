@@ -1,0 +1,8 @@
+# Boss's own words, signed (design/soma-canvas/DESIGN-GATE.md amendment 77d43019; BossReceipt.kt). Nothing to see on
+# the emulator (no Canvas key there): every check is on the real Fold, after promotion, with Soma linked to Canvas.
+[phone] In Soma's chat, Boss types "approve all" and taps send himself: `oma receipt last-boss-message` prints {receipt, sig}; its receipt text is "approve all", kind chat-message, at within the last minute
+[phone] He answers a native question card (an agent's AskUserQuestion) by tapping: `oma receipt last-answer` holds his chosen labels; a Skip leaves no new receipt
+[phone] An agent fills the chat box and presses send through phone control (oma-phone fill/press --in dev.omalauncher.boss, Boss watching and OK with it): no new receipt is written (last-chat.json unchanged)
+[phone] adb shell input text + input tap on the send button: no new receipt is written
+[phone] Soma not linked on Canvas (no key yet): sending works as before and no receipt is written
+[phone] soma-canvas approve-from-chat CARD --receipt <(oma receipt last-boss-message) records the card as Approved with his words quoted (once taebc3f66 ships it)

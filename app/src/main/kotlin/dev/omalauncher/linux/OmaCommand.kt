@@ -53,7 +53,29 @@ val OMA_PARTS = listOf(
     OmaPart("drop", "drop", oldName = null),
     OmaPart("msg", "msg", oldName = null),
     OmaPart("front", "front", oldName = null),
+    OmaPart("receipt", "receipt", oldName = null),
 )
+
+/**
+ * `oma receipt`, Boss's own words as Soma signed them (dev.omalauncher.oma.BossReceipts writes them; design gate
+ * amendment 77d43019). Read-only: the signature, made only inside Soma for what his own finger sent, is the proof.
+ */
+const val OMA_RECEIPT_SCRIPT = """#!/bin/sh
+# Omalauncher: `oma receipt`, Boss's own words as Soma signed them. Written by the launcher; changes here are replaced.
+# Soma writes these (BossReceipts.kt); its signature, not this file, is the proof, so reading is all this does.
+dir=${'$'}{OMA_BOSS_RECEIPTS:-/root/.local/share/omalauncher/boss-receipts}
+case ${'$'}{1:-last-boss-message} in
+  last-boss-message | last-message) file=${'$'}dir/last-chat.json ;;
+  last-answer) file=${'$'}dir/last-answer.json ;;
+  last) file=${'$'}dir/last.json ;;
+  list)
+    ls -t "${'$'}dir" 2>/dev/null | grep -v '^last' | grep '\.json${'$'}' | head -n 20 | sed 's/\.json${'$'}//'
+    exit 0 ;;
+  *) file=${'$'}dir/${'$'}(printf %s "${'$'}1" | tr -cd 'A-Za-z0-9-').json ;;
+esac
+[ -s "${'$'}file" ] || { echo "oma receipt: none signed for ${'$'}{1:-last-boss-message} (Soma signs only what Boss's own finger sent, on a Soma linked to Canvas)." >&2; exit 1; }
+cat "${'$'}file"
+"""
 
 /**
  * `oma front`, who answers first in the chat (Boss, 2026-10-18: Grok, with Haiku kept to switch back): `oma front haiku`
@@ -107,6 +129,7 @@ fun omaTools(rootfs: File, dispatcher: () -> ByteArray, drop: () -> ByteArray, m
         Managed(File(rootfs, "$OMA_LIB/msg"), Policy.Owned, executable = true, content = msg) +
         Managed(File(rootfs, "$OMA_LIB/connections"), Policy.Owned, executable = true, content = connections) +
         Managed.text(File(rootfs, "$OMA_LIB/front"), Policy.Owned, executable = true) { OMA_FRONT_SCRIPT } +
+        Managed.text(File(rootfs, "$OMA_LIB/receipt"), Policy.Owned, executable = true) { OMA_RECEIPT_SCRIPT } +
         Managed(File(rootfs, GROKBOT_COMMAND), Policy.Owned, executable = true, content = grokbot)
 
 /** [omaTools] for the provisioner, read from the assets. */
