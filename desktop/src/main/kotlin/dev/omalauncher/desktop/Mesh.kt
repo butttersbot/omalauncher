@@ -113,6 +113,9 @@ object Mesh {
     }.getOrDefault(0 to "")
 
     /** This machine's Tailscale name, its online peers (name to address), and which of them are phones, from `tailscale status --json`. */
+    /** This machine's Tailscale name ([tailnet]'s first): what a runner pairs it by; null when Tailscale can't be asked. */
+    fun selfName(): String? = tailnet().first
+
     private fun tailnet(): Triple<String?, Map<String, String>, Set<String>> = runCatching {
         val p = ProcessBuilder(TailscaleWhois.find(), "status", "--json").apply { environment().putIfAbsent("TERM", "dumb") }.start()
         val status = JSONObject(p.inputStream.bufferedReader().readText()).also { p.waitFor() }

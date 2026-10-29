@@ -46,6 +46,15 @@ most of what it does is shared with the phone from `:chat`.
 - **Notices:** a thread's request for his OK, and a request that ended while the window wasn't in front, come as the
   tray's notifications.
 - `soma --start-at-login` / `--no-start-at-login`: a LaunchAgent on the Mac, an autostart entry on Linux.
+- Settings (2026-10-29): look, start at login, computers (each runner, how to pair another or the phone's sessions, and
+  "check the roads", which is `soma --mesh`), and Enter sends. The rows are the phone's (`SettingsList` in `:chat`).
+  - On the Mac: the tray's Settings…, Soma > Settings… in the app menu, or Cmd+,.
+  - On Linux: Ctrl+, in a Soma window, or `soma --settings` (it opens them in the running Soma; good for a Hyprland
+    keybind). `soma --register-links` also writes a "Soma Settings" entry for Walker.
+  - Java's tray doesn't show on Omarchy: Waybar takes StatusNotifierItem icons, and Java only speaks XEmbed
+    (`SystemTray.isSupported()` is false on MG1).
+  - Started from ssh on Omarchy, Soma needs Hyprland's Java settings, or its window is drawn small in one corner:
+    `_JAVA_AWT_WM_NONREPARENTING=1 JAVA_TOOL_OPTIONS=-Dsun.java2d.uiScale=2`. Hyprland gives them to what it starts.
 - **Links** (slice 10): `soma://thread/<computer>/<thread>` opens that thread's tab (or the chat that lives on it),
   `soma://chat/<id>` a new chat's, `soma://soma` the Soma tab. A link only picks a tab; it sends nothing. Soma.app
   registers the scheme in its Info.plist and takes links as Apple events; on Linux `soma --register-links` writes an
