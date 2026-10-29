@@ -820,13 +820,23 @@ $('pmenu').addEventListener('click', e => {
   if (d === 'remove') pocketRemove(i.id);
   if (d === 'select') startSelect('p:' + i.id);
 });
+let lastPointer = 'mouse';   // what the last press was: a touch's long-press is choosing, a mouse's right-click the menu
 document.addEventListener('contextmenu', e => {
+  // A WebView turns a touch long-press into a contextmenu too (and may cancel the press, so the timer below never
+  // fires): on touch it starts choosing, never the menu (2026-10-28 walks: the menu opened over the bar).
+  if (lastPointer !== 'mouse') {
+    e.preventDefault();
+    const s = e.target.closest?.('[data-sel]');
+    if (s && !selecting) { clearTimeout(pressTimer); pressed = true; startSelect(s.dataset.sel); }
+    return;
+  }
   const t = e.target.closest?.('[data-menu]');
   if (!t) return;
   e.preventDefault();
   pocketMenu(t.dataset.menu, e.clientX, e.clientY);
 });
 document.addEventListener('pointerdown', e => {
+  lastPointer = e.pointerType || 'mouse';
   pressed = false;   // a new touch is never the tail of the last long-press
   if (!e.target.closest?.('#pmenu')) hideMenu();
   // On the phone a long-press starts choosing several, that one first (Boss, 2026-10-28); its menu is the bar's More.
