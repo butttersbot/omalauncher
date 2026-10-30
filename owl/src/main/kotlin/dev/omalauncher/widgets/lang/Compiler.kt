@@ -217,6 +217,10 @@ class Compiler private constructor(
         val background = props["background"]?.let { if (gradient(it.value)) since(GRADIENT_BACKGROUND, it.pos); ex(it.value, root) }
         // Whether the status bar stays over a face, read as it changes: a face can hide it for a game and bring it back.
         val statusBar = props["statusBar"]?.let { ex(it.value, root) }
+        val over = props["over"]?.let { p ->
+            since("over", p.pos)
+            constant(p.value, "over").toString().also { if (!ART_KEY.matches(it)) fail("over names an art panel's picture, as oma-phone board does: art: and its 16 characters", p.pos) }
+        }
         checkLevel(level)
 
         return Program(
@@ -229,10 +233,7 @@ class Compiler private constructor(
             kind = ast.kind,
             minSize = props["minSize"]?.let { cells(it) } ?: (1 to 1),
             // A face goes left of page 1 by default: 0, and -1, -2, ... further left. A tile never does.
-            over = props["over"]?.let { p ->
-                since("over", p.pos)
-                constant(p.value, "over").toString().also { if (!ART_KEY.matches(it)) fail("over names an art panel's picture, as oma-phone board does: art: and its 16 characters", p.pos) }
-            },
+            over = over,
             page = props["page"]?.let { constInt(it) }?.let { if (isFace) it.coerceIn(-MAX_PAGE, MAX_PAGE) else it.coerceIn(1, MAX_PAGE) } ?: if (isFace) 0 else 1,
             order = props["order"]?.let { constInt(it) } ?: 0,
             padding = props["padding"]?.let { constant(it.value, "padding").num() } ?: 12.0,
