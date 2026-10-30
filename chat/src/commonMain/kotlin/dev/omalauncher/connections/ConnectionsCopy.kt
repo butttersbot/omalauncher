@@ -117,11 +117,14 @@ fun incidentCopy(incident: ConnectionIncident, snapshot: ConnectionsSnapshot, no
     }
 }
 
+/** A monitoring round's change of incidents clears the sheet's line, unless it says what a restart waits on and nothing else needs the sheet: a new incident speaks for itself, and the row keeps saying it. */
+fun repairLineStays(repair: String?, incidentsNow: Boolean) = repair?.startsWith("Restarted") == true && !incidentsNow
+
 /** The sheet's line after "Restarted": once a row says real traffic has passed since, the line says so too. */
 fun repairAfterTraffic(repair: String?, snapshot: ConnectionsSnapshot): String? {
     val said = repair?.takeIf { it.startsWith("Restarted · ") } ?: return repair
     val (host, service) = said.removePrefix("Restarted · ").substringBefore(". ").split(": ").takeIf { it.size == 2 } ?: return repair
-    val confirmed = snapshot.readings.flatMap { it.checks }.any { it.name == "restart_confirmed" && it.fields["service"] == service && it.fields["host"] == host }
+    val confirmed = snapshot.readings.flatMap { it.checks }.any { it.name == "restart_confirmed" && it.result == "pass" && it.fields["service"] == service && it.fields["host"] == host }
     return if (confirmed) "Confirmed · $host: $service. Real traffic has passed since the restart." else repair
 }
 

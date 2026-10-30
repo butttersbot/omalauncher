@@ -384,6 +384,9 @@ class Modes(Base):
         S.verifiable = lambda s: True
         try:
             op = self.op(self.control.approve('tailscaled', self.approve_body(self.control.request('tailscaled'))))
+            self.assertTrue(any(c['code'] == 'never_through_the_helper' for c in op['checks']))
+            self.assertEqual(self.backend.calls, [])
+            op = self.op(self.control.approve('whisper', self.approve_body(self.control.request('whisper'))))
         finally:
             S.verifiable = S_verifiable
         self.assertEqual((op['stage'], op['verified']), ('blocked', False))
@@ -502,7 +505,7 @@ class Records(Base):
         self.assertEqual(inv['owner_trust']['state'], 'ready')
         by = {s['id']: s for s in inv['services']}
         self.assertTrue(by['soma']['restart']['supported'])
-        self.assertEqual(by['tailscaled']['restart'].get('blocked_reason'), 'owner_verified_control_broker_unavailable')
+        self.assertEqual(by['tailscaled']['restart'].get('blocked_reason'), 'never_through_the_helper')
         saved_helper, S.helper_installed = S.helper_installed, lambda: True
         self.addCleanup(lambda: setattr(S, 'helper_installed', saved_helper))
         with_helper = {s['id']: s for s in self.control.inventory()['services']}
@@ -840,11 +843,25 @@ class MissingEvidence(Base):
                 break
             time.sleep(0.05)
         self.assertNotIn('restart_note', row)
-        # Still down afterwards: a failure, with no note.
+        # Still down afterwards: a failure, and the row doesn't go by the traffic from before it.
         self.backend.calls.clear()
         self.probe_result = [S.mkcheck('soma_probe', 'soma', 'unreachable', 'fail')]
         op = self.op(self.control.approve('soma', self.approve_body(self.control.request('soma'))))
-        self.assertEqual((op['stage'], op.get('outcome')), ('failed', None))
+        self.assertEqual((op['stage'], op.get('outcome'), op['restarted'] if 'restarted' in op else None), ('failed', None, None))
+        self.assertEqual(by()['soma']['restart_note']['state'], 'unconfirmed')
+        # A date from the future is not traffic since the restart, and a note file an agent wrote nonsense in breaks nothing.
+        future = [S.mkcheck('soma_sync', 'soma', 'x', 'pass', {'last_synced_at': self.clock() + 3_600_000})]
+        self.assertEqual(self.control.restart_notes({'soma': {'checks': future}})['soma']['state'], 'unconfirmed')
+        S._write_private(self.control.records.root / 'restart-notes.json', {'soma': 'unconfirmed', 'tailshare-serve': {'state': 'odd', 'at': 1}, 'canvas': {'state': 'unconfirmed', 'at': 1}})
+        self.assertEqual(self.control.restart_notes({}), {})
+        # Merely unproven is not down: a signed tap still restarts nothing.
+        self.up_before = True
+        self.probe_result = [S.mkcheck('soma_identity', 'soma', 'x', 'unverified')]
+        self.backend.calls.clear()
+        op = self.op(self.control.approve('soma', self.approve_body(self.control.request('soma'))))
+        self.assertEqual((op['stage'], self.backend.calls), ('blocked', []))
+        self.assertTrue(any(c['code'] == 'not_confirmed_down' for c in op['checks']))
+        self.up_before = False
         # Healthy: left alone, and says so. Soma answering with a refusal counts, and proves nothing else.
         self.up_before = True
         self.probe_result = [S.mkcheck('soma_identity', 'soma', 'answers_no_runner_key', 'quiet'), S.mkcheck('soma_sync', 'soma', 'no_recent_sync', 'quiet')]
@@ -1571,6 +1588,10 @@ class HelperInstaller(unittest.TestCase):
         self.assertFalse(binary.exists() or (self.root / 'etc/sudoers.d/soma-service-helper').exists())
         self.assertTrue((support / 'connections-owner-keys.json').exists())
         self.assertEqual(self.run_it('untrust').returncode, 0)
+        # What the phone shows, typed as he reads it, is enough.
+        r = self.run_it('trust', str(self.dir / 'key.json'), self.key_id[:16].upper())
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.run_it('untrust').returncode, 0)
         self.assertFalse((support / 'connections-owner-keys.json').exists())
 
     def owned_ok(self, path):  # above the test's own folder, /tmp's folders are not this user's: only the file's own rules are tested here
@@ -1590,7 +1611,9 @@ class HelperInstaller(unittest.TestCase):
             self.assertEqual(r.returncode, 65, name)
             self.assertFalse((self.root / 'Library/Application Support/Soma/connections-owner-keys.json').exists(), name)
         # A swapped key: sound in itself, and not the one he read on the phone.
-        r = self.run_it('install', 'jacks-mac-pro', str(self.dir / 'key.json'), 'a' * 64, self.sha)
+        for short in (self.key_id[:15], 'not-hex-at-all-at-all'):
+            self.assertEqual(self.run_it('trust', str(self.dir / 'key.json'), short).returncode, 64, short)
+        r = self.run_it('install', 'jacks-mac-pro', str(self.dir / 'key.json'), 'a' * 16, self.sha)
         self.assertEqual(r.returncode, 65)
         self.assertIn("isn't the one you named", r.stderr)
         self.assertFalse(self.root.exists() and (self.root / 'Library/Application Support/Soma/connections-owner-keys.json').exists())

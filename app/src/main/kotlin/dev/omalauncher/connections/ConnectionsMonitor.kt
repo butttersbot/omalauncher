@@ -126,8 +126,7 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
                 main.post {
                     val before = ConnectionsSource.snapshot.incidents(now).map { it.key to it.readings.map { r -> r.state } }
                     val after = result.incidents(now).map { it.key to it.readings.map { r -> r.state } }
-                    // What a restart is still waiting on stays said, whatever else changed.
-                    if (!restore && before != after && ConnectionsSource.repair?.startsWith("Restarted") != true) { ConnectionsSource.repair = null; ConnectionsSource.guide = null }
+                    if (!restore && before != after && !repairLineStays(ConnectionsSource.repair, after.isNotEmpty())) { ConnectionsSource.repair = null; ConnectionsSource.guide = null }
                     ConnectionsSource.repair = repairAfterTraffic(ConnectionsSource.repair, result)
                     ConnectionsSource.snapshot = result
                     ConnectionsSource.diagnostic = diagnostic?.toString(2)

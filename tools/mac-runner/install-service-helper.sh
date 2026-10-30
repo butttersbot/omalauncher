@@ -5,7 +5,7 @@
 #   sudo sh install-service-helper.sh remove                                 takes the helper's sudo rule and binary away; the key stays
 #   sudo sh install-service-helper.sh untrust                                takes the owner's key away: no Restore on this Mac
 #   sh install-service-helper.sh print-sudoers USER                          shows the one sudo rule
-# KEY.json is the phone's export (owner-public-key.json), KEY_ID the fingerprint Boss read on the phone, SHA256
+# KEY.json is the phone's export (owner-public-key.json), KEY_ID the fingerprint Boss read on the phone (its 16 characters, or more), SHA256
 # soma-service-helper.swift's in the reviewed commit. Agents can write this folder and the key file's folder: run a root-owned
 # copy of this script, after comparing its hash, and let the KEY_ID refuse a key that isn't the phone's.
 # The sudo rule allows the helper with no arguments and nothing else, and the helper does nothing without the owner's
@@ -43,7 +43,10 @@ install_trust() {
     case "$id" in *[!0-9a-f]*) die "the key id is not plain hex" ;; esac
     worked=$(printf '%s' "$public" | base64 -D | shasum -a 256 | cut -d' ' -f1)
     [ "$worked" = "$id" ] || die "the key id doesn't match the key"
-    [ "$id" = "$2" ] || die "this key isn't the one you named; nothing was installed"
+    named=$(printf '%s' "$2" | tr A-F a-f)
+    case "$named" in *[!0-9a-f]*|'') die "KEY_ID is the fingerprint the phone shows" 64 ;; esac
+    [ "${#named}" -ge 16 ] || die "KEY_ID is the 16 characters the phone shows, or more" 64
+    case "$id" in "$named"*) ;; *) die "this key isn't the one you named; nothing was installed" ;; esac
     file="$WORK/keys.json"
     printf '{"version": 1, "keys": [{"key_id": "%s", "algorithm": "ecdsa-p256-sha256", "public_key": "%s", "label": "Fold", "device": "fold", "added_at": %s000, "revoked": false}]}\n' \
         "$id" "$public" "$(date +%s)" > "$file"

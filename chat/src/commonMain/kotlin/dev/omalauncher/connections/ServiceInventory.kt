@@ -79,8 +79,8 @@ fun serviceInventoryReadings(reply: ConnectionReply, displayHost: String, source
                     "confirmed" -> "$id was restarted, and real traffic has passed since."
                     else -> null
                 }
-                val noted = if (note == null) evidence else evidence + ConnectionCheck(if (unconfirmed || note.optString("state") == "unconfirmed") "restart_unconfirmed" else "restart_confirmed",
-                    "$host/$id", result = if (note.optString("state") == "confirmed") "pass" else "unverified", fields = mapOf("service" to id, "host" to host))
+                val noted = if (told == null) evidence else evidence + ConnectionCheck(if (note?.optString("state") == "confirmed") "restart_confirmed" else "restart_unconfirmed",
+                    "$host/$id", result = if (note?.optString("state") == "confirmed") "pass" else "unverified", fields = mapOf("service" to id, "host" to host))
                 ConnectionReading(scope, if (unconfirmed) ConnectionState.Unknown else state, told?.let { "$it $detail" } ?: detail, if (proofTime > 0) proofTime else checked,
                     if (state in setOf(ConnectionState.Failed, ConnectionState.Auth, ConnectionState.Ready))
                         "service:$host:$id${if (id == "runner") ":${scope.name}" else ""}" else null,

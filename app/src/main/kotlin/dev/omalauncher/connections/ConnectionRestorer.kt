@@ -17,7 +17,7 @@ internal class ConnectionRestorer(private val context: Context, private val runt
     private val main = Handler(Looper.getMainLooper())
     private val busy = AtomicBoolean(false)
     private val prefs = context.getSharedPreferences("connections-operations", Context.MODE_PRIVATE)
-    private data class Target(val machine: String, val name: String, val client: ServiceControlClient, val approval: ServiceApproval)
+    private data class Target(val machine: String, val line: String, val client: ServiceControlClient, val approval: ServiceApproval)
     private fun publish(summary: String, record: JSONObject? = null) = main.post {
         ConnectionsSource.repair = summary
         record?.let { ConnectionsSource.diagnostic = it.toString(2) }
@@ -48,6 +48,7 @@ internal class ConnectionRestorer(private val context: Context, private val runt
                 val targets = mutableListOf<Target>()
                 val blocked = mutableListOf<ConnectionCheck>()
                 val hosts = mutableSetOf<String>()
+                val pins = mutableMapOf<String, String>()
                 for (machine in readMacMachines(runtime.proot.launcherConfig)) {
                     val client = ServiceControlClient(ConnectionEndpoint(machine.config.url, machine.config.key))
                     val reply = client.inventory()
@@ -61,14 +62,11 @@ internal class ConnectionRestorer(private val context: Context, private val runt
                     require(age in -SERVICE_CLOCK_SKEW_MS..30_000) { "Service inventory is stale or clock differs" }
                     val host = inventory.getString("host")
                     if (!host.matches(Regex("[A-Za-z0-9._-]{1,100}"))) error("Invalid runner identity")
-                    val pin = "host:" + machine.id
-                    val problem = runnerHostProblem(prefs.getString(pin, null), host, hosts)
-                    if (problem != null) {
-                        blocked += ConnectionCheck("runner_host", machine.id, result = "blocked", fields = mapOf("reason" to problem))
+                    if (!hosts.add(host)) {
+                        blocked += ConnectionCheck("runner_host", machine.id, result = "blocked", fields = mapOf("reason" to "Two runners call themselves $host; no repair inferred."))
                         continue
                     }
-                    hosts += host
-                    prefs.edit().putString(pin, host).apply()
+                    pins[machine.id] = host
                     val trust = inventory.optJSONObject("owner_trust")?.optString("state")
                     if (trust != "ready") {
                         blocked += ConnectionCheck("owner_trust", host, reply.code, trust ?: "unknown",
@@ -90,7 +88,7 @@ internal class ConnectionRestorer(private val context: Context, private val runt
                         val response = client.challenge(id)
                         require(response.code == 202) { "Service approval unavailable (HTTP ${response.code})" }
                         val approval = ServiceApproval.parse(JSONObject(response.text).getJSONObject("approval"), id, host, System.currentTimeMillis())
-                        targets += Target(machine.id, machine.name, client, approval)
+                        targets += Target(machine.id, restoreLine(machine.name, prefs.getString("host:" + machine.id, null), host, id), client, approval)
                     }
                 }
                 val phoneRecovery = ConnectionPhoneRecovery(context, runtime)
@@ -104,7 +102,7 @@ internal class ConnectionRestorer(private val context: Context, private val runt
                     busy.set(false); return@execute
                 }
                 val plan = OwnerServicePlan(targets.map { it.approval } + phoneTargets.map { it.approval })
-                val description = (targets.map { "${it.name}: ${it.approval.service}" } + phoneTargets.map {
+                val description = (targets.map { it.line } + phoneTargets.map {
                     if (it.action == ConnectionPhoneRecovery.Action.Keeper) "phone: start missing keeper (no jobs terminated)"
                     else "phone: start missing background watcher; use existing wireless-debugging heal"
                 }).joinToString("\n")
@@ -113,6 +111,8 @@ internal class ConnectionRestorer(private val context: Context, private val runt
                     ConnectionRestoreActivity.launch(context, plan, description) { result -> io.execute repair@ {
                         try {
                             val signed = result.getOrThrow()
+                            // He has seen and signed these names: they are the ones to compare with next time.
+                            prefs.edit().apply { targets.forEach { putString("host:" + it.machine, pins.getValue(it.machine)) } }.apply()
                             require(plan.fresh(System.currentTimeMillis())) { "Owner repair approval expired" }
                             for (target in targets) {
                                 val submittedAt = System.currentTimeMillis()

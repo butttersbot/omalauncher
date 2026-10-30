@@ -1278,7 +1278,9 @@ class Controller:
             blocked = None
             if not installed(service):
                 blocked = 'not_installed'
-            elif mode == 'privileged' and not (helper_installed() and service in HELPER_SERVICES):
+            elif mode == 'privileged' and service not in HELPER_SERVICES:
+                blocked = 'never_through_the_helper'
+            elif mode == 'privileged' and not helper_installed():
                 blocked = 'owner_verified_control_broker_unavailable'
             elif not verifiable(service):
                 blocked = 'incomplete_capability_proof' if MISSING_EVIDENCE.get(service) else 'no_capability_probe'
@@ -1340,19 +1342,26 @@ class Controller:
                                       + '; '.join(missing) + '). Nothing was restarted.')
                 return self._fail(op, 'blocked', 'no_capability_probe', 'This service has no capability check, so a restart could not be verified. Nothing was restarted.')
             # What the owner tapped may have recovered since: a healthy service is left alone.
-            own = healthy_now(service, self._probe_now(service, keys))
+            now_checks = self._probe_now(service, keys)
+            own = healthy_now(service, now_checks)
             if own:
                 op['restarted'] = False
                 op['outcome'] = 'already_healthy'
                 op['checks'].extend(own)
                 return self._save(op, stage='restored', verified=True)
+            if not any(c.get('result') == 'fail' and not (c.get('fields') or {}).get('capability') for c in now_checks):
+                return self._fail(op, 'blocked', 'not_confirmed_down', 'This service could not be shown to be down just now. Nothing was restarted.')
+            if mode == 'privileged' and service not in HELPER_SERVICES:
+                return self._fail(op, 'blocked', 'never_through_the_helper', 'This one runs as root from a file an agent can change, so it is never restarted from here. Nothing was restarted.')
             with self.gate.exclusive(self.work):
                 op['checks'].append(mkcheck('work_idle', 'runner', 'idle', 'pass', {'working': 0, 'waiting': 0, 'queued': 0, 'background': 0, 'locks_held': len(self.gate.held)}))
                 self._save(op, stage='restoring')
                 if mode == 'gui':
                     self.backend.kickstart_gui(service)
+                    self._note_restart(service)
                 elif mode == 'privileged':
                     self.backend.privileged(service, proof)
+                    self._note_restart(service)
                 else:
                     self._save(op, stage='verifying')
                     self.backend.exit_for_relaunch()  # launchd relaunches; resume() verifies from the journal
@@ -1369,6 +1378,9 @@ class Controller:
             self._fail(op, 'failed', 'restart_error', redact(str(e))[:300])
 
     def _note_restart(self, service):
+        """Said as soon as it has happened: one slow to come back still isn't vouched for by the traffic from before it."""
+        if service not in TRAFFIC_PROOF:
+            return
         with self.lock:
             notes = self._restart_notes()
             notes[service] = {'at': self.clock(), 'state': 'unconfirmed'}
@@ -1377,7 +1389,8 @@ class Controller:
     def _restart_notes(self):
         with contextlib.suppress(OSError, ValueError):
             notes = json.loads((self.records.root / 'restart-notes.json').read_text())
-            return notes if isinstance(notes, dict) else {}
+            return {service: note for service, note in notes.items() if service in TRAFFIC_PROOF and isinstance(note, dict)
+                    and note.get('state') in ('unconfirmed', 'confirmed') and isinstance(note.get('at'), int)} if isinstance(notes, dict) else {}
         return {}
 
     def restart_notes(self, rows):
@@ -1389,7 +1402,8 @@ class Controller:
                     name, field = TRAFFIC_PROOF[service]
                     check = next((c for c in rows.get(service, {}).get('checks', []) if c.get('check') == name), None)
                     last = (check or {}).get('fields', {}).get(field)
-                    if isinstance(last, int) and last > note.get('at', 0):
+                    # A stamp from the future (a clock jump, a file's own date) isn't traffic since the restart.
+                    if isinstance(last, int) and note['at'] < last <= self.clock() + 60_000:
                         notes[service], changed = {**note, 'state': 'confirmed', 'confirmed_at': last}, True
                 elif note.get('state') == 'confirmed' and self.clock() - note.get('confirmed_at', 0) > CONFIRMED_NOTE_MS:
                     del notes[service]
@@ -1415,7 +1429,6 @@ class Controller:
                 op['checks'].extend(checks)
                 op['restarted'] = True
                 op['outcome'] = 'restarted_unconfirmed'
-                self._note_restart(service)
                 return self._save(op, stage='interrupted', verified=False)
             if service not in TRAFFIC_PROOF and checks and all(c['result'] == 'pass' for c in checks):  # unsupported or unverified is never success
                 op['checks'].extend(checks)

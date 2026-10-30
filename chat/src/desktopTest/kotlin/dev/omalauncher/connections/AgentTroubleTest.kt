@@ -109,10 +109,13 @@ class AgentTroubleTest {
         assertEquals("Other words", repairAfterTraffic("Other words", ConnectionsSnapshot(listOf(confirmed), now)))
     }
     @Test fun aRunnerCantCallItselfAnotherMacAndASmallClockDifferenceIsFine() {
-        assertNull(runnerHostProblem(null, "jacks-mac-pro", emptySet()))
-        assertNull(runnerHostProblem("jacks-mac-pro", "jacks-mac-pro", emptySet()))
-        assertNotNull(runnerHostProblem("macbook", "jacks-mac-pro", emptySet()))
-        assertNotNull(runnerHostProblem(null, "jacks-mac-pro", setOf("jacks-mac-pro")))
+        assertEquals("Mac Pro (jacks-mac-pro): herd", restoreLine("Mac Pro", null, "jacks-mac-pro", "herd"))
+        assertEquals("Mac Pro (jacks-mac-pro): herd", restoreLine("Mac Pro", "jacks-mac-pro", "jacks-mac-pro", "herd"))
+        assertEquals("MacBook (jacks-mac-pro): herd · it called itself macbook before", restoreLine("MacBook", "macbook", "jacks-mac-pro", "herd"))
+        // The line a restart waits on stays until something else needs the sheet.
+        assertTrue(repairLineStays("Restarted · mac: soma. Can't confirm until real traffic passes.", false))
+        assertFalse(repairLineStays("Restarted · mac: soma. Can't confirm until real traffic passes.", true))
+        assertFalse(repairLineStays("Restore blocked.", false))
         assertTrue(ServiceApproval("a", "", "herd", "h", now + 125_000).fresh(now))
         assertFalse(ServiceApproval("a", "", "herd", "h", now + 131_000).fresh(now))
         val ahead = JSONObject().put("id", "canvas").put("state", "running").put("restart", JSONObject().put("supported", true))
