@@ -59,6 +59,23 @@ private fun Modifier.rule(top: Boolean = false, bottom: Boolean = false) = drawB
 }
 private fun Modifier.bar(color: Color) = drawBehind { drawRect(color, Offset.Zero, Size(3.dp.toPx(), size.height)) }.padding(start = 17.dp)
 
+/** The strip's ✓ and △ drawn, not typed, so both stand the same height whatever face the pack brings (cards v6:
+ * `.connection-strip i{font-size:17px}` gives a thin check and an outlined triangle of one size). Other marks are text. */
+@Composable
+private fun StripMark(mark: String, color: Color) {
+    if (mark != "✓" && mark != "△") { Words(mark, sans(17.sp, color), 1, Modifier.height(20.dp).wrapContentHeight()); return }
+    androidx.compose.foundation.Canvas(Modifier.size(20.dp)) {
+        val w = size.width; val h = size.height
+        val stroke = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.6.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round,
+            join = androidx.compose.ui.graphics.StrokeJoin.Round)
+        val path = androidx.compose.ui.graphics.Path().apply {
+            if (mark == "✓") { moveTo(w * .14f, h * .55f); lineTo(w * .40f, h * .82f); lineTo(w * .88f, h * .16f) }
+            else { moveTo(w * .5f, h * .10f); lineTo(w * .94f, h * .88f); lineTo(w * .06f, h * .88f); close() }
+        }
+        drawPath(path, color, style = stroke)
+    }
+}
+
 /** [ Label ] in the body face and the accent, flush left, a 44dp target. */
 @Composable
 private fun ConnectionAction(label: String, action: () -> Unit, modifier: Modifier = Modifier, size: TextUnit = 13.sp, tight: Boolean = false) {
@@ -152,7 +169,7 @@ fun ConnectionsModule(size: ModuleSize, now: Long, modifier: Modifier = Modifier
                         val status = connectionStatus(row, incidents, card = true)
                         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(if (small) 3.dp else 4.dp),
                             modifier = Modifier.weight(1f).semantics { contentDescription = "${capability.title}: ${status.word}" }) {
-                            Words(row.state.mark, sans(if (row.state.mark == "✓") 17.sp else 26.sp, status.tone.color), 1, Modifier.height(24.dp).wrapContentHeight())
+                            StripMark(row.state.mark, status.tone.color)
                             Words(capability.band.orEmpty(), sans(10.sp, weight = FontWeight.Medium), 1)
                         }
                     }
