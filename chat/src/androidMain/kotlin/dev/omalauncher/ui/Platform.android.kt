@@ -1,6 +1,5 @@
 package dev.omalauncher.ui
 
-import android.animation.ValueAnimator
 import android.content.Intent
 import android.graphics.BlurMaskFilter
 import android.net.Uri
@@ -15,8 +14,6 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 
 /* The phone's answers to Platform.kt. */
-
-actual fun systemAnimationsOn(): Boolean = ValueAnimator.areAnimatorsEnabled()
 
 actual fun blurPaint(paint: Paint, radius: Float) {
     paint.asFrameworkPaint().maskFilter = BlurMaskFilter(radius, BlurMaskFilter.Blur.NORMAL)

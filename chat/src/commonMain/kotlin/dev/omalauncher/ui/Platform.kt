@@ -10,9 +10,6 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
  * Omarchy). Each has one small file of answers beside this one.
  */
 
-/** Whether the system runs animations at all; Android's "remove animations" turns them off. Read by [Motion.reduced]. */
-expect fun systemAnimationsOn(): Boolean
-
 /** [paint] blurred by [radius] px, as a pack's soft shadow is drawn. */
 expect fun blurPaint(paint: Paint, radius: Float)
 

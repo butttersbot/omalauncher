@@ -29,6 +29,7 @@ dependencyResolutionManagement {
 
 include(":app")
 include(":owl")
+include(":kit")
 include(":chat")
 include(":desktop")
 

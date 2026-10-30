@@ -41,7 +41,7 @@ fun loadPack(
  */
 fun mainSourceRoots(): List<File> =
     listOf(moduleFile("src/main/kotlin/dev/omalauncher")) +
-        listOf("commonMain", "androidMain", "desktopMain").map { moduleFile("../chat/src/$it/kotlin/dev/omalauncher") }.filter { it.isDirectory } +
+        listOf("chat", "kit").flatMap { module -> listOf("commonMain", "androidMain", "desktopMain").map { moduleFile("../$module/src/$it/kotlin/dev/omalauncher") } }.filter { it.isDirectory } +
         listOf(moduleFile("../desktop/src/main/kotlin/dev/omalauncher")).filter { it.isDirectory }
 
 /** Every Kotlin source under [dirs] of each main root ([mainSourceRoots]), or under the whole roots when none is named. */

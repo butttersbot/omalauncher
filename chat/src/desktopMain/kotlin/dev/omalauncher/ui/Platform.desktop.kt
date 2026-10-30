@@ -22,9 +22,6 @@ import org.jetbrains.skia.TextLine
 
 /* The desktop's answers to Platform.kt (Mac and Omarchy). */
 
-// The desktop has no system-wide switch for animations that Compose reads; they always run.
-actual fun systemAnimationsOn(): Boolean = true
-
 actual fun blurPaint(paint: Paint, radius: Float) {
     // Android's BlurMaskFilter turns its radius into Skia's sigma this way.
     paint.skiaPaint.maskFilter = MaskFilter.makeBlur(FilterBlurMode.NORMAL, radius * 0.57735f + 0.5f)

@@ -44,6 +44,8 @@ kotlin {
         commonMain.dependencies {
             // The widget language: widgets render from shared code on every screen (Soma Canvas slice 7a).
             api(project(":owl"))
+            // How things move and answer a finger (docs/SOMA-UI-KIT.md); Motion is here, for whoever draws from this module.
+            api(project(":kit"))
             implementation(libs.compose.runtime)
             implementation(libs.compose.foundation)
             implementation(libs.compose.ui)
