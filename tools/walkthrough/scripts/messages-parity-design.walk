@@ -12,7 +12,7 @@ shell pm grant dev.omalauncher.messages android.permission.READ_CONTACTS
 shell pm grant dev.omalauncher.messages android.permission.POST_NOTIFICATIONS
 shell pm grant dev.omalauncher.messages android.permission.RECORD_AUDIO
 # Quoted twice: walk.py hands the line to the phone's shell, which would split the link at '&'.
-shell am start -a android.intent.action.VIEW -d "'soma-messages://link?url=http%3A%2F%2F100.120.219.46%3A8765&token=BON7avwraojOZCR1WT8sLWZg9WTx0RFaqeR3udg1kzA'" dev.omalauncher.messages
+shell am start -a android.intent.action.VIEW -d "'soma-messages://link?url=http%3A%2F%2F127.0.0.1%3A1&token=INJECT_EPHEMERAL_DEMO_TOKEN'" dev.omalauncher.messages
 wait 2500
 # The owner says yes to the Mac by name before anything goes to it.
 expect Get your iMessages from 100.120.219.46?

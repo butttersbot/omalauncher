@@ -297,7 +297,7 @@ object Messages {
             val clientId = java.util.UUID.randomUUID().toString()
             markEntrance(id, clientId)
             publish(real.waiting(id, clientId, text, System.currentTimeMillis(), quote, Parts.links(text).mapNotNull { MacLink.previews.value[Parts.openable(it)]?.takeUnless { r -> r.url in hiddenLinks } }, hiddenLinks, target))
-            MacLink.send(id, text, target, clientId, onAccepted = { accepted(id, clientId) }) { why ->
+            MacLink.send(id, text, target, clientId, hiddenLinks = hiddenLinks, onAccepted = { accepted(id, clientId) }) { why ->
                 failed(id, clientId)
                 warn(id, "Not sent: $why")
             }
@@ -600,7 +600,7 @@ object Messages {
             sendPhotos(context, id, listOf(uri), "", listOf(message.text), message.quote, target)
             return
         }
-        send(context, id, message.text, message.quote, replyTo = target)
+        send(context, id, message.text, message.quote, hiddenLinks = message.hiddenLinks, replyTo = target)
     }
 
     /** Notes in [id] what was handed to OpenBubbles to send, so the conversation shows it waiting there. */

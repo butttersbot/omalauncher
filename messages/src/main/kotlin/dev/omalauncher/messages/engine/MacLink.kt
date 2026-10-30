@@ -356,6 +356,7 @@ object MacLink {
         text: String,
         replyTo: String?,
         clientId: String,
+        hiddenLinks: Set<String> = emptySet(),
         onAccepted: () -> Unit = {},
         onFail: (String) -> Unit,
     ) {
@@ -364,6 +365,7 @@ object MacLink {
             runCatching {
                 val body = JSONObject().put("text", text).put("clientId", clientId)
                 replyTo?.let { body.put("replyTo", it) }
+                linkPreviewSelection(text, hiddenLinks)?.let { body.put("linkPreview", it) }
                 post(at, "/v1/chats/${path(chat)}/messages", body)
                 onAccepted()
             }.onFailure {
