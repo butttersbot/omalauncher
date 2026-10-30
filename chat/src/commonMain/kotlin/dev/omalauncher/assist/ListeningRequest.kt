@@ -59,6 +59,19 @@ data class ListeningRequest(
             ListeningAct.Review -> ListeningStep(null, ListeningEffect.Review)
         }
 
+    /** The waiting words go to a device instead of the agent. */
+    fun sending(): ListeningRequest = if (phase == ListeningPhase.Heard) ListeningRequest(ListeningPhase.Sending, heard) else this
+
+    /** How the device called [label] took them: a failure says so and keeps his words, to send again or take elsewhere himself. */
+    fun relayed(outcome: RelayOutcome, label: String): ListeningRequest {
+        if (phase != ListeningPhase.Sending) return this
+        val said = relayWords(outcome, label)
+        return if (outcome is RelayOutcome.Typed) ListeningRequest(ListeningPhase.Typed, detail = said) else ListeningRequest(ListeningPhase.Heard, heard, said)
+    }
+
+    /** A tap on the paper changes nothing: words on their way can't be called back, and those a device refused are kept. */
+    val holdsOnAway get() = phase == ListeningPhase.Sending || (phase == ListeningPhase.Heard && detail.isNotEmpty())
+
     /** What the screen says: while the microphone is open, [hearing] is written after the words already kept. */
     fun look(hearing: String = "", note: String = ""): ListeningLook =
         listeningLook(phase, if (phase == ListeningPhase.Listening) appendSpeech(heard, hearing) else heard, detail, note)

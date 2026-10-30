@@ -1,76 +1,71 @@
-# Dictation widget (Boss, 2026-10-30): tap to record, tap to stop, the words show, Send types them on MG1. The real owl
-# source and action and the real Dictation states, in a plain fixture widget; the emulator has no microphone, so a
-# fictional one hears the words, and a fictional MG1 answers. Nothing reaches a device. Phone C's widget has its own look.
+# Dictation over art (Boss, 2026-10-30): a widget over an art panel, "MG1 / Press to record"; a tap on the art opens the
+# listening screen for MG1; Send types there, and a failure keeps the words. The real `over`, ArtOverlay, dictation(...),
+# ListeningLayer and ListeningRequest, in a fixture: a fictional picture, a fictional microphone (the emulator has none)
+# and a fictional MG1. Nothing reaches a device. Phone C's widget and overlay look come from their cards.
 # 1. Typed.
 fold folded
 rotate portrait
 shell am force-stop dev.omalauncher.artifactpreview
 clearlog
 shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es dictationWidget typed
-expect state idle
-tap Record
-expect state listening
+expect MG1
+expect Press to record
+nolog fixture dictation open
+shot dictation-over-art-cover
+tap Press to record
+log fixture dictation open
+expect Listening
 expect turn the lights down
-expect Stop
 nolog fixture relay
 shot dictation-listening-cover
-tap Stop
-expect state heard
+tap 0.5 0.3
+expect Send this?
 expect turn the lights down
+expect MG1
 nolog fixture relay
 shot dictation-heard-cover
 tap Send
 log fixture relay: turn the lights down
-expect state typed
 expect Typed into Brave on MG1
-absent turn the lights down
 shot dictation-typed-cover
-# 2. MG1 locked: said so, and the words stay.
+# 2. MG1 locked: said so, and the words stay, even after a tap on the paper. Cancel still drops them.
 shell am force-stop dev.omalauncher.artifactpreview
 clearlog
 shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es dictationWidget locked
-tap Record
-tap Stop
+tap Press to record
+tap 0.5 0.3
 tap Send
 log fixture relay: turn the lights down
-expect state failed
+expect MG1 is locked. Not typed.
+expect turn the lights down
+tap 0.5 0.3
 expect MG1 is locked. Not typed.
 expect turn the lights down
 shot dictation-locked-cover
-# Clear drops them.
-tap Clear
-expect state idle
+tap Cancel
 absent turn the lights down
 # 3. MG1 offline, unfolded.
 fold open
 shell am force-stop dev.omalauncher.artifactpreview
 clearlog
 shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es dictationWidget offline
-tap Record
-tap Stop
+tap Press to record
+tap 0.5 0.3
 tap Send
 expect MG1 is offline. Not typed.
 expect turn the lights down
 shot dictation-offline-unfolded
-# 4. No microphone: says so, sends nothing.
 fold folded
-shell am force-stop dev.omalauncher.artifactpreview
-clearlog
-shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es dictationWidget nomic
-tap Record
-expect Allow the microphone for Soma
-nolog fixture relay
-# 5. Any other widget (Boss, 2026-10-30): it reads nothing, and its button doesn't start the microphone.
+# 4. Any other widget (Boss, 2026-10-30): its tap opens nothing.
 shell am force-stop dev.omalauncher.artifactpreview
 clearlog
 shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es dictationWidget other
+tap Press to record
 log dictation is only for the widget in dictation-mg1.owl
-tap Record
-absent listening
-absent turn the lights down
-tap Send
-nolog fixture relay
+nolog fixture dictation open
+absent Listening
 shot dictation-refused-cover
-[phone] After the bundle, with Boss expecting it and MG1 on a text field: on Page 2's dictation widget, tap the big button, say something: the words show as he speaks and the ring lights. Tap to stop: the ring goes out and the words wait. Tap Send: they appear at MG1's cursor, without Enter, and the widget says "Typed into <app> on MG1".
-[phone] With MG1 locked, then with its receiver off: Send says so and the words stay; Send again once it is back types them once. Nothing reaches an agent.
-[phone] While recording: swipe to a far page, or lock the phone. The microphone stops and the words wait. Back on the page they are there.
+[phone] After the bundle, with Boss expecting it and MG1 on a text field: Page 2's cat keeps moving under "MG1 / Press to record". Tap it: the MG1 overlay comes up and the ring lights. Say something, tap the paper to stop, tap Send: the words appear at MG1's cursor, without Enter, and it says "Typed into <app> on MG1", then lifts.
+[phone] With MG1 locked, then with its receiver off: Send says so, the words stay; Send again once it is back types them once. Nothing reaches an agent.
+[phone] The file check on the real engine: a copy of the widget under another file name, over a picture, does nothing when tapped.
+[phone] Hold the lock button: the agent's overlay is exactly as before, its Send goes to the agent. Move the cat to another panel: the words go with it.

@@ -76,6 +76,12 @@ enum class ListeningPhase {
 
     /** An approval is waiting for the owner. */
     NeedsOk,
+
+    /** The words are on their way to a device. */
+    Sending,
+
+    /** A device typed them; the detail says where. */
+    Typed,
 }
 
 /** The underlined words under what was heard. */
@@ -110,11 +116,14 @@ fun listeningLook(
     when (phase) {
         ListeningPhase.Listening -> ListeningLook("Listening", heard, listOf(ListeningAct.Cancel), note)
         // The words stay as they were written; sending is his to tap, and he can say more first.
-        ListeningPhase.Heard -> ListeningLook("Send this?", heard, listOf(ListeningAct.Send, ListeningAct.Add, ListeningAct.Cancel), note, editable = true)
+        // A device that didn't type them says so here, in place of the question, and the words stay to send again.
+        ListeningPhase.Heard -> ListeningLook(detail.ifEmpty { "Send this?" }, heard, listOf(ListeningAct.Send, ListeningAct.Add, ListeningAct.Cancel), note, editable = true)
         ListeningPhase.Missed -> ListeningLook("Didn't catch that", "", listOf(ListeningAct.Retry, ListeningAct.Cancel), note)
         ListeningPhase.Failed -> ListeningLook("That didn't work", detail, listOf(ListeningAct.Retry, ListeningAct.Cancel), note)
         ListeningPhase.NoMic -> ListeningLook("Microphone is off", "Allow the microphone to talk to Soma", listOf(ListeningAct.Allow, ListeningAct.Cancel))
         ListeningPhase.NeedsOk -> ListeningLook("Needs your OK", detail, listOf(ListeningAct.Review, ListeningAct.Close))
+        ListeningPhase.Sending -> ListeningLook("Sending", heard, emptyList(), note)
+        ListeningPhase.Typed -> ListeningLook(detail, "", emptyList(), note)
     }
 
 /**
@@ -141,7 +150,7 @@ private const val WORD_MILLIS = 250
 private const val DIM = 0.88f
 
 /** The prototype's phone is 380 units wide closed and 760 open; a wider screen draws its units larger, up to half again. */
-internal fun prototypeUnit(widthDp: Float, heightDp: Float): Float {
+fun prototypeUnit(widthDp: Float, heightDp: Float): Float {
     val across = if (widthDp > heightDp * 1.1f) 760f else 380f
     return (widthDp / across).coerceIn(1f, 1.5f)
 }
@@ -154,7 +163,7 @@ internal fun prototypeUnit(widthDp: Float, heightDp: Float): Float {
  * changes them by hand, while they wait for his go.
  */
 @Composable
-internal fun ListeningLayer(
+fun ListeningLayer(
     look: ListeningLook?,
     onAct: (ListeningAct) -> Unit,
     modifier: Modifier = Modifier,

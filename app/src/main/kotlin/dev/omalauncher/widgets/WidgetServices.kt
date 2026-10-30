@@ -66,7 +66,6 @@ import dev.omalauncher.ui.open
 import dev.omalauncher.ui.recentApps
 import dev.omalauncher.widgets.runtime.Alarm
 import dev.omalauncher.widgets.runtime.Media
-import dev.omalauncher.widgets.runtime.AndroidDictation
 import dev.omalauncher.widgets.runtime.Modes
 import dev.omalauncher.widgets.runtime.Notifications
 import dev.omalauncher.widgets.runtime.Services
@@ -123,7 +122,6 @@ class WidgetServices(
     private val volume = Volume(context)
     private val alarm = Alarm(context)
     private val modes = Modes(context)
-    private val dictation by lazy { AndroidDictation(context) }
 
     /** Opens launcher screens ("style" or "themes", "agents", "drawer"); set by the UI. */
     var launcherAction: ((String) -> Unit)? = null
@@ -163,7 +161,6 @@ class WidgetServices(
             "volume" -> volume.value()
             "alarm" -> alarm.value()
             "modes" -> modes.value()
-            "dictation" -> dictation.value()
             "apps" -> apps()
             "agents" -> agents()
             "recent" -> recent()
@@ -177,7 +174,6 @@ class WidgetServices(
             "volume" -> volume.updates()
             "alarm" -> alarm.updates()
             "modes" -> modes.updates()
-            "dictation" -> dictation.updates()
             // Both read Compose state: the app list and its usage, the installed agents and the one picked.
             "apps" -> snapshotFlow { apps() }
             "agents" -> snapshotFlow { agents() }
@@ -476,7 +472,7 @@ class WidgetServices(
             "copy" -> copy(arg)
             "notify" -> notify(arg, args.getOrNull(1)?.takeIf { it != Null }?.toString())
             "torch" -> modes.torch(args[0])
-            "dictation" -> dictation.control(arg)
+            "dictation" -> context.startActivity(Intent(context, dev.omalauncher.assist.RelayPromptActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             "share" -> share(arg)
             "haptic" -> view?.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
             "open" -> openApp(arg)

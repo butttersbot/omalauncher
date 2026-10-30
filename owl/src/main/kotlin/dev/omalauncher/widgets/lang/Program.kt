@@ -311,6 +311,8 @@ class Program(
     val statusBar: Ev? = null,
     val page: Int = 1,
     val order: Int = 0,
+    /** `over: "art:…"`: no tile of its own, drawn over that picture in its panel wherever it hangs, and it takes the picture's taps. */
+    val over: String? = null,
     /** Tile padding in dp, and an optional tile background. */
     val padding: Double = 12.0,
     val background: Ev? = null,

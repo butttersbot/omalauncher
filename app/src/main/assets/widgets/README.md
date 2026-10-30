@@ -78,7 +78,6 @@ that read it redraw. Properties are separated by newlines or `;`.
 | `source ag = android.agents` | the coding agents installed in Linux: `{default, installed}`, each agent `{bin, name, description, command, key, icon}`, updated as they change. `default` is the one the prompt bar asks and `ask(text)` sends to, null with none installed; `open(a.key)` starts one without a prompt, and `icon` is its logo (owl 10) |
 | `source r = android.recent` | the apps in the recent strip above the prompt bar, last opened first: a list of `{key, kind, name, icon, score, last}`, Android and Linux apps, owl apps and shortcuts alike (`kind` is `android`, `linux`, `owl` or `shortcut`). `open(r.key)` opens one, `icon` goes in `Image { src: r.icon }`, and `score` and `last` are as in `android.apps`. Like the strip, it reorders once home is out of sight, not under the finger that tapped (owl 10) |
 | `source m = android.modes` | the phone's modes: `{dnd, saver, ringer, torch}`, updated as they change. `dnd` is Do Not Disturb in any form, `saver` battery saver, `ringer` is `normal`, `vibrate` or `silent`, and `torch` is null on a phone without a flash. Switch the torch with `torch(...)` (owl 7) |
-| `source d = android.dictation` | speech from a widget's button, to type on another device (owl 11), only for the widget in the file `dictation-mg1.owl`; any other reads nothing and can't start the microphone: `{state, words, message, target}`, updated as it changes. `state` is `idle`, `listening`, `heard`, `sending`, `typed` or `failed`; `words` what was heard, live while listening and kept on failure; `message` the result to show (`Typed into Brave on MG1`, `MG1 is locked. Not typed.`); `target` the device's name. Change it with `dictation(...)` |
 | `state x = 0` | a value that handlers can change. Add `persist` to keep it across restarts: `state endsAt = 0 persist` |
 | `let x = expr` | a derived value, recomputed only when what it reads changes. It can use sources, state and earlier lets |
 | `let h = history(x, 60)` | the last 60 values of `x`, sampled whenever a source updates (for Sparkline). With `persist` it survives restarts, unless it's older than it would take to fill |
@@ -92,6 +91,7 @@ that read it redraw. Properties are separated by newlines or `;`.
 | `screen { ... }` | a full-screen view of the widget, opened with `screen()`; see Screens (owl 5) |
 | `every 10s { ... }`, `at t { ... }`, `when c { ... }`, `on x { ... }` | statements that run without a tap; see Triggers |
 | `padding: 12` / `background: ...` | the tile's padding (dp) and background |
+| `over: "art:c3e895d3a8df4d66"` | a widget over an art panel (owl 11): it has no tile of its own; it is drawn over that picture wherever it hangs, the picture goes on showing and moving through what the widget leaves clear, and a tap on the picture is the widget's `onTap`. Leave `background` out. `oma-phone board` gives the name. A panel can cut its picture at a slant, so keep what matters inside it. With the picture gone it shows nowhere |
 
 Sources only run while their page (or a neighbour) is on screen, and
 identical commands in several widgets run once. A few commands run at the same
@@ -483,7 +483,7 @@ after it in its block (and blocks inside them), and needs a name not used for a 
 | `screen()` / `close()` | opens the widget's `screen { }` full screen, or closes it (owl 5) |
 | `media("toggle")` | controls what's playing: `toggle`, `play`, `pause`, `next`, `previous`, or `open` (brings up the player app) |
 | `volume(50)` | sets the media volume in percent; or `volume("up")`, `"down"`, `"mute"`, `"unmute"`, `"toggle"` (owl 4) |
-| `dictation("toggle")` | speech for `android.dictation` (owl 11), only in `dictation-mg1.owl`: `start` opens the microphone and adds to any words waiting, `stop` ends it, `toggle` does whichever fits; `send` types the waiting words at the cursor on the device, `clear` drops them. Only from a tap, never a trigger. A failed send keeps the words, and they never go anywhere else. The microphone also stops when the widget's page leaves the screen |
+| `dictation("open")` | opens the listening screen to type on MG1 (owl 11), only in the file `dictation-mg1.owl` and only from a tap; anywhere else it does nothing. What he says waits for his Send; a failed send keeps the words, and they never go anywhere else |
 | `notification("open", key)` | opens a notification from `android.notifications` as tapping it in the shade would; `"dismiss"` clears it. Without notification access, opens the setting that grants it (owl 4) |
 
 ## Images from the web

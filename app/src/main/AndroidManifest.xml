@@ -420,6 +420,9 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
+        <activity android:name=".assist.RelayPromptActivity" android:exported="false"
+            android:label="Soma dictation" android:theme="@android:style/Theme.Material.Dialog.NoActionBar"
+            android:excludeFromRecents="true" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".assist.AssistantSetupActivity" android:exported="true" android:label="Soma assistant${labelSuffix}">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

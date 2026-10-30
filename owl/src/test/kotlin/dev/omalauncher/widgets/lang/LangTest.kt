@@ -870,11 +870,13 @@ class LangTest {
         assertTrue(compileError("app {\n meta { owl: 8 }\n icon: \"<svg>${"x".repeat(17000)}</svg>\"\n Text { text: 1 } }").contains("over 16 KB"))
     }
 
-    @Test fun dictationIsOwl11AndOnlyItsWords() {
-        val p = Compiler.compile("widget {\n meta { owl: 11 }\n source d = android.dictation\n Button { text: d.state; onTap: dictation(\"toggle\") } }")
-        assertEquals(listOf("android.dictation"), p.globals.map { (it as Global.Source).kind })
-        assertTrue(compileError("widget {\n meta { owl: 11 }\n Text { text: 1; onTap: dictation(\"loud\") } }").contains("dictation takes"))
-        assertTrue(compileError("widget {\n meta { owl: 10 }\n source d = android.dictation\n Text { text: d.state } }").contains("11"))
+    @Test fun aWidgetOverArtAndDictationAreOwl11() {
+        val p = Compiler.compile("widget {\n meta { owl: 11 }\n over: \"art:f4618f2aa61acfb0\"\n onTap: dictation(\"open\")\n Text { text: \"MG1\" } }")
+        assertEquals("art:f4618f2aa61acfb0", p.over)
+        assertEquals(null, Compiler.compile("widget { Text { text: 1 } }").over)
+        assertTrue(compileError("widget {\n meta { owl: 11 }\n over: \"cat\"\n Text { text: 1 } }").contains("over names"))
+        assertTrue(compileError("widget {\n meta { owl: 10 }\n over: \"art:f4618f2aa61acfb0\"\n Text { text: 1 } }").contains("11"))
+        assertTrue(compileError("widget {\n meta { owl: 11 }\n onTap: dictation(\"start\")\n Text { text: 1 } }").contains("dictation takes"))
     }
 
     @Test fun androidNotificationsAndVolume() {

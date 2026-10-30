@@ -60,3 +60,34 @@ class ListeningLookTest {
         assertEquals("needs your OK", marginNote("Approval needed"))
     }
 }
+
+/** The listening screen for MG1 (Boss, 2026-10-30): the agent's words stay as they were; a failure keeps his. */
+class ListeningRelayTest {
+    private val heard = ListeningRequest(ListeningPhase.Heard, "turn the lights down")
+
+    @Test fun theAgentsScreenStillAsksAsItDid() {
+        assertEquals("Send this?", heard.look().caption)
+        assertEquals(false, heard.holdsOnAway)
+        assertEquals(listOf(ListeningAct.Send, ListeningAct.Add, ListeningAct.Cancel), heard.look().acts)
+    }
+
+    @Test fun typedSaysWhereAndFailureKeepsTheWordsToSendAgain() {
+        val sending = heard.sending()
+        assertEquals(ListeningPhase.Sending, sending.phase)
+        assertEquals(emptyList<ListeningAct>(), sending.look().acts)
+        assertEquals(true, sending.holdsOnAway)
+        val typed = sending.relayed(RelayOutcome.Typed("Brave"), "MG1")
+        assertEquals("Typed into Brave on MG1", typed.look().caption)
+        assertEquals("", typed.look().words)
+        val locked = sending.relayed(RelayOutcome.Locked, "MG1")
+        assertEquals("MG1 is locked. Not typed.", locked.look().caption)
+        assertEquals("turn the lights down", locked.look().words)
+        assertEquals(true, locked.holdsOnAway)
+        assertEquals(ListeningEffect.Send("turn the lights down"), locked.act(ListeningAct.Send).effect)
+    }
+
+    @Test fun onlyWordsOnTheirWayCanBeRelayed() {
+        assertEquals(heard, heard.relayed(RelayOutcome.Offline, "MG1"))
+        assertEquals(ListeningPhase.Listening, ListeningRequest(ListeningPhase.Listening).sending().phase)
+    }
+}

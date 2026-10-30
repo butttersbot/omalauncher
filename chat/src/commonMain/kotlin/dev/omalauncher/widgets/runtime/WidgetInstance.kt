@@ -41,7 +41,6 @@ import dev.omalauncher.widgets.lang.WidgetError
 import dev.omalauncher.widgets.lang.bool
 import dev.omalauncher.widgets.lang.num
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -170,7 +169,7 @@ class WidgetInstance(
     private val linux: () -> Boolean = { true },
     /** An app's window or the widget's screen is showing. Snapshot state. */
     private val foreground: () -> Boolean = { false },
-    /** Whether this is his dictation widget ([DICTATION_WIDGET_FILE]); no other may hear him or read what he said. */
+    /** Whether this is his dictation widget ([DICTATION_WIDGET_FILE]); no other may open the microphone's screen. */
     private val mayDictate: Boolean = false,
 ) : Host {
     override val budget = Budget()
@@ -413,7 +412,7 @@ class WidgetInstance(
         // sound(...), a trigger does it only while the app or screen is open.
         if ((name == "ask" || name == "open") && inTrigger && !foreground()) return report("$name(...) in a trigger works only while the app or screen is open")
         if (name == "dictation" && !mayDictate) return report(DICTATION_REFUSED)
-        // The microphone opens, and words go to another device, only from his tap: never from a timer or a fetched value.
+        // The microphone's screen opens only from his tap: never from a timer or a fetched value.
         if (name == "dictation" && inTrigger) return report("dictation(...) works only from a tap")
         // Only this widget refreshes afterwards; the others keep their own intervals.
         services.act(name, args) { refresh() }
@@ -556,11 +555,6 @@ class WidgetInstance(
                             write(slot, Null)
                             snapshotFlow { linux() }.first { it }
                             continue
-                        }
-                        if (g.kind == DICTATION_SOURCE && !mayDictate) {
-                            report(DICTATION_REFUSED)
-                            write(slot, Null)
-                            awaitCancellation()
                         }
                         val pushed = if (g.kind.startsWith("android.")) services.androidUpdates(g.kind.removePrefix("android.")) else null
                         if (pushed != null) {
@@ -865,7 +859,7 @@ class WidgetInstance(
                 }
                 else ->
                     try {
-                        if (g.kind == DICTATION_SOURCE && !mayDictate) Null else services.android(g.kind.removePrefix("android."))
+                        services.android(g.kind.removePrefix("android."))
                     } catch (e: RuntimeException) {
                         report("${g.name}: ${e.message ?: e}")
                         return true

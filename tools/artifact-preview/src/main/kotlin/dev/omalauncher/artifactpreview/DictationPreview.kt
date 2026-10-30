@@ -1,82 +1,68 @@
 package dev.omalauncher.artifactpreview
 
 import android.util.Log
+import androidx.compose.animation.animateColor
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateValue
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import dev.omalauncher.assist.ListeningAct
+import dev.omalauncher.assist.ListeningEffect
+import dev.omalauncher.assist.ListeningLayer
+import dev.omalauncher.assist.ListeningPhase
+import dev.omalauncher.assist.ListeningRequest
 import dev.omalauncher.assist.RelayOutcome
 import dev.omalauncher.linux.ShellResult
 import dev.omalauncher.widgets.lang.Compiler
 import dev.omalauncher.widgets.lang.Null
 import dev.omalauncher.widgets.lang.Value
-import dev.omalauncher.widgets.render.WidgetContent
-import dev.omalauncher.widgets.runtime.Dictation
-import dev.omalauncher.widgets.runtime.DictationMic
+import dev.omalauncher.widgets.render.ArtOverlay
 import dev.omalauncher.widgets.runtime.Services
 import dev.omalauncher.widgets.runtime.WidgetInstance
 import dev.omalauncher.widgets.runtime.WidgetTerminal
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
-import kotlinx.coroutines.flow.map
 import java.io.File
 
-/** A plain widget on the real owl source and action, for dictation-widget.walk; its look is the real widget's to have. */
+/** A plain widget over art, on the real `over` and dictation(...), for dictation-widget.walk; its look is Phone C's to give. */
 private val FIXTURE = """
     widget "dictation-fixture" {
       meta { owl: 11 }
-      padding: 12
-      source d = android.dictation
+      over: "art:f4618f2aa61acfb0"
+      onTap: dictation("open")
       Column {
-        gap: 12
-        Text { text: "state ${'$'}{d.state}" }
-        Text { text: d.words }
-        Text { text: d.message }
-        Button { text: d.state == "listening" ? "Stop" : "Record"; onTap: dictation("toggle") }
-        Button { text: "Send"; onTap: dictation("send") }
-        Button { text: "Clear"; onTap: dictation("clear") }
+        Text { text: "MG1" }
+        Text { text: "Press to record" }
       }
     }
 """.trimIndent()
 
-/** Hears the same words every time: the emulator has no microphone. */
-private class FixtureMic(override val allowed: Boolean) : DictationMic {
-    private var done: ((String, String?) -> Unit)? = null
+private const val HEARD = "turn the lights down"
 
-    override fun start(onText: (String) -> Unit, onDone: (String, String?) -> Unit) {
-        done = onDone
-        onText(HEARD)
-    }
-
-    override fun stop() {
-        done?.invoke(HEARD, null)
-    }
-
-    override fun cancel() {}
-
-    private companion object {
-        const val HEARD = "turn the lights down"
-    }
-}
-
-/** --es dictationWidget typed|locked|offline|nomic|other: what the fictional MG1 answers, no microphone, or any other widget. Nothing reaches a device. */
+/**
+ * --es dictationWidget typed|locked|offline|other: a fictional picture, always moving, with the widget over it; a tap opens
+ * the real listening screen and its real decisions, with the words a fictional microphone heard and what a fictional MG1
+ * answers. `other` is any widget but his. Nothing reaches a device; the emulator has no microphone.
+ */
 @Composable
 internal fun DictationPreview(kind: String) {
     val scope = rememberCoroutineScope()
-    val dictation = remember {
-        Dictation(FixtureMic(kind != "nomic"), "MG1") { words, done ->
-            Log.i("SomaWalk", "fixture relay: $words")
-            done(
-                when (kind) {
-                    "locked" -> RelayOutcome.Locked
-                    "offline" -> RelayOutcome.Offline
-                    else -> RelayOutcome.Typed("Brave")
-                },
-            )
-        }
-    }
+    var request by remember { mutableStateOf<ListeningRequest?>(null) }
     val inst = remember {
         WidgetInstance(
             Compiler.compile(FIXTURE),
@@ -85,11 +71,12 @@ internal fun DictationPreview(kind: String) {
                 override suspend fun http(url: String, headers: Map<String, String>, timeoutSeconds: Int, body: ByteArray?) = ShellResult("", "", -1)
                 override fun run(command: String, done: (ShellResult?) -> Unit) = done(null)
                 override suspend fun stream(command: String, onLine: (String) -> Unit) {}
-                override fun android(name: String): Value = if (name == "dictation") dictation.now.value.value(dictation.target) else Null
-                override fun androidUpdates(name: String): Flow<Value>? =
-                    if (name == "dictation") dictation.now.map { it.value(dictation.target) } else null
+                override fun android(name: String): Value = Null
                 override fun act(name: String, args: List<Value>, done: () -> Unit) {
-                    if (name == "dictation") dictation.control(args[0].toString())
+                    if (name == "dictation") {
+                        Log.i("SomaWalk", "fixture dictation open")
+                        request = ListeningRequest(ListeningPhase.Listening)
+                    }
                     done()
                 }
                 override fun guestFile(path: String) = File("/nonexistent")
@@ -101,5 +88,44 @@ internal fun DictationPreview(kind: String) {
         )
     }
     LaunchedEffect(inst) { inst.start(scope) { true } }
-    WidgetContent(inst, Modifier.fillMaxSize())
+    val moving by rememberInfiniteTransition(label = "art").animateColor(Color(0xFF3A6EA5), Color(0xFFD7262D), infiniteRepeatable(tween(1500), RepeatMode.Reverse), label = "art")
+    Box(Modifier.fillMaxSize()) {
+        // The panel: the picture under the widget, as Home draws them.
+        Box(Modifier.size(200.dp, 300.dp).background(moving)) {
+            ArtOverlay(inst) { Compiler.compile(FIXTURE).onTap?.run(inst.root, emptyList()) }
+        }
+        val now = request
+        ListeningLayer(
+            now?.look(if (now.phase == ListeningPhase.Listening) HEARD else "", "MG1"),
+            { act ->
+                val step = now?.act(act)
+                when (val effect = step?.effect) {
+                    is ListeningEffect.Send -> {
+                        Log.i("SomaWalk", "fixture relay: ${effect.text}")
+                        val sending = ListeningRequest(ListeningPhase.Heard, effect.text).sending()
+                        request = sending.relayed(
+                            when (kind) {
+                                "locked" -> RelayOutcome.Locked
+                                "offline" -> RelayOutcome.Offline
+                                else -> RelayOutcome.Typed("Brave")
+                            },
+                            "MG1",
+                        )
+                    }
+                    ListeningEffect.Leave -> request = null
+                    ListeningEffect.Listen -> request = step.next
+                    else -> {}
+                }
+            },
+            onEdit = { text -> request = request?.edited(text) },
+            onAway = {
+                when {
+                    now == null || now.holdsOnAway -> {}
+                    // The fictional microphone stops, as a tap on the paper stops the real one.
+                    now.phase == ListeningPhase.Listening -> request = now.spoke(HEARD)
+                    else -> request = null
+                }
+            },
+        )
+    }
 }

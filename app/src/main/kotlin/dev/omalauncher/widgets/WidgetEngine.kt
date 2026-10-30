@@ -70,7 +70,7 @@ class WidgetSpec(
     val kind: OwlKind = OwlKind.Widget,
 ) {
     /** On a home page: a widget's tile; an app is in the drawer instead. */
-    val onHome get() = kind != OwlKind.App
+    val onHome get() = kind != OwlKind.App && program?.over == null
 }
 
 /**
@@ -451,6 +451,9 @@ class WidgetEngine(
     fun instance(spec: WidgetSpec): WidgetInstance? = instances[spec.file.name]?.takeIf { it.program === spec.program }
 
     /** A tap on the tile itself, rather than on a node with its own onTap. */
+    /** The widget that lies over the art [key], if one does ([Program.over]). */
+    fun overArt(key: String): WidgetSpec? = specs.firstOrNull { it.program?.over == key }
+
     fun tap(spec: WidgetSpec) {
         val inst = instance(spec) ?: return
         spec.program?.onTap?.run(inst.root, emptyList())
@@ -772,9 +775,10 @@ class WidgetEngine(
         // Its screen is open: it's on screen wherever the pages are.
         if (spec.file.name == openScreen) return true
         // An app not showing has nothing on a page to keep live.
-        if (!spec.onHome) return false
+        val over = spec.program?.over
+        if (!spec.onHome && over == null) return false
         val here = notebook.position(activePage)
-        val there = notebook.position(notebook.pageOf(spec.file.name))
+        val there = notebook.position(notebook.pageOf(over ?: spec.file.name))
         return here < 0 || there < 0 || there in here - 1..here + activeSpan
     }
 

@@ -38,10 +38,14 @@ import dev.omalauncher.oma.ScreenShots
 import dev.omalauncher.oma.Shot
 import dev.omalauncher.oma.Summon
 import dev.omalauncher.oma.screenChipText
+import dev.omalauncher.widgets.runtime.DICTATION_WIDGET_FILE
 import java.io.File
 
 /** How long a show may take to bring its window up before the ring and the sheep stop making way for it. */
 const val ASSISTANT_SHOW_WAIT_MILLIS = 2_000L
+
+/** How long "Typed into Brave on MG1" stays before the screen lifts. */
+private const val RELAY_TYPED_MILLIS = 1_500L
 
 /**
  * The hold-to-agent screen's words are read by Whisper on the Mac Pro (Boss, 2026-10-19: "make sure the hold to agent
@@ -142,8 +146,12 @@ class OmaSession(context: Context) : VoiceInteractionSession(context) {
 }
 
 /** Fallback assist intent and notification entry; leaves the current app visible underneath. */
-class AssistantPromptActivity : Activity() {
+open class AssistantPromptActivity : Activity() {
     private lateinit var panel: ListeningHost
+
+    /** Where the words go instead of the agent; null is the agent. */
+    protected open val relay: RelayTarget? = null
+
     override fun onCreate(state: Bundle?) {
         // The manifest's dialog theme keeps the app underneath showing; the window itself is drawn without the dialog's box.
         setTheme(android.R.style.Theme_Material_NoActionBar)
@@ -151,7 +159,7 @@ class AssistantPromptActivity : Activity() {
         (application as App).runtime.start()
         window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
         window.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
-        panel = ListeningHost(this) { finish() }
+        panel = ListeningHost(this, relay) { finish() }
         setContentView(panel)
         panel.dress(window)
         panel.begin()
@@ -162,13 +170,32 @@ class AssistantPromptActivity : Activity() {
 }
 
 /**
+ * The same screen for typing on MG1 (Boss, 2026-10-30), from his dictation widget's tap ([DICTATION_WIDGET_FILE]). Not
+ * exported: no other app can open it, and it is a screen of its own, so the agent's overlay is untouched.
+ */
+class RelayPromptActivity : AssistantPromptActivity() {
+    override val relay get() = RelayTargets.Mg1
+
+    override fun onCreate(state: Bundle?) {
+        // As the assistant does when it is held: the words go to Whisper on the Mac if it answers.
+        dev.omalauncher.voice.WhisperMac.check(this)
+        super.onCreate(state)
+    }
+}
+
+/**
  * The listening screen as a view, for the assistant session's window and the prompt activity: the ring along
  * the window's edge and [ListeningLayer] inside it, as design/oma-scrapbook-prototype.html draws them. The
  * microphone opens as the screen comes up; what is heard waits on the screen until he taps Send, and he can
  * speak again to add to it first. Cancel or a tap on the paper leaves and sends nothing; [ListeningRequest]
  * decides all of that. Typing, attachments, the answer and New thread live in the Oma chat.
  */
-class ListeningHost(private val owner: Context, private val dismiss: () -> Unit) : FrameLayout(owner) {
+class ListeningHost(
+    private val owner: Context,
+    /** Types the words on this device instead of asking the agent; null, the screen as it always was. */
+    private val relay: RelayTarget? = null,
+    private val dismiss: () -> Unit,
+) : FrameLayout(owner) {
     private val ring = RingView(owner)
     private val compose = ComposeHost()
     private val handler = Handler(Looper.getMainLooper())
@@ -192,7 +219,8 @@ class ListeningHost(private val owner: Context, private val dismiss: () -> Unit)
             setContent {
                 val look = request?.let {
                     val claude = (owner.applicationContext as App).runtime.agents.default?.bin == "claude"
-                    it.look(speech.text, screenChipText(chipState, keptInConversation = claude))
+                    // The device's name in the small line over the caption, until the approved card says how it looks.
+                    it.look(speech.text, relay?.label ?: screenChipText(chipState, keptInConversation = claude))
                 }
                 // The recognizer can fail without a word: that is a problem to show, not a silence.
                 val failed = speech.error
@@ -227,11 +255,13 @@ class ListeningHost(private val owner: Context, private val dismiss: () -> Unit)
         if (disposed) return
         compose.resume()
         turn++
-        AgentTasks.restore(owner)
-        // Asked beside the listening, so the front agent's board knows the Mac's threads by the time he has spoken.
-        MacThreads.open(owner)
+        if (relay == null) {
+            AgentTasks.restore(owner)
+            // Asked beside the listening, so the front agent's board knows the Mac's threads by the time he has spoken.
+            MacThreads.open(owner)
+        }
         when {
-            AgentTasks.pending.isNotEmpty() -> show(ListeningRequest(ListeningPhase.NeedsOk, detail = "Soma is waiting for your answer"))
+            relay == null && AgentTasks.pending.isNotEmpty() -> show(ListeningRequest(ListeningPhase.NeedsOk, detail = "Soma is waiting for your answer"))
             owner.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED -> show(ListeningRequest(ListeningPhase.NoMic))
             else -> listen(ListeningRequest(ListeningPhase.Listening))
         }
@@ -267,7 +297,23 @@ class ListeningHost(private val owner: Context, private val dismiss: () -> Unit)
         if (now.phase == ListeningPhase.Listening) show(now.spoke(said, speech.error))
     }
 
+    /** Types the words on [target]; nothing here ever hands them to the agent. A failure keeps them on the screen. */
+    private fun type(target: RelayTarget, text: String) {
+        val sending = ListeningRequest(ListeningPhase.Heard, text).sending()
+        show(sending)
+        val mine = ++turn
+        kotlin.concurrent.thread(name = "oma-dictation-relay", isDaemon = true) {
+            val outcome = relayText(target.base!!, text)
+            handler.post {
+                if (mine != turn) return@post
+                show(sending.relayed(outcome, target.label))
+                if (outcome is RelayOutcome.Typed) handler.postDelayed({ if (mine == turn) leave() }, RELAY_TYPED_MILLIS)
+            }
+        }
+    }
+
     private fun send(text: String) {
+        relay?.let { return type(it, text) }
         try {
             // The front agent hears words alone first, or next if it is still on a request, and its answer comes to
             // him as a task's does. With the screen attached, or with no front agent to ask, the request goes
@@ -304,6 +350,7 @@ class ListeningHost(private val owner: Context, private val dismiss: () -> Unit)
      * Anywhere else it cancels, as before.
      */
     private fun away() {
+        if (request?.holdsOnAway == true) return
         if (request?.phase == ListeningPhase.Listening) speech.stop() else act(ListeningAct.Cancel)
     }
 

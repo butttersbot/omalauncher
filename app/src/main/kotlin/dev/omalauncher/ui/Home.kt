@@ -33,6 +33,7 @@ import dev.omalauncher.oma.ChatLog
 import dev.omalauncher.oma.TabBook
 import dev.omalauncher.oma.settled
 import dev.omalauncher.widgets.ArtItem
+import dev.omalauncher.widgets.render.ArtOverlay
 import dev.omalauncher.widgets.Folder
 import dev.omalauncher.widgets.HomeItem
 import dev.omalauncher.widgets.Shortcut
@@ -749,7 +750,18 @@ fun HomeScreen(
                         }
                     }
                     // Printed in ink in the Manga look unless he picked color; in its own colors in every other look.
-                    is ArtItem -> artIdOf(item.key)?.let { ArtImage(it, tile, ink = manga != null && MangaPrefs.artInk) } ?: Box(tile)
+                    is ArtItem -> {
+                        val over = engine.overArt(item.key)
+                        val instance = over?.let(engine::instance)
+                        if (over != null && instance != null) {
+                            Box(tile) {
+                                artIdOf(item.key)?.let { ArtImage(it, Modifier.fillMaxSize(), ink = manga != null && MangaPrefs.artInk) }
+                                ArtOverlay(instance) { engine.tap(over) }
+                            }
+                        } else {
+                            artIdOf(item.key)?.let { ArtImage(it, tile, ink = manga != null && MangaPrefs.artInk) } ?: Box(tile)
+                        }
+                    }
                     is ThreadItem ->
                         AgentTileView(
                             tile = engine.agentTiles.tiles[item.key],

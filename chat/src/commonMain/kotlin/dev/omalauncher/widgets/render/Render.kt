@@ -136,6 +136,20 @@ val LocalTypingAt = staticCompositionLocalOf<(Rect?) -> Unit> { {} }
 /** Whether an Input's `focus` may take focus: only on a screen the user opened, never on a tile or in a preview. */
 val LocalInputFocus = staticCompositionLocalOf { false }
 
+/**
+ * A widget over an art panel's picture ([dev.omalauncher.widgets.lang.Program.over]): the picture goes on showing and moving
+ * through whatever the widget leaves clear, and a tap anywhere on it is the widget's onTap.
+ */
+@Composable
+fun ArtOverlay(
+    inst: WidgetInstance,
+    onTap: () -> Unit,
+) {
+    Box(Modifier.fillMaxSize().pointerInput(inst) { detectTapGestures(onTap = { onTap() }) }) {
+        WidgetContent(inst, Modifier.fillMaxSize())
+    }
+}
+
 /** The widget's content inside its tile: padding, optional background, and the node tree. */
 @Composable
 fun WidgetContent(

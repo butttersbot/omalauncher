@@ -25,6 +25,7 @@ class Compiler private constructor(
          * addition a widget could depend on: nodes, properties, builtins.
          */
         const val LEVEL = 11
+        private val ART_KEY = Regex("art:[0-9a-f]{16}")
         private const val MAX_ASSET_BYTES = 2 shl 20
 
         /**
@@ -228,6 +229,10 @@ class Compiler private constructor(
             kind = ast.kind,
             minSize = props["minSize"]?.let { cells(it) } ?: (1 to 1),
             // A face goes left of page 1 by default: 0, and -1, -2, ... further left. A tile never does.
+            over = props["over"]?.let { p ->
+                since("over", p.pos)
+                constant(p.value, "over").toString().also { if (!ART_KEY.matches(it)) fail("over names an art panel's picture, as oma-phone board does: art: and its 16 characters", p.pos) }
+            },
             page = props["page"]?.let { constInt(it) }?.let { if (isFace) it.coerceIn(-MAX_PAGE, MAX_PAGE) else it.coerceIn(1, MAX_PAGE) } ?: if (isFace) 0 else 1,
             order = props["order"]?.let { constInt(it) } ?: 0,
             padding = props["padding"]?.let { constant(it.value, "padding").num() } ?: 12.0,
