@@ -1,5 +1,10 @@
 package dev.omalauncher.messages.ui
 
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -23,7 +28,7 @@ import kotlinx.coroutines.withContext
 
 /** Same metadata card in either direction, the draft, and the unfolded shared table. */
 @Composable
-internal fun RichLinkCard(link: RichLink, ink: Color, compact: Boolean = false) {
+internal fun RichLinkCard(link: RichLink, ink: Color, compact: Boolean = false, draft: Boolean = false, onRemove: () -> Unit = {}) {
     val context = LocalContext.current
     val picture by produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, link.imageAttachmentId) {
         value = withContext(Dispatchers.IO) {
@@ -36,6 +41,30 @@ internal fun RichLinkCard(link: RichLink, ink: Color, compact: Boolean = false) 
                 }.getOrNull()
             }
         }
+    }
+    if (draft) {
+        // Approved parity-g1-v2 draft anatomy: plain image area, centered Remove, one muted title/site line.
+        // Keep the existing shared composer controls and photo tiles unchanged.
+        Column(Modifier.fillMaxWidth().background(Pack.surface)) {
+            if (link.imageAttachmentId != null) {
+                Box(Modifier.fillMaxWidth().height(66.dp), contentAlignment = Alignment.Center) {
+                    picture?.let { Image(it, "Link preview image", Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
+                    Box(Modifier.heightIn(min = 44.dp).semantics { contentDescription = "Remove link preview"; role = Role.Button }
+                        .clickable(onClick = onRemove).padding(horizontal = 8.dp), contentAlignment = Alignment.Center) {
+                        BasicText("× REMOVE", Modifier.background(Pack.surface.copy(alpha = 0.94f)).padding(horizontal = 6.dp, vertical = 3.dp),
+                            style = Pack.mono(Pack.size.small, Pack.foreground))
+                    }
+                }
+            }
+            Row(Modifier.fillMaxWidth().padding(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                BasicText("${link.title ?: link.url} · ${link.site ?: Parts.host(link.url)}", Modifier.weight(1f),
+                    style = Pack.body(Pack.size.small, Pack.muted), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (link.imageAttachmentId == null) BasicText("× REMOVE", Modifier.heightIn(min = 44.dp)
+                    .semantics { contentDescription = "Remove link preview"; role = Role.Button }.clickable(onClick = onRemove),
+                    style = Pack.mono(Pack.size.small, Pack.foreground))
+            }
+        }
+        return
     }
     Column(if (compact) Modifier.fillMaxWidth() else Modifier.width(260.dp)) {
         if (link.imageAttachmentId != null) {

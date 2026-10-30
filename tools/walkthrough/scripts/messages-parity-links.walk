@@ -35,9 +35,12 @@ tap Message
 type https://example.com/story
 wait 800
 expect Remove link preview
+key BACK
+shot approved-draft-state card=messages-parity-links
 tap Remove link preview
 absent Remove link preview
 shot removed-draft card=messages-parity-fallback
+tap https://example.com/story
 key ENTER
 wait 4000
 expect Demo reply to:

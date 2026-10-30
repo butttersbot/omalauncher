@@ -1168,9 +1168,11 @@ private fun FieldTiles(
             BasicText(if (Messages.linked) "Photos go out with the words" else "Photos open in OpenBubbles' chat, ready to send", Modifier.padding(start = 4.dp), style = Pack.body(Pack.size.small, Pack.muted))
         }
         if (link != null) {
-            Tile("Remove link preview", { onDropLink(link) }, wide = true, tall = metadata?.imageAttachmentId != null) {
+            if (metadata != null && metadata.state != "unavailable") {
+                RichLinkCard(metadata, Pack.foreground, draft = true, onRemove = { onDropLink(link) })
+            } else Tile("Remove link preview", { onDropLink(link) }, wide = true) {
                 Box(Modifier.fillMaxSize().background(Pack.surface).padding(horizontal = 10.dp), contentAlignment = Alignment.CenterStart) {
-                    if (metadata != null && metadata.state != "unavailable") RichLinkCard(metadata, Pack.foreground, compact = true) else Card(Parts.host(link), Parts.path(link).ifEmpty { null }, "↗", Pack.foreground)
+                    Card(Parts.host(link), Parts.path(link).ifEmpty { null }, "↗", Pack.foreground)
                 }
             }
         }
