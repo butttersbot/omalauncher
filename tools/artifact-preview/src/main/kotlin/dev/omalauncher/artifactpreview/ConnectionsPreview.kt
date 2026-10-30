@@ -25,10 +25,10 @@ fun ConnectionsPreview() {
     val ledger = remember { ConnectionAlerts() }
     fun snapshot(state: ConnectionState = ConnectionState.Failed): ConnectionsSnapshot = ConnectionsSnapshot(Capability.entries.map { c ->
         val affected = c in setOf(Capability.Agents, Capability.Builds)
-        ConnectionReading(c, if (affected) state else if (c == Capability.Optional) ConnectionState.Disabled else ConnectionState.Ready,
+        ConnectionReading(c, if (affected) state else ConnectionState.Ready,
             when { affected -> "Fictional runner evidence; agent runs and builds share one incident."
                 c == Capability.Canvas -> "Fictional CORE Design Canvas board and workspace sync verified."
-                c == Capability.Optional -> "Fictional optional tools disabled."
+                c == Capability.Optional -> "Fictional optional tools available."
                 else -> "Fictional end-to-end capability verified." }, clock, if (affected) "runner:fixture" else null, if (affected) "Fictional Mac" else "",
             if (affected) "fictional-mac" else "")
     } + ConnectionReading(Capability.Network, ConnectionState.Ready, "Fictional route to the Mac responded; capability status is checked separately.",
@@ -70,6 +70,8 @@ fun ConnectionsPreview() {
         ConnectionsSource.toggleAlerts = { ConnectionsSource.enabled = !ConnectionsSource.enabled; receipt = "Fixture alert setting changed; no Android notification" }
         ConnectionsSource.togglePause = { ConnectionsSource.paused = !ConnectionsSource.paused; receipt = "Fixture pause changed" }
         ConnectionsSource.alerts = "Fixture only: no real alerts or configuration changes."
+        // The cards' sample state: outage alerts on (the walk turns them off and on again).
+        ConnectionsSource.enabled = true
     }
     Column(Modifier.fillMaxSize().background(Pack.background).windowInsetsPadding(WindowInsets.safeDrawing).padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         BasicText("Connections fixture · no live actions", style = Pack.mono(Pack.size.small))

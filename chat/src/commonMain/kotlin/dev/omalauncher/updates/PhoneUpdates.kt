@@ -23,6 +23,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -103,6 +104,8 @@ fun phonePillLabel(u: PhoneUpdates): Pair<String, Boolean>? {
 private fun sans(size: TextUnit, color: Color = Pack.foreground, weight: FontWeight? = null) =
     Pack.body(size, color).let { if (weight == null) it else it.copy(fontWeight = weight) }
 private fun mono(size: TextUnit, color: Color) = Pack.mono(size, color)
+/** The cards' .checks line: the mono caption at 10px/1.5 with .06em tracking (the pack's own is wider). */
+private fun checks(color: Color) = Pack.mono(10.sp, color).copy(letterSpacing = 0.06.em, lineHeight = 15.sp)
 private fun Modifier.ruleTop() = drawBehind { val w = Pack.hair.toPx(); drawLine(Pack.border, Offset(0f, w / 2), Offset(size.width, w / 2), w) }
 private fun Modifier.ruleBottom() = drawBehind { val w = Pack.hair.toPx(); drawLine(Pack.border, Offset(0f, size.height - w / 2), Offset(size.width, size.height - w / 2), w) }
 
@@ -157,20 +160,20 @@ fun PhoneUpdateSheet(u: PhoneUpdates) {
                     }
                 }
                 Column(Modifier.weight(1f, fill = false).fillMaxWidth().verticalScroll(rememberScrollState()).padding(if (wide) 20.dp else 16.dp)) {
-                    val panels = buildList<@Composable () -> Unit> {
-                        for (offer in needsTap(u.offers)) add { OfferPanel(u, offer) }
-                        if (u.launcher != LauncherState.Idle && u.offers.none { it.launcher }) add { Panel { LauncherStatePanel(u) } }
-                        if (u.history.isNotEmpty()) add { HistoryPanel(u.history) }
+                    val panels = buildList<@Composable (Modifier) -> Unit> {
+                        for (offer in needsTap(u.offers)) add { m -> OfferPanel(u, offer, m) }
+                        if (u.launcher != LauncherState.Idle && u.offers.none { it.launcher }) add { m -> Panel(m) { LauncherStatePanel(u) } }
+                        if (u.history.isNotEmpty()) add { m -> HistoryPanel(u.history, m) }
                     }
                     if (panels.isEmpty()) Words("Everything is up to date.", sans(15.sp, Pack.muted))
                     else if (wide) {
                         panels.chunked(2).forEach { pair ->
                             Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                pair.forEach { Box(Modifier.weight(1f).fillMaxHeight()) { it() } }
+                                pair.forEach { Box(Modifier.weight(1f).fillMaxHeight()) { it(Modifier.fillMaxHeight()) } }
                                 if (pair.size == 1) Spacer(Modifier.weight(1f))
                             }
                         }
-                    } else panels.forEach { Box(Modifier.padding(bottom = 12.dp)) { it() } }
+                    } else panels.forEach { Box(Modifier.padding(bottom = 12.dp)) { it(Modifier) } }
                     Column(Modifier.fillMaxWidth().padding(top = 2.dp).ruleTop().padding(top = 10.dp)) {
                         Words("Soma updates only when you tap. An app that couldn’t update by itself waits here.", sans(13.sp, Pack.muted))
                         Action("later", Pack.foreground) { u.close() }
@@ -182,23 +185,23 @@ fun PhoneUpdateSheet(u: PhoneUpdates) {
 }
 
 @Composable
-private fun OfferPanel(u: PhoneUpdates, offer: AppOffer) {
-    Panel {
+private fun OfferPanel(u: PhoneUpdates, offer: AppOffer, modifier: Modifier = Modifier) {
+    Panel(modifier) {
         BasicText(Pack.heading(offer.name), style = Pack.display(19.sp))
-        Words(Pack.caption("${offer.from} → ${offer.to} · ${offer.built}"), mono(10.sp, Pack.foreground))
+        Words(Pack.caption("${offer.from} → ${offer.to} · ${offer.built}"), checks(Pack.foreground))
         if (offer.launcher && u.launcher != LauncherState.Idle) { LauncherStatePanel(u); return@Panel }
-        Column(Modifier.padding(start = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(Modifier.padding(start = 4.dp, top = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             if (offer.notes.isEmpty()) Words("(the build says nothing about what changed)", sans(14.sp, Pack.muted))
-            offer.notes.forEach { Words("•  $it", sans(14.sp)) }
+            offer.notes.forEach { Words("•  $it", sans(14.sp).copy(lineHeight = 18.9.sp)) }
         }
         Column {
-            val checks = listOfNotNull(if (offer.launcher) "taken and signed for this phone" else "signed for this phone",
+            val passed = listOfNotNull(if (offer.launcher) "taken and signed for this phone" else "signed for this phone",
                 "walks ${offer.walksPassed}/${offer.walksTotal} pass", offer.design.good)
-            Words(Pack.caption("✓ " + checks.joinToString(" · ")), mono(10.sp, Pack.green))
-            offer.design.warning?.let { Words(Pack.caption(it), mono(10.sp, Pack.accent)) }
-            offer.failure?.let { Words(Pack.caption("didn’t update by itself: $it"), mono(10.sp, Pack.accent)) }
+            Words(Pack.caption("✓ " + passed.joinToString(" · ")), checks(Pack.green))
+            offer.design.warning?.let { Words(Pack.caption(it), checks(Pack.accent)) }
+            offer.failure?.let { Words(Pack.caption("didn’t update by itself: $it"), checks(Pack.accent)) }
         }
-        if (offer.launcher) Words("Soma closes for about 20 seconds and reopens. Linux, logins and settings stay.", sans(13.sp, Pack.muted))
+        if (offer.launcher) Words("Soma closes for about 20 seconds and reopens. Linux, logins and settings stay.", sans(13.sp, Pack.muted).copy(lineHeight = 18.2.sp))
         Action(if (offer.launcher) "update and restart Soma" else "update ${offer.name}") { u.update(offer) }
     }
 }
@@ -244,8 +247,8 @@ private fun ColumnScope.LauncherStatePanel(u: PhoneUpdates) {
 }
 
 @Composable
-private fun HistoryPanel(history: List<AutoUpdated>) {
-    Panel {
+private fun HistoryPanel(history: List<AutoUpdated>, modifier: Modifier = Modifier) {
+    Panel(modifier) {
         BasicText(Pack.heading("Updated by themselves"), style = Pack.display(19.sp, Pack.muted))
         Column(Modifier.fillMaxWidth().ruleTop()) {
             history.forEach { h ->

@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -62,11 +63,11 @@ private fun Modifier.bar(color: Color) = drawBehind { drawRect(color, Offset.Zer
 /** The strip's ✓ and △ drawn, not typed, so both stand the same height whatever face the pack brings (cards v6:
  * `.connection-strip i{font-size:17px}` gives a thin check and an outlined triangle of one size). Other marks are text. */
 @Composable
-private fun StripMark(mark: String, color: Color) {
-    if (mark != "✓" && mark != "△") { Words(mark, sans(17.sp, color), 1, Modifier.height(20.dp).wrapContentHeight()); return }
-    androidx.compose.foundation.Canvas(Modifier.size(20.dp)) {
+private fun StripMark(mark: String, color: Color, box: androidx.compose.ui.unit.Dp = 20.dp, line: androidx.compose.ui.unit.Dp = 1.6.dp) {
+    if (mark != "✓" && mark != "△") { Words(mark, sans(17.sp, color), 1, Modifier.height(box).wrapContentHeight()); return }
+    androidx.compose.foundation.Canvas(Modifier.size(box)) {
         val w = size.width; val h = size.height
-        val stroke = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.6.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round,
+        val stroke = androidx.compose.ui.graphics.drawscope.Stroke(width = line.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round,
             join = androidx.compose.ui.graphics.StrokeJoin.Round)
         val path = androidx.compose.ui.graphics.Path().apply {
             if (mark == "✓") { moveTo(w * .14f, h * .55f); lineTo(w * .40f, h * .82f); lineTo(w * .88f, h * .16f) }
@@ -207,9 +208,16 @@ fun ConnectionsDialog(now: Long, close: () -> Unit) {
                         Words(Pack.caption("Soma / systems"), caption(10.sp))
                         BasicText(Pack.heading("Connections"), style = Pack.display(22.sp).copy(textAlign = TextAlign.Center))
                     }
-                    Box(Modifier.size(44.dp).focusRequester(closeFocus).clickable(onClick = close)
+                    // Modal shell v1: a thin drawn × (svg stroke 1.5), and the --focus frame while it holds focus (it takes it on open).
+                    var closeFocused by remember { mutableStateOf(false) }
+                    Box(Modifier.size(44.dp).onFocusChanged { closeFocused = it.isFocused }.focusRequester(closeFocus).clickable(onClick = close)
+                        .then(if (closeFocused) Modifier.border(3.dp, Pack.accent) else Modifier)
                         .semantics { contentDescription = "Close Connections" }, contentAlignment = Alignment.Center) {
-                        BasicText("×", style = Pack.body(26.sp))
+                        androidx.compose.foundation.Canvas(Modifier.size(20.dp)) {
+                            val w = 1.5.dp.toPx(); val a = size.width * .25f; val b = size.width * .75f
+                            drawLine(Pack.foreground, Offset(a, a), Offset(b, b), w)
+                            drawLine(Pack.foreground, Offset(b, a), Offset(a, b), w)
+                        }
                     }
                 }
                 Column(Modifier.weight(1f, fill = false).fillMaxWidth().verticalScroll(rememberScrollState()).padding(inset)) {
@@ -266,7 +274,7 @@ private fun ConnectionsRepair(snapshot: ConnectionsSnapshot, now: Long) {
 @Composable
 private fun RestoreBlock(stage: Int, steps: List<String>) {
     ConnectionAction(if (ConnectionsSource.checking) "Checking…" else "Restore", { ConnectionsSource.restore() }, size = 16.sp)
-    ConnectionsSource.repair?.let { Words(it, sans(13.sp), modifier = Modifier.padding(bottom = 8.dp)) }
+    ConnectionsSource.repair?.let { Words(it, sans(13.sp).copy(lineHeight = 19.5.sp), modifier = Modifier.padding(top = 2.dp, bottom = 12.dp)) }
     ProgressRail(stage, Modifier.fillMaxWidth())
     Column(Modifier.padding(top = 12.dp)) {
         steps.forEachIndexed { i, step ->
@@ -284,7 +292,7 @@ private fun RestoreBlock(stage: Int, steps: List<String>) {
  * on his widget (Boss, 2026-10-29: "these widget controls are really just for me"). */
 @Composable
 private fun AgentTools() {
-    ConnectionAction("Check again", { ConnectionsSource.refresh() }, Modifier.padding(top = 4.dp))
+    ConnectionAction("Check again", { ConnectionsSource.refresh() }, Modifier.padding(top = 4.dp), size = 16.sp)
 }
 @Composable
 private fun ConnectionsInventory(snapshot: ConnectionsSnapshot, now: Long) {
@@ -300,7 +308,12 @@ private fun ConnectionDisclosure(row: ConnectionReading, status: ConnectionStatu
         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { open = !open }
             .semantics { contentDescription = "${row.capability.title}: ${status.word}" }, verticalAlignment = Alignment.CenterVertically) {
             Words(row.capability.title, sans(13.sp), modifier = Modifier.weight(1f))
-            Words(status.text, plainMono(10.sp, status.tone.color), 1)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                // The card's small ✓ / △ (the mono face draws them tall and heavy): drawn, one size.
+                if (status.mark == "✓" || status.mark == "△") Box(Modifier.size(10.dp)) { StripMark(status.mark, status.tone.color, 10.dp, 1.2.dp) }
+                else Words(status.mark, plainMono(10.sp, status.tone.color), 1)
+                Words(status.word, plainMono(10.sp, status.tone.color), 1)
+            }
         }
         if (open) Words(row.detail, sans(12.sp, Pack.muted), modifier = Modifier.padding(bottom = 12.dp))
     }
