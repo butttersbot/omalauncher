@@ -337,7 +337,7 @@ try:
     calling_as('phone')
     check('unpair leaves every other device in', call('GET', '/health')[0] == 200)
     code, health = call('GET', '/health')
-    check('/health answers, naming the agents the Mac has (Venice, which has a key)', code == 200 and health.pop('models', None) is not None and health.pop('bots', None) is not None and health == {'ok': True, 'runner': 'oma-runner', 'soma': environment['OMA_RUNNER_SOMA_SERVICE'], 'threads': 6, 'working': 0, 'waiting': 0, 'kinds': ['claude', 'codex', 'cursor', 'grok', 'venice'], 'files': True})
+    check('/health answers, naming the agents the Mac has (Venice, which has a key)', code == 200 and health.pop('models', None) is not None and health.pop('bots', None) is not None and health.pop('build', 0) is None and health.pop('updating', None) is False and health == {'ok': True, 'runner': 'oma-runner', 'soma': environment['OMA_RUNNER_SOMA_SERVICE'], 'threads': 6, 'working': 0, 'waiting': 0, 'kinds': ['claude', 'codex', 'cursor', 'grok', 'venice'], 'files': True})
     check('a project outside the roots is refused', call('POST', '/threads', {'name': 'x', 'project': str(outside)})[0] == 403)
     check('a path that climbs out of a root is refused', call('POST', '/threads', {'name': 'x', 'project': str(project / '..' / '..' / 'outside')})[0] == 403)
     (root / 'link').symlink_to(outside)

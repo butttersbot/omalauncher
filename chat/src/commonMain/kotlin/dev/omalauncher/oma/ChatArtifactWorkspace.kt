@@ -47,6 +47,9 @@ internal val LocalArtifactShowing = compositionLocalOf<Pair<String, Int>?> { nul
 /** The strip above the composer that tells of an agent's artifact on a narrow screen (never covering the chat); null when there is none. */
 internal val LocalArtifactPeek = compositionLocalOf<(@Composable () -> Unit)?> { null }
 
+/** What a host puts in the chat's top bar before [ artifacts ]: desktop Soma's update pill (Updates.kt); nothing on the phone. */
+val LocalTopBarExtra = staticCompositionLocalOf<(@Composable () -> Unit)?> { null }
+
 /** The computer this tab's thread is on ("Mac Pro"), for the panel's footer when no event has said it yet. */
 internal val LocalArtifactWhere = compositionLocalOf { "" }
 
@@ -176,7 +179,8 @@ internal fun ChatArtifactWorkspace(
                     LocalArtifactPeek provides strip,
                 ) {
                     Column(Modifier.fillMaxSize().widthIn(max = ReadingWidth)) {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                            LocalTopBarExtra.current?.invoke()
                             BracketAction("artifacts · ${artifacts.size}", Pack.accent) { fileLists = fileLists + tab; expanded = false }
                         }
                         content()
