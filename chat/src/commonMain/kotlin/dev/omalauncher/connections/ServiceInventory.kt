@@ -53,7 +53,7 @@ fun serviceInventoryReadings(reply: ConnectionReply, displayHost: String, source
                     // Absence is not an outage, and not an unknown either: an Unknown would outrank another host's Ready.
                     notInstalled || (evidence.isNotEmpty() && evidence.all { it.result == "not_installed" }) -> ConnectionState.Disabled
                     proofTime <= 0 -> ConnectionState.Unknown
-                    evidence.any { it.code in setOf(401, 403) || it.result == "auth" } -> ConnectionState.Auth
+                    required.any { it.code in setOf(401, 403) || it.result == "auth" } -> ConnectionState.Auth
                     evidence.any { it.result == "fail" } -> ConnectionState.Failed
                     required.all { it.result == "pass" } && evidence.isNotEmpty() -> ConnectionState.Ready
                     else -> ConnectionState.Unknown
@@ -84,7 +84,7 @@ fun serviceInventoryReadings(reply: ConnectionReply, displayHost: String, source
                 ConnectionReading(scope, if (unconfirmed) ConnectionState.Unknown else state, told?.let { "$it $detail" } ?: detail, if (proofTime > 0) proofTime else checked,
                     if (state in setOf(ConnectionState.Failed, ConnectionState.Auth, ConnectionState.Ready))
                         "service:$host:$id${if (id == "runner") ":${scope.name}" else ""}" else null,
-                    displayHost, sourceHost, noted).current(now)
+                    displayHost, sourceHost, noted)
             }
         }
     }.getOrElse { emptyList() }

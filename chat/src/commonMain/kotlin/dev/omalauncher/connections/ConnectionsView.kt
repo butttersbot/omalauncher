@@ -203,6 +203,8 @@ fun ConnectionsModule(size: ModuleSize, @Suppress("UNUSED_PARAMETER") tick: Long
             // A child clickable consumes the tap: Restore does not open the detail modal.
             // Small card (v6 .small .controls: 8px insets): the rule and [Restore] run 4dp wider than the text column.
             val reach = if (small) 4.dp else 0.dp
+            // Restore is offered only when something is wrong: with no incident there is nothing to restore.
+            if (incidents.isNotEmpty())
             Box(Modifier.fillMaxWidth().layout { m, c ->
                 val extra = (reach * 2).roundToPx()
                 val p = m.measure(c.copy(minWidth = c.maxWidth + extra, maxWidth = c.maxWidth + extra))
@@ -270,8 +272,10 @@ private fun ConnectionsRepair(snapshot: ConnectionsSnapshot, now: Long) {
     val flag = when {
         incidents.isNotEmpty() -> "△ ${incidents.size} incident${if (incidents.size == 1) "" else "s"}"
         stage == 3 -> "✓ Restored"
+        snapshot.nothingFresh(now) -> "Not checked"
         else -> if (snapshot.rows(now).all { it.settled }) "✓ All ready" else "No incident"
     }
+    val flagColor = when { incidents.isNotEmpty() -> Pack.accent; flag == "Not checked" -> Pack.muted; else -> Pack.green }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Words("CONNECTION CHECK", plainMono(10.sp, Pack.foreground, .07f), 1, Modifier.padding(bottom = 10.dp))
         // The flag is the button; its hit area runs down into the space the heading leaves under it, so nothing moves.
@@ -280,7 +284,7 @@ private fun ConnectionsRepair(snapshot: ConnectionsSnapshot, now: Long) {
             contentDescription = "Connection check: ${flag.removePrefix("△ ").removePrefix("✓ ")}"
             stateDescription = if (open) "Expanded" else "Collapsed"
         }) {
-            Words("${flag.uppercase()} ${if (open) "▴" else "▾"}", plainMono(10.sp, if (incidents.isNotEmpty()) Pack.accent else Pack.green, .07f), 1)
+            Words("${flag.uppercase()} ${if (open) "▴" else "▾"}", plainMono(10.sp, flagColor, .07f), 1)
         }
     }
     if (open) Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -359,6 +363,8 @@ private fun ModelsSection(row: ConnectionReading, status: ConnectionStatus, line
                     Words(line.label.ifBlank { "Agent" }, sans(12.sp, Pack.foreground), modifier = Modifier.weight(1f))
                     StatusWord(lineStatus)
                 }
+                val ran = modelRanAt(line)
+                if (ran > 0) Words("Last real run ${ageWords(ConnectionsSource.clock() - ran)} ago", sans(11.sp, Pack.muted), 1)
                 if (error.isNotEmpty()) Words(error, sans(11.sp, Pack.muted), 3)
             }
         }

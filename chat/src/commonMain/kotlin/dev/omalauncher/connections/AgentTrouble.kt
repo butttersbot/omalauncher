@@ -59,6 +59,10 @@ fun modelWord(reading: ConnectionReading): String =
     else reading.checks.firstNotNullOfOrNull { it.agentTrouble() }?.words?.replaceFirstChar { it.uppercase() }
         ?: when (reading.state) { ConnectionState.Ready -> "Healthy"; ConnectionState.Stale -> "Stale"; else -> "No recent run" }
 
+/** When that line's last real run was, in ms, or 0. */
+fun modelRanAt(reading: ConnectionReading): Long =
+    reading.checks.firstNotNullOfOrNull { c -> c.fields["at"]?.toLongOrNull() }?: 0L
+
 /** The real error a Models line hit, as it was printed, or blank. */
 fun modelError(reading: ConnectionReading): String = reading.checks.firstNotNullOfOrNull { it.agentTrouble() }?.error.orEmpty()
 
@@ -79,11 +83,13 @@ fun phoneModelReadings(installed: List<InstalledAgent>, needs: List<AgentNeed>, 
         val label = listOfNotNull(agent.name, last?.let(modelOf)).joinToString(" · ")
         when {
             last == null -> ConnectionReading(Capability.Models, ConnectionState.Unknown, "${agent.name} has no recent run here.", now, root, label = label)
-            last.status == TaskStatus.Done -> ConnectionReading(Capability.Models, ConnectionState.Ready, "${agent.name} answered its last turn here.", now, root, label = label)
+            // Healthy is only that the last real run finished, and the line says when that was: it is no fresh check.
+            last.status == TaskStatus.Done -> ConnectionReading(Capability.Models, ConnectionState.Ready, "${agent.name} answered its last real run here, ${ageWords(now - last.time)} ago.", now, root,
+                checks = listOf(ConnectionCheck("agent_last_run.$bin", "phone", result = "pass", fields = mapOf("at" to last.time.toString()))), label = label)
             else -> {
                 val code = agentError(last.result)!!
                 val error = last.result.split(Regex("\\s+")).joinToString(" ").take(160)
-                val check = ConnectionCheck("agent_turn.$bin", "phone", result = if (code == "sign_in") "auth" else "fail", fields = mapOf("code" to code, "agent" to bin, "error" to error))
+                val check = ConnectionCheck("agent_turn.$bin", "phone", result = if (code == "sign_in") "auth" else "fail", fields = mapOf("code" to code, "agent" to bin, "error" to error, "at" to last.time.toString()))
                 ConnectionReading(Capability.Models, if (code == "sign_in") ConnectionState.Auth else ConnectionState.Failed, check.agentTrouble()!!.sentence, now, root, checks = listOf(check), label = label)
             }
         }

@@ -138,13 +138,26 @@ class ConnectionsTest {
         assertFalse(ConnectionEndpoint("http://example/health?token=secret", "secret").toString().contains("secret"))
     }
 
-    @Test fun aStaleReadingNeverHidesARealFailureFromIncidents() {
+    @Test fun aFailureStaysAFailureWhenOldAndSaysWhenItWasChecked() {
         val failed = ConnectionsSnapshot(listOf(row(Capability.Agents, ConnectionState.Failed, at = 1).copy(root = "runner:mac")), 1)
-        // Long after its check, the row says Stale, but the failure is still an incident until a fresh check says otherwise.
-        assertEquals(ConnectionState.Stale, failed.rows(1_000_000).first { it.capability == Capability.Network }.state)
-        val incident = failed.incidents(1_000_000).single()
+        val later = 1_000_000L
+        // The row keeps its word (Failed), and says how long ago: Stale never replaces or hides a failure.
+        val network = failed.rows(later).first { it.capability == Capability.Network }
+        assertEquals(ConnectionState.Failed, network.state)
+        assertTrue(network.detail, network.detail.contains("Last checked"))
+        val incident = failed.incidents(later).single()
         assertEquals("runner:mac", incident.key)
-        assertTrue(incident.readings.single().detail.startsWith("Last check is no longer current."))
         assertEquals(ConnectionState.Failed, incident.readings.single().state)
+        assertTrue(incident.readings.single().detail.startsWith("Last checked"))
+        // Something that was fine and is not fresh is Stale, and nothing fresh is "not checked" rather than fine.
+        val ready = ConnectionsSnapshot(listOf(row(Capability.Canvas, ConnectionState.Ready, root = "x", at = 1)), 1)
+        assertEquals(ConnectionState.Stale, ready.rows(later).first { it.capability == Capability.Canvas }.state)
+        assertTrue(ready.nothingFresh(later)); assertFalse(ready.nothingFresh(50_000))
+        // A wrong clock (stamp in the future) is Stale even for a failure.
+        assertEquals(ConnectionState.Stale, row(Capability.Agents, ConnectionState.Failed, at = later + 60_000).current(later).state)
+    }
+    @Test fun theKeepersUnknownDoesNotDecideTheDeviceConnectionsRow() {
+        val snapshot = ConnectionsSnapshot(listOf(row(Capability.Network, ConnectionState.Ready, root = "network"), row(Capability.Agents, ConnectionState.Unknown, root = "x")), 100_000)
+        assertEquals(ConnectionState.Ready, snapshot.rows(100_000).first { it.capability == Capability.Network }.state)
     }
 }

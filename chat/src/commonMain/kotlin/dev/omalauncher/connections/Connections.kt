@@ -36,13 +36,39 @@ data class ConnectionReading(
     /** What a Models line is called: the agent, and the model it ran where that is known. */
     val label: String = "",
 ) {
-    fun current(now: Long): ConnectionReading = if (state !in setOf(ConnectionState.Disabled, ConnectionState.Paused) &&
-        (checkedAt <= 0 || checkedAt - now > CLOCK_TOLERANCE_MS || now - checkedAt > 90_000)) copy(state = ConnectionState.Stale, detail = "Last check is no longer current. $detail") else this
+    /**
+     * What this reading says at [now]. A Ready or Unknown reading with no recent check is Stale. A failure is not: an old
+     * Failed, Auth or Degraded reading keeps its word and says when it was last checked, so Stale never replaces or hides it.
+     * A stamp from the future (a wrong clock) or none is Stale whatever it said.
+     */
+    fun current(now: Long): ConnectionReading {
+        if (state == ConnectionState.Disabled || state == ConnectionState.Paused) return this
+        val wrongClock = checkedAt <= 0 || checkedAt - now > CLOCK_TOLERANCE_MS
+        val old = now - checkedAt > FRESH_MS
+        if (!wrongClock && !old) return this
+        if (!wrongClock && state in FAILURES) return aged(now)
+        return copy(state = ConnectionState.Stale, detail = "Last check is no longer current. $detail")
+    }
+    /** The same reading with when it was last checked in its words, once; its state is untouched. */
+    fun aged(now: Long): ConnectionReading =
+        if (now - checkedAt <= FRESH_MS || detail.startsWith("Last checked")) this else copy(detail = "Last checked ${ageWords(now - checkedAt)} ago. $detail")
 }
+/** "3 min", "2 h": how long ago, in a few words. */
+fun ageWords(ms: Long): String = when {
+    ms < 90_000 -> "${maxOf(1, ms / 1000)} s"
+    ms < 90 * 60_000 -> "${(ms + 30_000) / 60_000} min"
+    ms < 36 * 3_600_000L -> "${(ms + 1_800_000) / 3_600_000} h"
+    else -> "${ms / 86_400_000} d"
+}
+private const val FRESH_MS = 90_000L
+private val FAILURES = setOf(ConnectionState.Failed, ConnectionState.Auth, ConnectionState.Degraded)
 data class ConnectionIncident(val key: String, val readings: List<ConnectionReading>)
 data class ConnectionsSnapshot(val readings: List<ConnectionReading> = emptyList(), val checkedAt: Long = 0) {
     fun rows(now: Long) = Capability.entries.filter { it != Capability.Agents }.map { c ->
-        val parts = readings.filter { it.capability.shown == c }.map { it.current(now) }
+        var parts = readings.filter { it.capability.shown == c }.map { it.current(now) }
+        // The runners' Unknowns (the phone keeper's protocol check) are not the device connection's own word: they stand aside while anything else has spoken.
+        if (c == Capability.Network && parts.any { it.capability == Capability.Network && it.state != ConnectionState.Unknown })
+            parts = parts.filterNot { it.capability == Capability.Agents && it.state == ConnectionState.Unknown }
         val priority = listOf(ConnectionState.Failed, ConnectionState.Auth, ConnectionState.Stale, ConnectionState.Degraded,
             ConnectionState.Unknown, ConnectionState.Paused, ConnectionState.Sleeping, ConnectionState.Ready, ConnectionState.Disabled)
         // An agent with no run yet says nothing about the others' health.
@@ -55,9 +81,12 @@ data class ConnectionsSnapshot(val readings: List<ConnectionReading> = emptyList
      * A reading that says Failed, Auth or Degraded stays an incident however old it is: a stale reading never hides a real
      * failure. Only a fresh check that says otherwise clears it. Its detail says the last check is no longer current.
      */
+    /** True when no reading is fresh: nothing has been checked lately, which a header must not call fine. */
+    fun nothingFresh(now: Long) = readings.none { it.checkedAt > 0 && it.checkedAt - now <= CLOCK_TOLERANCE_MS && now - it.checkedAt <= FRESH_MS }
+
     fun incidents(now: Long): List<ConnectionIncident> = readings
         .filter { it.root != null && it.state in setOf(ConnectionState.Failed, ConnectionState.Auth, ConnectionState.Degraded) }
-        .map { if (it.current(now).state == ConnectionState.Stale) it.copy(detail = "Last check is no longer current. ${it.detail}") else it }
+        .map { it.aged(now) }
         .groupBy { it.root!! }.map { ConnectionIncident(it.key, it.value.distinctBy { r -> r.capability }) }
 
 }

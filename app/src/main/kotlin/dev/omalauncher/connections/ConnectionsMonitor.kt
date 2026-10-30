@@ -34,6 +34,8 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
     private val scheduler = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "connections-monitor").apply { isDaemon = true } }
     private val readers = Executors.newFixedThreadPool(3) { r -> Thread(r, "connections-check").apply { isDaemon = true } }
     private val running = AtomicBoolean(false)
+    /** When the round under way began: a round stuck longer than [STUCK_MS] is given up on, so it cannot block every later round and Check again. */
+    @Volatile private var roundBegan = 0L
     private val alerts = ConnectionAlerts()
     internal val incidents = ConnectionIncidentJournal(File(runtime.proot.home, ".local/share/soma/connections/incidents")) {
         val values = readMacMachines(runtime.proot.launcherConfig).map { it.config.key }.toMutableList()
@@ -88,6 +90,7 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
         }
     } }
     private fun check(restore: Boolean) {
+        if (running.get() && roundBegan > 0 && System.currentTimeMillis() - roundBegan > STUCK_MS) running.set(false)
         if (!running.compareAndSet(false, true)) {
             if (restore) {
                 main.post { ConnectionsSource.repair = "Already checking." }
@@ -99,6 +102,7 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
             }
             return
         }
+        roundBegan = System.currentTimeMillis()
         main.post { ConnectionsSource.checking = true; if (restore) { ConnectionsSource.repair = "Checking device and active jobs…"; ConnectionsSource.guide = null } }
         readers.execute {
             try {
@@ -129,6 +133,7 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
                     if (!restore && before != after && !repairLineStays(ConnectionsSource.repair, after.isNotEmpty())) { ConnectionsSource.repair = null; ConnectionsSource.guide = null }
                     ConnectionsSource.repair = repairAfterTraffic(ConnectionsSource.repair, result)
                     ConnectionsSource.snapshot = result
+                    runCatching { writeSnapshot(result, now) }
                     ConnectionsSource.diagnostic = diagnostic?.toString(2)
                     if (restore) {
                         ConnectionsSource.diagnostic = restoreRecord?.toString(2) ?: diagnostic?.toString(2)
@@ -143,7 +148,7 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
                     listOf(ConnectionNextStep("agent", "inspect_monitor", "Previous readings will become stale until a fresh check succeeds."))) }.getOrNull()
                 main.post { ConnectionsSource.repair = if (record != null) "Check failed." else "Check failed · diagnostic storage unavailable."; ConnectionsSource.diagnostic = record?.toString(2) }
             } finally {
-                running.set(false)
+                running.set(false); roundBegan = 0
                 main.post { ConnectionsSource.checking = false }
                 updateSettings()
             }
@@ -307,13 +312,27 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
         return ConnectionsSnapshot(groupConnectionFailures(groupedRows, alerts.pending.keys.filter { it.startsWith("host:") }.map { it.removePrefix("host:") }.toSet()), System.currentTimeMillis())
     }
 
+    /**
+     * What the widget shows, for agents to compare against reality without reading the screen: ~/.local/share/soma/connections/snapshot.json
+     * in the phone's Linux home. Each row's state, word and detail, the incidents and when this was written. No tokens are in a reading.
+     */
+    private fun writeSnapshot(result: ConnectionsSnapshot, now: Long) {
+        val rows = JSONArray(); val incidentsNow = result.incidents(now)
+        for (row in result.rows(now)) rows.put(JSONObject().put("capability", row.capability.title).put("state", row.state.name)
+            .put("word", connectionStatus(row, incidentsNow).word).put("detail", row.detail.take(1000)))
+        val list = JSONArray(); for (i in incidentsNow) list.put(JSONObject().put("key", i.key).put("capabilities", JSONArray(i.readings.map { it.capability.title })).put("hosts", JSONArray(i.readings.map { it.host }.filter(String::isNotBlank).distinct())))
+        val file = File(runtime.proot.home, ".local/share/soma/connections/snapshot.json")
+        file.parentFile?.mkdirs()
+        File(file.parentFile, "snapshot.tmp").also { it.writeText(JSONObject().put("written_at", now).put("checked_at", result.checkedAt).put("incident_count", incidentsNow.size).put("rows", rows).put("incidents", list).toString(2)) }.renameTo(file)
+    }
     private fun checkEvidence(url: String, reply: ConnectionReply, state: ConnectionState, name: String): ConnectionCheck {
         val target = runCatching { val u = URI(url); URI(u.scheme, null, u.host, u.port, u.path, null, null).toString() }.getOrDefault("configured endpoint")
         return ConnectionCheck(name, target, reply.code, state.label)
     }
     private fun recordChecks(snapshot: ConnectionsSnapshot, now: Long): JSONObject? {
         var newest: JSONObject? = null
-        val problemStates = setOf(ConnectionState.Unknown, ConnectionState.Stale, ConnectionState.Degraded, ConnectionState.Auth, ConnectionState.Failed)
+        // Missing evidence (Unknown, Stale) is not an incident and is not journaled as one.
+        val problemStates = setOf(ConnectionState.Degraded, ConnectionState.Auth, ConnectionState.Failed)
         val grouped = snapshot.readings.filter { it.state in problemStates }.groupBy { it.root ?: "unverified:${it.capability.name}:${it.host}" }
         // Write confirmed outages after missing-evidence records so newest points at the actionable failure.
         for ((root, readings) in grouped.entries.sortedBy { (_, rows) -> if (rows.any { it.state in setOf(ConnectionState.Failed, ConnectionState.Auth) }) 1 else 0 }) {
@@ -387,8 +406,8 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
                 "ok" -> json.optBoolean("ok")
                 else -> false
             } }
-            val limited = verified == ConnectionState.Ready && check.capability in setOf(Capability.Files, Capability.Activity, Capability.Canvas, Capability.Messages, Capability.Search, Capability.Sync, Capability.Builds)
-            val state = if (limited) ConnectionState.Unknown else verified
+            val limited = false
+            val state = verified
             val detail = connectionDetail(reply, verified, when (check.capability) {
                 Capability.Files -> "Authenticated pocket listing read. Receive worker and delivery acknowledgment freshness are not exposed by this endpoint."
                 Capability.Activity -> "Herd inventory read; reporter age and intentional host sleep are not proved by HTTP availability."
@@ -406,3 +425,5 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
         }
     }
 }
+
+private const val STUCK_MS = 180_000L

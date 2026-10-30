@@ -14,7 +14,7 @@ class ServiceInventoryTest {
             .put("services", JSONArray().put(JSONObject().put("id", "canvas").put("state", "running").put("pid", 123)
                 .put("probe", JSONObject().put("checks", checks).put("checked_at", 100_000).put("pending", false)))).toString())
     }
-    private fun state(reply: ConnectionReply, now: Long = 100_000) = serviceInventoryReadings(reply, "Fictional Mac", "fictional", now).single().state
+    private fun state(reply: ConnectionReply, now: Long = 100_000) = serviceInventoryReadings(reply, "Fictional Mac", "fictional", now).single().current(now).state
     @Test fun processAndHttpSuccessDoNotReplaceRequiredProof() {
         assertEquals(ConnectionState.Ready, state(reply("pass")))
         assertEquals(ConnectionState.Unknown, state(reply("unsupported")))

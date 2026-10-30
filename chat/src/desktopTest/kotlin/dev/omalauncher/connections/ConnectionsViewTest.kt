@@ -13,6 +13,8 @@ class ConnectionsViewTest {
     @Test fun restoreDoesNotOpenDetailsAndBodyDoes() = runComposeUiTest {
         var restores = 0
         ConnectionsSource.restore = { restores++ }
+        ConnectionsSource.clock = { 100_000 }
+        ConnectionsSource.snapshot = ConnectionsSnapshot(listOf(ConnectionReading(Capability.Network, ConnectionState.Failed, "down", 100_000, "network", "Mac Pro", "mac")), 100_000)
         setContent { Box(Modifier.size(235.dp, 180.dp)) { ConnectionsModule(ModuleSize.Card, 100_000) } }
         onNodeWithText("[Restore]").assertIsDisplayed().performClick()
         assertEquals(1, restores)
@@ -20,6 +22,27 @@ class ConnectionsViewTest {
         onNodeWithText("Connections").performClick()
         onNodeWithContentDescription("Close Connections").assertIsDisplayed().performClick()
         onNodeWithContentDescription("Close Connections").assertDoesNotExist()
+        ConnectionsSource.snapshot = ConnectionsSnapshot(); ConnectionsSource.clock = { System.currentTimeMillis() }
+    }
+    @Test fun noRestoreOnTheCardWithNoIncident() = runComposeUiTest {
+        ConnectionsSource.clock = { 100_000 }
+        ConnectionsSource.snapshot = ConnectionsSnapshot(Capability.entries.map { ConnectionReading(it, ConnectionState.Ready, "ok", 100_000) }, 100_000)
+        try {
+            setContent { Box(Modifier.size(235.dp, 180.dp)) { ConnectionsModule(ModuleSize.Card, 100_000) } }
+            onNodeWithText("[Restore]").assertDoesNotExist()
+        } finally { ConnectionsSource.snapshot = ConnectionsSnapshot(); ConnectionsSource.clock = { System.currentTimeMillis() } }
+    }
+    @Test fun cardAndSheetCountTheSameIncidentsFromTheSameSnapshot() = runComposeUiTest {
+        ConnectionsSource.clock = { 100_000 }
+        ConnectionsSource.snapshot = ConnectionsSnapshot(listOf(
+            ConnectionReading(Capability.Network, ConnectionState.Failed, "down", 1, "host:a", "A", "a"),
+            ConnectionReading(Capability.Voice, ConnectionState.Failed, "down", 1, "service:voice:b", "B", "b")), 1)
+        try {
+            setContent { Column { Box(Modifier.size(235.dp, 180.dp)) { ConnectionsModule(ModuleSize.Card, 100_000) }; ConnectionsDialog(100_000) {} } }
+            // Old, but still failures: both say two.
+            onNodeWithText("△ 2").assertExists()
+            onNodeWithContentDescription("Connection check: 2 incidents").assertExists()
+        } finally { ConnectionsSource.snapshot = ConnectionsSnapshot(); ConnectionsSource.clock = { System.currentTimeMillis() } }
     }
     @Test fun expandedInventoryHasCoreCanvasAndDistinctUnknownState() = runComposeUiTest {
         setContent { ConnectionsDialog(100_000) {} }
