@@ -61,12 +61,16 @@ class StoreFontsTest {
         val dir = Files.createTempDirectory("store-fonts").toFile()
         val evil = pin.copy(file = "../../evil.ttf")
         StoreFonts.fetchMissing(dir, "http://canvas", listOf(evil)) { ByteArrayInputStream(emoji) }
-        assertFalse(File(dir.parentFile.parentFile, "evil.ttf").exists())
+        assertFalse(File(dir.parentFile!!.parentFile, "evil.ttf").exists())
     }
 
     @Test fun everyVoiceGetsTheStoreFallbacksBehindItsOwnFace() {
         val text = File("src/main/kotlin/dev/omalauncher/theme/ThemeStore.kt").let { if (it.exists()) it else File("app/src/main/kotlin/dev/omalauncher/theme/ThemeStore.kt") }.readText()
-        assertTrue(text.contains("Typeface.CustomFallbackBuilder(own).apply { (after + storeFallbacks()).forEach { addCustomFallback(it) } }"))
+        assertTrue(text.contains("Typeface.CustomFallbackBuilder(own).apply { fallbacks.forEach { addCustomFallback(it) } }"))
+        assertTrue(text.contains("val fallbacks = after + storeFallbacks()"))
+        // Every weight of a variable face is its own typeface with the stack behind it (bold was lost with one).
+        assertTrue(text.contains("FontFamily(FONT_WEIGHTS.map { w -> StackFont(typeface(w), FontWeight(w)) })"))
+        assertTrue(text.contains(".setStyle(android.graphics.fonts.FontStyle(weight, android.graphics.fonts.FontStyle.FONT_SLANT_UPRIGHT))"))
         // Console draws in its store fonts too, its body with Schibsted Grotesk behind JetBrains Mono.
         assertTrue(text.contains("packFont(source, id, ConsolePack.FONT, listOf(ConsolePack.BODY_FALLBACK))"))
         assertFalse("no Latin cut, no generic family in front of the store's", text.contains("FontFamily.SansSerif"))

@@ -18,6 +18,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import dev.omalauncher.LauncherData
 import dev.omalauncher.linux.Proot
 import dev.omalauncher.theme.pack.AssetPackSource
@@ -297,7 +298,8 @@ class ThemeStore(
             val file = File(File(context.cacheDir, "pack-fonts/$id").apply { mkdirs() }, path.replace('/', '_'))
             file.writeBytes(bytes)
             // A variable font gives every weight its own drawing; a single face is what it is, and Android thickens it for bold.
-            val own = if (fontHasVariations(bytes)) {
+            val variable = fontHasVariations(bytes)
+            val own = if (variable) {
                 val fonts = FONT_WEIGHTS.map { w -> android.graphics.fonts.Font.Builder(file).setWeight(w).setFontVariationSettings("'wght' $w").build() }
                 android.graphics.fonts.FontFamily.Builder(fonts.first()).apply { fonts.drop(1).forEach(::addFont) }.build()
             } else {
@@ -311,7 +313,14 @@ class ThemeStore(
                     android.graphics.fonts.FontFamily.Builder(android.graphics.fonts.Font.Builder(file2).build()).build()
                 }.getOrNull()
             }
-            FontFamily(Typeface.CustomFallbackBuilder(own).apply { (after + storeFallbacks()).forEach { addCustomFallback(it) } }.build())
+            val fallbacks = after + storeFallbacks()
+            fun typeface(weight: Int) = Typeface.CustomFallbackBuilder(own).apply { fallbacks.forEach { addCustomFallback(it) } }
+                .setStyle(android.graphics.fonts.FontStyle(weight, android.graphics.fonts.FontStyle.FONT_SLANT_UPRIGHT)).build()
+            // One typeface per weight, each with the whole stack behind it: Compose picks the weight asked for (a single
+            // fallback typeface drew every weight at 400; lane C, 2b09d000: bold mono and hand were lost). A single face
+            // is one weight that Compose thickens for bold, as before.
+            if (variable) FontFamily(FONT_WEIGHTS.map { w -> StackFont(typeface(w), FontWeight(w)) })
+            else FontFamily(StackFont(typeface(400), FontWeight.Normal))
         }.onFailure { Log.w(TAG, "pack $id font $path", it) }.getOrNull()
 
     /** A pack's wallpaper, read no further than an image's size limit and decoded no larger than the screen needs. */
@@ -775,5 +784,27 @@ class ThemeStore(
             val bg = prefs.getString(BACKGROUND, null)?.let { saved -> theme.backgrounds().firstOrNull { it.name == saved } }
             return theme.colors to bg
         }
+    }
+}
+
+/**
+ * A ready typeface (a voice's face with the store's fallbacks behind it, Typeface.CustomFallbackBuilder) as a Compose
+ * font of one weight, so a FontFamily of them picks by weight and still falls back per character.
+ */
+@OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
+private class StackFont(
+    val typeface: Typeface,
+    override val weight: FontWeight,
+) : androidx.compose.ui.text.font.AndroidFont(
+        androidx.compose.ui.text.font.FontLoadingStrategy.Blocking,
+        Loader,
+        androidx.compose.ui.text.font.FontVariation.Settings(),
+    ) {
+    override val style = androidx.compose.ui.text.font.FontStyle.Normal
+
+    private object Loader : androidx.compose.ui.text.font.AndroidFont.TypefaceLoader {
+        override fun loadBlocking(context: Context, font: androidx.compose.ui.text.font.AndroidFont): Typeface = (font as StackFont).typeface
+
+        override suspend fun awaitLoad(context: Context, font: androidx.compose.ui.text.font.AndroidFont): Typeface = (font as StackFont).typeface
     }
 }
