@@ -49,6 +49,19 @@ expect Before I continue
 expect Keep the Manga look
 expect 3 of 4 questions left
 shot question-draft-after-restart-cover
+# The card's [ skip ] asks first; keep it leaves the question waiting and the draft as it was (Boss, 2026-10-29).
+tap back to chat
+expect Questions waiting
+tap skip
+expect Skip this question?
+shot question-skip-confirm-cover
+tap keep it
+absent Skip this question?
+expect Questions waiting
+nolog Boss skipped this question
+tap answer questions
+expect Before I continue
+expect Keep the Manga look
 nolog fixture send now
 nolog phone builder question allow
 fold unfolded

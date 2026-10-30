@@ -135,4 +135,35 @@ class BuilderQuestionSubmitTest : ChatScreenTestBase() {
         mainClock.advanceTimeBy(1200)
         onNodeWithText("[ send now ]").assertExists()
     }
+
+    /** Boss, 2026-10-29: the card's [ skip ] asks "Skip this question?" first; keep it changes nothing. */
+    @OptIn(ExperimentalTestApi::class)
+    @Test fun cardSkipAsksFirstAndKeepItLeavesTheQuestionWaiting() = runComposeUiTest {
+        val approval = AgentApproval("s-request", "AskUserQuestion", JSONObject("""{"questions":[{"question":"Fictional skip?","options":[{"label":"Yes"}]}]}"""), "")
+        val entry = PendingApproval(approval, "s-ticket", 0)
+        val sent = mutableListOf<JSONObject>()
+        val host = object : SampleHost() {
+            override fun builders() = mapOf(BuilderId.A to BuilderState(true, listOf(entry)))
+            override fun tasks() = listOf(ChatTask(now, "Claude Code", "Fictional turn", status = TaskStatus.Running,
+                approvals = listOf(ChatApproval("AskUserQuestion", "", ApprovalAnswer.Waiting, entry.nonce))))
+            override fun answerBuilderQuestions(entry: PendingApproval, answers: JSONObject): ApprovalOutcome { sent += answers; return ApprovalOutcome.Decided }
+        }
+        mainClock.autoAdvance = false
+        setContent { OmaChatScreen(host, null, {}, BuilderId.A.thread, {}) }
+        mainClock.advanceTimeBy(1200)
+        onNodeWithText("[ skip ]").performClick()
+        mainClock.advanceTimeBy(300)
+        onNodeWithText("Skip this question?").assertExists()
+        onNodeWithText("[ keep it ]").performClick()
+        mainClock.advanceTimeBy(300)
+        onNodeWithText("Skip this question?").assertDoesNotExist()
+        onNodeWithText("[ answer questions ]").assertExists()
+        assertTrue(sent.isEmpty())
+        onNodeWithText("[ skip ]").performClick()
+        mainClock.advanceTimeBy(300)
+        onNodeWithText("[ skip it ]").performClick()
+        mainClock.advanceTimeBy(300)
+        assertEquals(1, sent.size)
+        assertTrue(questionAnswersSkipped(sent.single()))
+    }
 }

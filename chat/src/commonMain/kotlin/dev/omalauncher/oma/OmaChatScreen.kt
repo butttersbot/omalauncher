@@ -1238,9 +1238,18 @@ private fun ApprovalBox(
             BasicText("Questions waiting", style = Pack.body(color = Pack.accent))
             val store = LocalQuestionDraftStore.current
             val draft = remember(question.key, store) { store?.get(question.key) ?: WaitingQuestionDraft() }
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            // [ skip ] sits beside [ answer questions ], where a tap meant for the form can land: it asks first
+            // (Boss, 2026-10-29). Keep it leaves the question waiting, its draft untouched.
+            var confirming by remember(question.key) { mutableStateOf(false) }
+            if (confirming && !draft.sending && !draft.sent) {
+                BasicText("Skip this question?", Modifier.padding(top = 4.dp), style = Pack.body())
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    BracketAction("skip it", Pack.accent) { confirming = false; draft.skip(question) }
+                    BracketAction("keep it", Pack.foreground) { confirming = false }
+                }
+            } else Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 BracketAction("answer questions", Pack.accent) { if (!draft.sending && !draft.sent) openQuestion?.invoke(question) }
-                BracketAction(if (draft.sending) "Sending…" else "skip", Pack.accent) { draft.skip(question) }
+                BracketAction(if (draft.sending) "Sending…" else "skip", Pack.accent) { if (!draft.sending && !draft.sent) confirming = true }
             }
             draft.error?.let { BasicText(it, style = Pack.body(Pack.size.small, Pack.red)) }
             if (draft.skipped) BasicText("skipped", style = Pack.mono(Pack.size.small, Pack.muted))
