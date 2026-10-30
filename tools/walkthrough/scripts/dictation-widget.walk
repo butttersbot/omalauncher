@@ -66,7 +66,7 @@ clearlog
 shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es dictationWidget missed
 tap 0.2 0.1
 tap 0.5 0.3
-expect Didn't catch that
+expect "Didn't catch that"
 expect Try again
 shot mg1-missed-cover card=mg1-missed-cover
 shell am force-stop dev.omalauncher.artifactpreview
@@ -109,7 +109,7 @@ shell am force-stop dev.omalauncher.artifactpreview
 shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es dictationWidget missed
 tap 0.1 0.1
 tap 0.8 0.3
-expect Didn't catch that
+expect "Didn't catch that"
 shot mg1-missed-unfolded card=mg1-missed-unfolded
 shell am force-stop dev.omalauncher.artifactpreview
 shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es dictationWidget nomic
