@@ -321,7 +321,12 @@ ARTIFACT_NOTE = ('Soma (the app Boss is using) shows artifacts beside the chat. 
                  'so no CDN scripts, web fonts or network calls) and run `soma-artifact put FILE --title "Short title" --note '
                  '"what this version is"`. Every change is a new put of the same file name, which becomes its next version. '
                  'Before you start changing one, run `soma-artifact editing NAME` so Boss sees you are on it. '
-                 '`soma-artifact list` shows what this conversation has; `soma-artifact get NAME --version N` prints an older version.')
+                 '`soma-artifact list` shows what this conversation has; `soma-artifact get NAME --version N` prints an older version. '
+                 # Linked questions (Boss, 2026-10-29): the same sentence the phone's agents get.
+                 'If a decision you ask Boss is one another thread already asks or will ask him (a peer mailed you about it), link yours: '
+                 'add "metadata": {"source": "link:THREAD"} to AskUserQuestion, THREAD being that peer\'s thread (a Mac thread id like '
+                 't1703ae4f, or phone:A to phone:D); his answer to either then answers both. In a Codex question form, end the first '
+                 'question with a line "link: THREAD" instead.')
 
 SOMA_ARTIFACT_HELPER = r'''#!/usr/bin/env python3
 """soma-artifact: shows a file beside this conversation in Soma, as an artifact Boss can look at and use.
@@ -1270,7 +1275,12 @@ class Codex(Talker):
             thread.ask(number, 'Permissions', {'permissions': params.get('permissions') or {}, 'codex_request': 'permissions'}, params.get('reason') or '')
         elif method == 'item/tool/requestUserInput':
             questions = params.get('questions') or []
-            thread.ask(number, 'Question', {'questions': questions, 'codex_request': 'questions'},
+            # A link Codex gave (any metadata.source "link:KEY" or link, else a last line "link: KEY") goes forward as input.link.
+            meta = params.get('metadata') if isinstance(params.get('metadata'), dict) else {}
+            given = meta.get('source') if isinstance(meta.get('source'), str) else params.get('link') if isinstance(params.get('link'), str) else ''
+            given = given[5:].strip() if given.lower().startswith('link:') else given.strip()
+            link = given if LINK_KEY.fullmatch(given or '') else card_link({}, card_of(questions) or [])
+            thread.ask(number, 'Question', {'questions': questions, 'codex_request': 'questions', **({'link': link} if link else {})},
                        'Answer the question form in Soma, or reply in the chat.')
         elif method == 'mcpServer/elicitation/request':
             thread.ask(number, 'MCP', {'elicitation': params, 'codex_request': 'elicitation'},
@@ -4100,6 +4110,8 @@ def card_of(questions):
 
 
 def card_link(info, card):
+    if isinstance(info, dict) and isinstance(info.get('link'), str) and LINK_KEY.fullmatch(info['link']):
+        return info['link']
     meta = info.get('metadata') if isinstance(info, dict) else None
     source = meta.get('source') if isinstance(meta, dict) else None
     if isinstance(source, str) and source.lower().startswith('link:') and LINK_KEY.fullmatch(source[5:].strip()):

@@ -115,6 +115,9 @@ class Linked(unittest.TestCase):
         self.assertNotIn(self.link_a, {t for t, _ in same})
         self.assertIn((self.link_b, 'link'), {(s['thread'], s['match']) for s in by[self.link_a]['same_pending']})
         self.assertEqual(by[self.link_a]['link'], 'widget-theme')
+        # The asking agent's metadata goes forward untouched (Soma reads metadata.source too).
+        mine = call('GET', '/threads/' + self.link_a)[1]['thread']['pending'][0]
+        self.assertEqual(mine['input']['metadata'], {'source': 'link:widget-theme'})
         # The thread view carries the same marks.
         pending = call('GET', '/threads/' + self.first)[1]['thread']['pending'][0]
         self.assertEqual(pending['fingerprint'], by[self.first]['fingerprint'])
