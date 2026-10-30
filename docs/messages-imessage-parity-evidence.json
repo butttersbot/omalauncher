@@ -89,12 +89,37 @@
   },
   "unverified": [
     "iPhone reference capture and timing",
-    "iOS Simulator: no runtime",
+    "iOS Simulator: existing local iOS images fail mount error150; CoreSimulator1051.55 vs Xcode expected1174.9.2",
     "Mac Messages: no accessible window",
     "physical Fold 120Hz and tactile feel",
     "live X metadata and real transport",
     "production backend health or deployment"
   ],
   "limitations": "Debug virtual device, host under other build load, mixed scenarios; not physical performance. Shared emulator attempts excluded. One send capture gives only an ADB host-time upper bound; visible in capture 1 by 319.5ms while demo server was stopped.",
-  "cleanup": "Demo process stopped and private temp config removed. Emulator stopped before app-clear completed; disposable audit AVD/image and its test pairing then deleted. Production service and shared emulator left running."
+  "cleanup": "Demo process stopped and private temp config removed. Emulator stopped before app-clear completed; disposable audit AVD/image and its test pairing then deleted. Production service and shared emulator left running.",
+  "simulatorRecheck": {
+    "xcode": "/Applications/Xcode.app",
+    "xcodeVersion": "27.1 (27A9275)",
+    "developerDir": "/Applications/Xcode.app/Contents/Developer",
+    "installedCoreSimulator": "1051.55",
+    "expectedCoreSimulator": "1174.9.2",
+    "existingIOSAssets": [
+      {
+        "version": "26.5",
+        "build": "23F77"
+      },
+      {
+        "version": "26.4.1",
+        "build": "23E254a"
+      }
+    ],
+    "existingIPhone17ProDevices": {
+      "iOS26.5": "161BB6A4-9D5F-4EB2-9BDE-7D09AF4E412E",
+      "iOS26.4": "5F4B06AC-D70A-4DF8-8613-FFD91FC56F8D"
+    },
+    "mountResult": "Both iOS signatures verified; unusable, Mount Failed DiskImages2 code150",
+    "bootResult": "NSPOSIXErrorDomain code2: cannot determine runtime bundle",
+    "actions": "Normal scan-and-mount and import of existing on-disk26.5 image; no download, password, sudo, service restart or xcode-select change",
+    "causality": "Version mismatch confirmed; not proven sole cause of mount error150"
+  }
 }
