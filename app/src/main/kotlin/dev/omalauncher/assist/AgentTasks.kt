@@ -798,6 +798,13 @@ class Builder(val id: BuilderId) {
     fun sendNow(context: Context, time: Long): Boolean {
         val unanswered = synchronized(lock) {
             if (!working || stopping || !followUps.first(time)) return false
+            // A question form waiting for him is never ended by a tap anywhere else: Send now would end the turn and
+            // with it the question, as a mis-tap beside the form did (Boss, 2026-10-29). Only Send or skip answers it;
+            // [ stop ] still ends everything, as it says.
+            if (pending.any { questionWaits(it.approval.tool, it.approval.input) }) {
+                AgentNotices.say(context, "A question waits for your answer: send or skip it first")
+                return false
+            }
             sendingNow = true
             stopping = true
             inputWriter?.runCatching { close() }; inputWriter = null

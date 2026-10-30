@@ -409,6 +409,19 @@ class ChatDrafts(private val list: File, private val attachments: File) {
         write(read() - listed)
     }
 
+    /**
+     * His unsent answers to waiting question forms, by the form's key: what he picked and typed in Other stays when he
+     * taps off the form, leaves the chat or the app restarts, until Send or skip (Boss, 2026-10-29). JSON, as
+     * [WaitingQuestionDrafts] writes it.
+     */
+    private val questions = File(list.parentFile, "oma-question-drafts.json")
+
+    @Synchronized fun questionDrafts(): String? = runCatching { questions.readText() }.getOrNull()?.takeIf { it.isNotBlank() }
+
+    @Synchronized fun saveQuestionDrafts(json: String) {
+        runCatching { if (json == "{}") questions.delete() else questions.writeText(json) }
+    }
+
     companion object {
         /** The names importPromptImage gives its copies; nothing else is ever listed or deleted. */
         val NAME = Regex("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.(jpg|png|webp|gif)")

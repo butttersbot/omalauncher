@@ -104,4 +104,35 @@ class BuilderQuestionSubmitTest : ChatScreenTestBase() {
         assertEquals(1, replies)
         assertEquals(Claim.Expired, ledger.claim(entry.id, entry.nonce, false, true))
     }
+
+    /**
+     * Boss, 2026-10-29: a tap beside a waiting question landed on a queued mail's [ send now ], which ended the turn
+     * and the question with it ("the question wasn't answered"). While a question of that builder waits, its
+     * follow-ups offer [ cancel ] but no [ send now ]; once nothing waits, [ send now ] is back.
+     */
+    @OptIn(ExperimentalTestApi::class)
+    @Test fun sendNowIsNotOfferedWhileThatBuildersQuestionWaits() = runComposeUiTest {
+        val approval = AgentApproval("q-request", "AskUserQuestion", JSONObject("""{"questions":[{"question":"Fictional font?","options":[{"label":"Taller cards"}]}]}"""), "")
+        val entry = PendingApproval(approval, "q-ticket", 0)
+        var waiting by mutableStateOf(listOf(entry))
+        var sentNow = 0
+        val host = object : SampleHost() {
+            override fun builders() = mapOf(BuilderId.A to BuilderState(true, waiting))
+            override fun tasks() = listOf(
+                ChatTask(now, "Claude Code", "Fictional running turn", status = TaskStatus.Running,
+                    approvals = listOf(ChatApproval("AskUserQuestion", "", ApprovalAnswer.Waiting, entry.nonce))),
+                ChatTask(now + 1, "Claude Code", "Fictional mail behind it", status = TaskStatus.Queued))
+            override fun sendNow(time: Long) { sentNow++ }
+        }
+        mainClock.autoAdvance = false
+        setContent { OmaChatScreen(host, null, {}, BuilderId.A.thread, {}) }
+        mainClock.advanceTimeBy(1200)
+        onNodeWithText("Questions waiting").assertExists()
+        onNodeWithText("[ cancel ]").assertExists()
+        onAllNodesWithText("[ send now ]").assertCountEquals(0)
+        assertEquals(0, sentNow)
+        runOnIdle { waiting = emptyList() }
+        mainClock.advanceTimeBy(1200)
+        onNodeWithText("[ send now ]").assertExists()
+    }
 }

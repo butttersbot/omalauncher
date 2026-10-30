@@ -83,7 +83,14 @@ internal fun ChatArtifactWorkspace(
     allChats: @Composable (close: () -> Unit) -> Unit = {},
     content: @Composable () -> Unit,
 ) {
-    val questionDrafts = rememberSaveable(saver = WaitingQuestionDrafts.saver) { WaitingQuestionDrafts() }
+    // What he picked or typed in a waiting form is kept until he sends or skips it: tapping off the form, back, another
+    // tab or an app restart only close the form (Boss, 2026-10-29). On disk beside the chat's drafts (ChatDrafts).
+    val questionDrafts = rememberSaveable(saver = WaitingQuestionDrafts.saver) {
+        host.drafts().questionDrafts()?.let { runCatching { WaitingQuestionDrafts.restore(it) }.getOrNull() } ?: WaitingQuestionDrafts()
+    }
+    LaunchedEffect(questionDrafts) {
+        snapshotFlow { questionDrafts.unsentJson() }.collect { json -> withContext(Dispatchers.IO) { host.drafts().saveQuestionDrafts(json) } }
+    }
     // Save data, never a callback: after recreation resolve Send against the current nonce book.
     var questionSelection by rememberSaveable(tab) { mutableStateOf<List<String>?>(null) }
     LaunchedEffect(requestedQuestion?.key) {
