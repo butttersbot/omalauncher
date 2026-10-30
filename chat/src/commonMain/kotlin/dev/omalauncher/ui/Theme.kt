@@ -57,8 +57,8 @@ class ThemePalette(
     /** Console's text: JetBrains Mono from the font store once ThemeStore has read it ([PlatformFonts.consoleMono]). */
     val mono: TextStyle get() = PlatformFonts.consoleMono.let { console ->
         if (console == null) TextStyle(fontFamily = FontFamily.Monospace, fontSize = TextSize.Body, color = foreground)
-        // JetBrains Mono's lines are taller (1.32 em) than the system monospace's (Droid Sans Mono, 1.164 em) that Console's
-        // fixed-height cards were laid out for; at that line height they hold what they held (lane C, 6becf8a9).
+        // JetBrains Mono's lines are taller than the system monospace's that Console's fixed-height cards were laid out
+        // for ([CONSOLE_LINE]); at that line height they hold what they held (lane C, 6becf8a9).
         else TextStyle(
             fontFamily = console, fontSize = TextSize.Body, color = foreground,
             lineHeight = CONSOLE_LINE.em,
@@ -259,8 +259,12 @@ val NerdSymbols: FontFamily get() = PlatformFonts.nerdSymbols
  * The fonts each app bundles its own way, given to the shared code before anything draws: the phone app from its
  * resources (App.onCreate), the desktop app from its jar. Until then, and in unit tests, the default family.
  */
-/** Droid Sans Mono's line height in em ((1901 + 483) / 2048), which Console's cards were laid out for. */
-const val CONSOLE_LINE = 1.164f
+/**
+ * The line height, in em, the system monospace (Droid Sans Mono) is laid out at here, which Console's fixed-height cards
+ * were made for: measured, not taken from the font's tables (lane C, preview.19 on the Fold8 emulator: a 33 px row pitch
+ * for 13 sp text at 2.625 px/sp = 34.1 px, so 0.97 em; JetBrains Mono gave 38 px).
+ */
+const val CONSOLE_LINE = 0.97f
 
 object PlatformFonts {
     @Volatile var nerdSymbols: FontFamily = FontFamily.Default
