@@ -1,0 +1,33 @@
+# canvas-app: soma-messages
+# Continue the dedicated DEMO pairing. Same behaviors at the unfolded size.
+shell am force-stop dev.omalauncher.messages
+shell cmd device_state state 2
+wait 4000
+key WAKEUP
+shell wm dismiss-keyguard
+shell am start -n dev.omalauncher.messages/.MainActivity
+expect All conversations
+tap 0.04 0.28
+expect Shared
+expect Pinned
+expect Muted
+shot unfolded-pinned-chat card=messages-parity-pinned-muted-unfolded
+# The header repeats Ana; hold her rail avatar explicitly.
+swipe 0.04 0.28 0.04 0.28 800
+expect Unpin
+expect Unmute
+shot unfolded-chat-actions card=messages-parity-chat-actions-unfolded
+tap Cancel
+doubletap Perfect, see you there
+expect Tapback love
+shot unfolded-reactions card=messages-parity-reaction-menu-unfolded
+key BACK
+expect Shared
+absent Tapback love
+shell cmd device_state state 0
+wait 4000
+key WAKEUP
+shell wm dismiss-keyguard
+shell am force-stop dev.omalauncher.messages
+shell am start -n dev.omalauncher.messages/.MainActivity
+expect Messages

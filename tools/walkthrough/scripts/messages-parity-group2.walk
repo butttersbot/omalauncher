@@ -1,0 +1,110 @@
+# canvas-app: soma-messages
+# Demo-only parity UI, with native rich-link fixtures from the isolated API branch.
+# Soma Messages linked to the Mac's iMessage service (0.6+). Against the service's DEMO on the Mac Pro: sample
+# chats only, nothing of Boss's; every send gets a fake reply 2 s later. The harness must inject its ephemeral port/token; the checked-in endpoint fails closed.
+shell cmd statusbar collapse
+key HOME
+# A clean start: not linked yet, no contacts answer.
+shell pm clear dev.omalauncher.messages
+# Contacts allowed ahead, so Android's prompt (whose title also says Allow) doesn't cover the inbox.
+shell pm grant dev.omalauncher.messages android.permission.READ_CONTACTS
+# 0.7+ asks for notifications when linked; granted here so its prompt does not cover the inbox.
+shell pm grant dev.omalauncher.messages android.permission.POST_NOTIFICATIONS
+shell pm grant dev.omalauncher.messages android.permission.RECORD_AUDIO
+# Quoted twice: walk.py hands the line to the phone's shell, which would split the link at '&'.
+shell am start -a android.intent.action.VIEW -d "'soma-messages://link?url=http%3A%2F%2F127.0.0.1%3A1&token=INJECT_EPHEMERAL_DEMO_TOKEN'" dev.omalauncher.messages
+wait 2500
+# The owner says yes to the Mac by name before anything goes to it.
+expect Get your iMessages from 100.120.219.46?
+shot link-dialog
+tap Link
+wait 1500
+# Names come from the phone's contacts; the Mac's names stand in when the phone has none.
+wait 4000
+expect Weekend
+expect Ana Demo
+absent OpenBubbles
+shot inbox-from-the-mac
+hold Ana Demo
+expect Mark unread
+expect Pin
+expect Mute
+shot conversation-actions card=messages-parity-chat-actions
+tap Pin
+expect Pinned
+shot pinned card=messages-parity-pinned-muted
+hold Ana Demo
+tap Mute
+expect Muted
+shot pinned-muted card=messages-parity-pinned-muted
+shell am force-stop dev.omalauncher.messages
+shell am start -n dev.omalauncher.messages/.MainActivity
+expect Pinned
+expect Muted
+shot preferences-after-restart card=messages-parity-pinned-muted
+hold Ana Demo
+tap Mark unread
+expect Ana Demo, 1 unread
+shot manually-unread card=messages-parity-list-read
+tap Ana Demo
+expect Perfect, see you there
+absent Messages
+doubletap Perfect, see you there
+expect Tapback like
+shot double-tap-menu card=messages-parity-reaction-menu
+tap Tapback like
+expect Reactions on: Perfect, see you there
+tap Reactions on: Perfect, see you there
+expect People who reacted
+expect Reaction from You: like
+shot reaction-attribution card=messages-parity-reaction-attribution
+tap Done
+doubletap Perfect, see you there
+tap Tapback love
+expect Reactions on: Perfect, see you there
+doubletap Perfect, see you there
+tap Tapback love
+absent Reactions on: Perfect, see you there
+shot reaction-removed
+swipefrom Perfect, see you there 0.26 0 500
+expect Replying
+shot swipe-reply card=messages-parity-gesture-reply
+tap "Don't reply to this"
+absent Replying
+# Short reply drag cancels instead of quoting.
+swipefrom Perfect, see you there 0.06 0 450
+absent Replying
+# Left drag returns on release; host probe captures the held timestamps.
+swipefrom Perfect, see you there -0.22 0 450
+expect Perfect, see you there
+# Send appears at once and echo is still one row after the motion.
+tap Message
+type PARITY-GROUP2-SEND
+key ENTER
+wait 3500
+expect Demo reply to: PARITY-GROUP2-SEND
+shot send-settled card=messages-parity-send-motion
+key BACK
+# A short blank-area right drag cancels back; a full one commits.
+swipe 0.5 0.25 0.59 0.25 500
+expect Perfect, see you there
+swipe 0.5 0.25 0.98 0.25 600
+expect Messages
+absent Perfect, see you there
+expect Muted
+shot back-to-list
+# List left-swipe reveals the same accessible actions.
+swipefrom Ana Demo -0.4 0 500
+expect Unpin
+expect Unmute
+shot list-swipe card=messages-parity-chat-actions
+tap Unpin
+expect Muted
+shot unpinned-muted card=messages-parity-pinned-muted
+# Opening another row closes the earlier reveal.
+swipefrom Ana Demo -0.4 0 500
+expect Unmute conversation Ana Demo
+swipefrom Weekend -0.4 0 500
+expect Mute conversation Weekend
+absent Unmute conversation Ana Demo
+shot one-row-open card=messages-parity-chat-actions

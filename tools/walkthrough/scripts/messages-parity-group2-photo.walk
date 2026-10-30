@@ -1,0 +1,16 @@
+# canvas-app: soma-messages
+# Existing isolated DEMO pairing, corrected single-photo gesture.
+shell am start -n dev.omalauncher.messages/.MainActivity
+expect Messages
+tap Sideways
+swipefrom Photo 0.3 0 550
+expect Replying
+shot photo-reply-fixed card=messages-parity-gesture-reply
+tap "Don't reply to this"
+absent Replying
+doubletap Photo
+expect Tapback like
+shot photo-doubletap-fixed card=messages-parity-reaction-menu
+key BACK
+expect Photo
+key BACK

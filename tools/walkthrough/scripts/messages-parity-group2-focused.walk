@@ -1,0 +1,59 @@
+# canvas-app: soma-messages
+# Run messages-parity-group2-setup.walk on a fresh DEMO first; Ana is pinned/muted.
+shell am start -n dev.omalauncher.messages/.MainActivity
+expect Messages
+hold Ana Demo
+expect Unpin
+expect Unmute
+shot current-chat-actions card=messages-parity-chat-actions
+tap Cancel
+expect Pinned
+expect Muted
+shot current-pinned-muted card=messages-parity-pinned-muted
+tap Ana Demo
+absent Messages
+doubletap Perfect, see you there
+expect Tapback like
+shot current-reaction-menu card=messages-parity-reaction-menu
+tap Tapback like
+tap Reactions on: Perfect, see you there
+expect People who reacted
+expect Reaction from You: like
+shot current-attribution card=messages-parity-reaction-attribution
+key BACK
+expect Perfect, see you there
+absent People who reacted
+# The existing other person's reaction preserves its name from the Mac's direct-chat data.
+tap Reactions on: Yes! 7pm
+expect Reaction from Ana Demo: love
+shot other-reactor card=messages-parity-reaction-attribution
+tap Done
+# A raw drag cannot navigate the underlying chat while a reaction menu is open.
+doubletap Perfect, see you there
+expect Tapback like
+key BACK
+expect Perfect, see you there
+absent Tapback like
+key BACK
+tap Sideways
+doubletap Photo
+expect Tapback like
+shot photo-reactions card=messages-parity-reaction-menu
+key BACK
+swipefrom Photo 0.3 0 550
+expect Replying
+shot photo-reply card=messages-parity-gesture-reply
+tap "Don't reply to this"
+key BACK
+tap Clips
+doubletap Video, tap to play
+expect Tapback like
+shot video-reactions
+key BACK
+key BACK
+tap Voices
+doubletap Voice message
+expect Tapback like
+shot voice-reactions
+key BACK
+key BACK

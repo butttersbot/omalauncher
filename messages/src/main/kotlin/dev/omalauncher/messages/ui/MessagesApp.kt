@@ -25,6 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
@@ -93,12 +94,12 @@ fun MessagesApp(resumed: Int) {
             val shown = openId?.takeIf { book[it] != null } ?: book.conversations.firstOrNull()?.id
             Workspace(book, shown, samples, pick, ::draft, pending, desk)
         } else {
-            Inbox(book, null, samples, pick, Modifier.fillMaxSize())
+            Inbox(book, null, samples, pick, Modifier.fillMaxSize().then(if (openId != null) Modifier.clearAndSetSemantics {} else Modifier))
             val id = openId
             val conversation = id?.let { book[it] }
             if (conversation != null) {
-                Sliding(widthPx = with(LocalDensity.current) { widthDp.dp.toPx() }, onGone = { openId = null }) { back ->
-                    key(conversation.id) { Thread(conversation, draft(conversation.id), pending, onBack = back, Modifier.fillMaxSize()) }
+                Sliding(widthPx = with(LocalDensity.current) { widthDp.dp.toPx() }, onGone = { openId = null }) { back, modalChanged ->
+                    key(conversation.id) { Thread(conversation, draft(conversation.id), pending, onBack = back, Modifier.fillMaxSize(), onModalChange = modalChanged) }
                 }
             }
         }
@@ -114,8 +115,10 @@ fun MessagesApp(resumed: Int) {
 private fun Sliding(
     widthPx: Float,
     onGone: () -> Unit,
-    content: @Composable (back: () -> Unit) -> Unit,
+    content: @Composable (back: () -> Unit, modalChanged: (Boolean) -> Unit) -> Unit,
 ) {
+    var modal by remember { mutableStateOf(false) }
+    val modalChanged: (Boolean) -> Unit = remember { { value -> modal = value } }
     val x = remember { Animatable(widthPx) }
     val scope = rememberCoroutineScope()
     LaunchedEffect(Unit) { x.animateTo(0f, Motion.spatial) }
@@ -125,7 +128,7 @@ private fun Sliding(
             onGone()
         }
     }
-    PredictiveBackHandler { progress: Flow<BackEventCompat> ->
+    PredictiveBackHandler(enabled = !modal) { progress: Flow<BackEventCompat> ->
         try {
             progress.collect { e -> x.snapTo(e.progress * widthPx) }
             x.animateTo(widthPx, Motion.spatial)
@@ -139,7 +142,8 @@ private fun Sliding(
     // A drag to the right anywhere a message balloon hasn't taken it (they see it first) pulls the screen away too.
     val fling = with(LocalDensity.current) { BACK_FLING.toPx() }
     Box(
-        Modifier.fillMaxSize().pointerInput(widthPx) {
+        Modifier.fillMaxSize().pointerInput(widthPx, modal) {
+            if (modal) return@pointerInput
             val velocity = VelocityTracker()
             var pulling = false
             var decided = false
@@ -180,7 +184,7 @@ private fun Sliding(
             }
         },
     ) {
-        Box(Modifier.fillMaxSize().offset { IntOffset(x.value.roundToInt(), 0) }.background(Pack.paper)) { content(back) }
+        Box(Modifier.fillMaxSize().offset { IntOffset(x.value.roundToInt(), 0) }.background(Pack.paper)) { content(back, modalChanged) }
     }
 }
 

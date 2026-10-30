@@ -38,6 +38,7 @@ object MacWire {
         val delivery: Delivery? = null,
         val failed: Boolean = false,
         val richLinks: List<RichLink> = emptyList(),
+        val reactions: List<Reaction> = emptyList(),
     )
 
     class Chat(
@@ -48,6 +49,7 @@ object MacWire {
         val isGroup: Boolean,
         val unread: Int,
         val last: Msg?,
+        val participantNames: Map<String, String> = emptyMap(),
     )
 
     /** One event off the stream: message.new, message.updated, message.deleted, chat.updated, chat.deleted, typing, ready or resync. */
@@ -82,6 +84,7 @@ object MacWire {
             delivery = if (!o.optBoolean("fromMe")) null else when { o.optBoolean("read") -> Delivery.Read; o.optBoolean("delivered") -> Delivery.Delivered; else -> Delivery.Sent },
             failed = o.optBoolean("failed"),
             richLinks = RichLink.read(o.optJSONArray("richLinks")),
+            reactions = Reaction.read(o.optJSONArray("tapbacks")),
             tapbacks =
                 (o.optJSONArray("tapbacks") ?: JSONArray()).let { t ->
                     (0 until t.length()).mapNotNull { t.optJSONObject(it) }.map { (if (it.optBoolean("fromMe")) "me:" else "") + it.optString("kind") }.filter { !it.endsWith(":") && it.isNotEmpty() }
@@ -98,8 +101,12 @@ object MacWire {
             isGroup = c.optBoolean("isGroup"),
             unread = c.optInt("unread"),
             last = c.optJSONObject("lastMessage")?.let(::msg),
+            participantNames = c.optJSONObject("participantNames")?.let { o -> o.keys().asSequence().associateWith { o.optString(it) }.filterValues { it.isNotBlank() } }.orEmpty(),
         )
     }
+
+    /** Conversation titles are not person names, even in a single-person conversation. */
+    fun participantNames(chats: List<Chat>): Map<String, String> = chats.flatMap { it.participantNames.entries }.associate { it.toPair() }
 
     /** GET /v1/chats. */
     fun chats(text: String): List<Chat> {
@@ -186,7 +193,7 @@ object MacWire {
         // The quote goes on the first part, the tapbacks on the last (under the message, as iMessage shows them).
         return parts.mapIndexed { i, p ->
             var q = if (i == 0 && quote != null) p.copy(quote = quote) else p
-            if (i == parts.lastIndex && m.tapbacks.isNotEmpty()) q = q.copy(tapbacks = m.tapbacks)
+            if (i == parts.lastIndex && m.tapbacks.isNotEmpty()) q = q.copy(tapbacks = m.tapbacks, reactions = m.reactions.map { r -> r.copy(name = if (r.fromMe) "You" else nameOf(r.sender) ?: r.name ?: r.sender.takeIf { it.isNotBlank() } ?: "Someone") })
             q.copy(delivery = m.delivery, failed = m.failed, richLinks = if (p.id == m.id) m.richLinks else emptyList())
         }
     }

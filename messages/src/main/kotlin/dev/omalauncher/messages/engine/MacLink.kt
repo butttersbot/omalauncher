@@ -71,6 +71,7 @@ object MacLink {
     val trouble = MutableStateFlow("")
     val typing = MutableStateFlow(TypingState())
     private val presence = Executors.newSingleThreadExecutor()
+    private val actions = Executors.newSingleThreadExecutor()
     val previews = MutableStateFlow<Map<String, RichLink>>(emptyMap())
     private val previewIO = Executors.newFixedThreadPool(2)
     private val previewAt = java.util.concurrent.ConcurrentHashMap<String, Long>()
@@ -95,6 +96,7 @@ object MacLink {
             finally { previewRequests.remove(url) }
         }
     }
+    @Volatile private var knownNames: Map<String, String> = emptyMap()
     @Volatile private var ownHandles: Set<String> = emptySet()
     private fun normalized(handle: String) = handle.removePrefix("tel:").removePrefix("mailto:").lowercase()
 
@@ -131,7 +133,7 @@ object MacLink {
         to: MacAddress,
     ) {
         app = context.applicationContext
-        if (address != to) { previews.value = emptyMap(); previewAt.clear(); richLinksSupported = false; ownHandles = emptySet(); typing.value = TypingState() }
+        if (address != to) { previews.value = emptyMap(); previewAt.clear(); richLinksSupported = false; ownHandles = emptySet(); knownNames = emptyMap(); typing.value = TypingState() }
         address = to
         if (running) return
         running = true
@@ -229,7 +231,7 @@ object MacLink {
 
     private fun path(id: String) = URLEncoder.encode(id, "UTF-8").replace("+", "%20")
 
-    private fun nameOf(handle: String): String? = app?.let { Names.of(it, handle) }
+    private fun nameOf(handle: String): String? = app?.let { Names.of(it, handle) } ?: knownNames[normalized(handle)]
 
     private fun messagesOf(m: MacWire.Msg, page: List<MacWire.Msg> = emptyList()): List<Message> {
         val book = Messages.book.value[m.chatId]
@@ -256,6 +258,7 @@ object MacLink {
             ownHandles = if (handles == null) emptySet() else (0 until handles.length()).map { normalized(handles.optString(it)) }.toSet()
         }
         val chats = MacWire.chats(get(at, "/v1/chats?limit=50"))
+        knownNames = MacWire.participantNames(chats).mapKeys { normalized(it.key) }
         chats.forEach(::take)
         chats.take(PRIMED).forEach { c -> history(at, c.id) }
         trouble.value = ""
@@ -463,8 +466,8 @@ object MacLink {
         onFail: (String) -> Unit,
     ) {
         val at = address ?: return onFail("Not linked to a Mac.")
-        io.execute {
-            runCatching { post(at, "/v1/messages/${path(id)}/tapback", JSONObject().put("kind", kind).put("remove", remove).put("chatId", chat)) }
+        actions.execute {
+            runCatching { post(at, "/v1/messages/${path(id)}/tapback", JSONObject().put("kind", kind).put("remove", remove).put("chatId", chat), timeout = 10_000) }
                 .onFailure {
                     Log.w(TAG, "tapback", it)
                     onFail(it.message.orEmpty())
@@ -472,13 +475,19 @@ object MacLink {
         }
     }
 
-    /** The owner opened [chat]: its history, and read on the Mac. */
+    fun setRead(chat: String, read: Boolean, onDone: (String?) -> Unit = {}) {
+        val at = address ?: return onDone("Not linked to a Mac.")
+        actions.execute {
+            val failure = runCatching { post(at, "/v1/chats/${path(chat)}/${if (read) "read" else "unread"}", timeout = 10_000) }.exceptionOrNull()
+            onDone(failure?.let { it.message ?: "Your Mac did not take the action." })
+        }
+    }
+
+    /** Read actions remain ordered when opening immediately after marking unread. */
     fun opened(chat: String) {
         val at = address ?: return
-        io.execute {
-            runCatching { history(at, chat) }.onFailure { Log.w(TAG, "history", it) }
-            runCatching { post(at, "/v1/chats/${path(chat)}/read") }.onFailure { Log.w(TAG, "read", it) }
-        }
+        setRead(chat, true)
+        io.execute { runCatching { history(at, chat) }.onFailure { Log.w(TAG, "history", it) } }
     }
 
     /**

@@ -38,4 +38,38 @@ Evidence directory: `~/Projects/soma-imessage-parity-evidence/`. Dedicated `Fold
 
 5. Design comparison explicitly against the relayed approved v2 proposal found inherited Soma details that the mock simplified (tails, outlined avatar, plus-button tile, timestamps/alignment) plus card border/status differences. Initial links shot also used the wrong composer state. The approved revisions are intact. A matching composer-state capture is being checked; Phone A has the request to resolve remaining differences with Boss while honoring the original no-aesthetics scope. Do not claim design match or silently restyle the existing app.
 
-Groups 5–7, 8–10 and 11 have not started while the first group's native transport prerequisite is outstanding.
+Phone A clarified at 21:10 that rank is priority, not a hard blocker. Native outgoing rich-link encoding is the one deferred group-1 piece while the code-only export is pending. Group 2 proceeded independently.
+
+## Group 5–7: implemented and emulator checked; design review pending
+
+- New local sends have a short scale/24-dp entrance using the shared Motion spring. A bounded, single-use marker prevents history/reconnect/echo replay; system reduced motion skips the entrance. This is provisional motion, not a measured reconstruction of the iPhone composer trajectory.
+- Double-tap and hold open reactions for text/photo/video/voice. Existing optimistic add/change/remove remains. Reaction attribution survives persistence and uses contacts or explicit participant names, never a custom conversation title. Badges animate without replaying unchanged state.
+- Horizontal gesture arbitration preserves vertical scrolling and the navigation edge. Left pull reveals per-message times while held; release restores the bubbles. Right pull keeps threshold/cancel reply behavior. A single photo no longer installs an unnecessary horizontal scroll interceptor.
+- Menus use a real modal window with accessible focus and Back. Underlying inbox semantics are hidden while covered; a modal drag cannot navigate the chat. Host focus is cleared when opening a menu so dismissal cannot reopen an already closed keyboard or lose its draft. Existing Manga styling is retained; `soma-theme` confirmed Manga.
+- Phone-local ordered pins (up to nine) and mute choices persist separately from history. Only one conversation action row stays revealed. Swipes, hold menu and accessible actions provide read/unread, pin/unpin and mute/unmute. Mute gates notifications without clearing unread. Read/unread updates immediately, preserves new arrivals during a request, rolls back visibly on refusal and supports retry. No Apple preference synchronization.
+
+### Checks and reviewed evidence
+
+App JVM **71 tests, zero failures/errors/skips**, debug APK assembled. Python walkthrough/review generator syntax and `git diff --check` pass. Only the dedicated emulator-5560 received the APK; backend code and live services were untouched in this group.
+
+Evidence is under `~/Projects/soma-imessage-parity-evidence/`:
+
+- `group2-fixed/walk`: **78 PASS / 0 FAIL / 16 LOOK**, all **51 captures inspected**. Pin/mute/restart, manual unread, own reaction add/change/remove, attribution, reply/cancel, send, back cancel/commit and single-row list reveal. This precedes the targeted fixes below; it is not relabeled as a new run of the final APK.
+- `group2-final/focused`: **44 PASS / 2 FAIL / 9 LOOK**, all **28 captures inspected**. Correct attribution and readable modal bars; photo/video/voice double-tap passes. Two failures exposed photo swipe-to-reply and its dependent cancel step. Retained as failures.
+- After removing the single-photo scroll interceptor, `photo-fixed2`: **12 PASS / 0 FAIL / 2 LOOK**, all **7 captures inspected**. An earlier rerun was blocked by an old pairing intent restored after install; force-stop/clean launch resolved that fixture problem. Failed artifacts remain available.
+- `times`: hidden → held-visible → released-hidden assertions pass; all **3 captures inspected**, with DOWN/MOVE/UP trace. This establishes actual held reveal, not only a settled screen.
+- `focus`: keyboard initially shown, then dismissed; reaction change leaves it hidden, retains the draft, and modal drag keeps the chat. All **3 captures and the replacement native reaction recording inspected**. The first recording exposed keyboard reopening; that failure drove the host-focus fix.
+- `unfolded-fixed`: **27 PASS / 0 FAIL / 3 LOOK**, all **13 captures inspected**. Same pinned/muted rail, actions and reactions beside existing Shared. First unfolded run selected the repeated header title instead of the avatar; retained, then targeted the rail explicitly.
+- `notifications`: **0 notification records while muted, 1 after unmute**, pin stays above another chat's newer arrival. All **3 captures inspected**; synthetic DEMO events only.
+- Authenticated local DEMO failure proxy: read refusal **19 PASS / 0 FAIL / 3 LOOK**, retry **6 PASS / 0 FAIL / 1 LOOK**; all **12 captures inspected**. Prior count restored, visible refusal, successful retry clears error and marks unread.
+- Native send/reaction clips and reduced-motion send inspected. Recordings are approximately **5.7 fps** and establish behavior/endpoints only; they cannot judge fine spring timing or 120 Hz. Retained final gfxinfo has just **19 mixed startup frames, 12 janky, p50 25 ms, p90 350 ms** under debug/emulator/automation; this is diagnostic, not a scenario benchmark or evidence of improvement. Physical feel, haptics, 120 Hz and matching iPhone motion remain open.
+
+The final DEMO harness stopped, deleted its temporary credentials/data and cleared the test pairing. The AVD can be reused for the next group. No phone install, real message, live Direct restart/deployment or registration.
+
+### One Canvas review batch
+
+**DESIGN UNAPPROVED**, version `parity-g2-v1`. Twelve capture-based proposals: `messages-parity-send-motion`, `messages-parity-reaction-menu`, `messages-parity-reaction-attribution`, `messages-parity-gesture-reply`, `messages-parity-gesture-times`, `messages-parity-chat-actions`, `messages-parity-pinned-muted`, `messages-parity-list-swipe`, `messages-parity-list-read`, plus unfolded size variants `messages-parity-pinned-muted-unfolded`, `messages-parity-chat-actions-unfolded`, `messages-parity-reaction-menu-unfolded`. The last three are size variants of existing behaviors, not new features. Group-1 approved proposals remain unchanged.
+
+Offline artifact `messages-parity-group-2.html` embeds native captures and two recordings. Source manifest/generator: `docs/design/messages-parity/group2.json` and `review.py`. Desktop/mobile renders inspected; all twelve mobile selections and desktop navigation pass with network disabled, zero external requests or script errors, all images loaded and no mobile horizontal overflow. Phone A receives one batch for Boss review.
+
+Groups 8–10 and 11 follow. Native rich-link encoding will resume when the code-only source export arrives. Exact iOS motion tuning and effects remain dependent on the restored reference and transport feasibility; no live deployment is authorized.

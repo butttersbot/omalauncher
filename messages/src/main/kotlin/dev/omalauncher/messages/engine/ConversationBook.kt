@@ -32,6 +32,7 @@ data class Message(
     val delivery: Delivery? = null,
     val richLinks: List<RichLink> = emptyList(),
     val hiddenLinks: Set<String> = emptySet(),
+    val reactions: List<Reaction> = emptyList(),
 ) {
     val fromMe get() = sender.isEmpty()
     val renderKey get() = uiKey ?: id ?: "legacy:$time:$sender:$text"
@@ -274,6 +275,11 @@ class ConversationBook(
     }
 
     /** The owner has looked at [id]. */
+    fun unreadCount(id: String, count: Int): ConversationBook {
+        val old = byId[id] ?: return this
+        return ConversationBook(byId + (id to old.copy(unread = count.coerceAtLeast(0))))
+    }
+
     fun read(id: String): ConversationBook {
         val old = byId[id] ?: return this
         if (old.unread == 0) return this
@@ -302,6 +308,7 @@ class ConversationBook(
                                             m.id?.let { put("id", it) }
                                             if (m.failed) put("failed", true)
                                             if (m.files.isNotEmpty()) put("files", JSONArray(m.files))
+                                            if (m.reactions.isNotEmpty()) put("reactions", JSONArray(m.reactions.map { it.json() }))
                                             if (m.tapbacks.isNotEmpty()) put("tapbacks", JSONArray(m.tapbacks))
                                         }
                                     },
@@ -353,6 +360,7 @@ class ConversationBook(
                                 delivery = runCatching { Delivery.valueOf(m.optString("delivery")) }.getOrNull(),
                                 richLinks = RichLink.read(m.optJSONArray("richLinks")),
                                 hiddenLinks = m.optJSONArray("hiddenLinks")?.let { a -> (0 until a.length()).map { a.optString(it) }.toSet() }.orEmpty(),
+                                reactions = Reaction.read(m.optJSONArray("reactions")),
                             )
                         }
                     val id = c.getString("id")

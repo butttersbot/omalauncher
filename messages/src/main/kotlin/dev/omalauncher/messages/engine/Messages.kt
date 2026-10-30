@@ -67,12 +67,41 @@ object Messages {
     private var file: File? = null
     private var app: Context? = null
     private var real = ConversationBook()
+    private data class ReadIntent(val before: Int, val target: Int, var arrivals: Int = 0)
+    private val readIntents = mutableMapOf<String, ReadIntent>()
+    fun changingRead(id: String) = synchronized(this) { id in readIntents }
+
+    @Synchronized fun setUnread(id: String, unread: Boolean) {
+        if (id in readIntents) return
+        val book = if (samples.value) _book.value else real
+        val c = book[id] ?: return
+        val target = if (unread) maxOf(1, c.unread) else 0
+        if (samples.value || !linked) {
+            val next = book.unreadCount(id, target)
+            if (samples.value) _book.value = next else publish(next)
+            return
+        }
+        clearNotice(id)
+        val intent = ReadIntent(c.unread, target)
+        readIntents[id] = intent
+        publish(real.unreadCount(id, target))
+        app?.let { Alerts.clear(it, id) }
+        MacLink.setRead(id, !unread) { failure -> finishRead(id, intent, failure) }
+    }
+
+    @Synchronized private fun finishRead(id: String, intent: ReadIntent, failure: String?) {
+        if (readIntents[id] !== intent) return // Opening the chat superseded the action.
+        readIntents.remove(id)
+        publish(real.unreadCount(id, (if (failure == null) intent.target else intent.before) + intent.arrivals))
+        if (failure != null) warn(id, "Couldn't mark ${real[id]?.title ?: "conversation"} ${if (intent.target == 0) "read" else "unread"}: $failure")
+    }
 
     /** Loads what was kept, once per process. */
     @Synchronized
     fun init(context: Context) {
         if (file != null) return
         app = context.applicationContext
+        ChatChoices.init(context)
         val f = File(context.filesDir, "conversations.json")
         file = f
         real = if (f.isFile) ConversationBook.fromJson(f.readText()) else ConversationBook()
@@ -130,7 +159,13 @@ object Messages {
         notify: Boolean = false,
     ) {
         val before = real[id]?.messages?.size ?: 0
-        publish(real.fromMac(id, title, isGroup, incoming, unread, counting))
+        val known = real[id]?.messages.orEmpty().mapNotNull { it.id }.toSet()
+        var next = real.fromMac(id, title, isGroup, incoming, unread, counting)
+        readIntents[id]?.let { intent ->
+            if (counting) intent.arrivals += incoming.filter { !it.fromMe && it.id !in known }.map { it.id }.distinct().size
+            next = next.unreadCount(id, intent.target + intent.arrivals)
+        }
+        publish(next)
         readIfLooking(id)
         // A new message from someone else, live: its conversation's notification, unless it is open on screen.
         val c = real[id] ?: return
@@ -149,6 +184,10 @@ object Messages {
      * threaded reply. Set with the quote; used and forgotten by the next send.
      */
     val quoting = ConcurrentHashMap<String, String>()
+
+    private fun markEntrance(id: String, clientId: String) {
+        if (Alerts.front && Alerts.looking == id && picked == id) SendMotion.mark(clientId)
+    }
 
     @Synchronized
     private fun accepted(id: String, clientId: String) = publish(real.accepted(id, clientId))
@@ -185,6 +224,7 @@ object Messages {
 
     @Synchronized
     fun read(id: String) {
+        readIntents.remove(id)
         if (samples.value) {
             _book.value = _book.value.read(id)
             return
@@ -214,6 +254,7 @@ object Messages {
             // A new try: the last one's error is old news.
             clearNotice(id)
             val clientId = java.util.UUID.randomUUID().toString()
+            markEntrance(id, clientId)
             publish(real.waiting(id, clientId, text, System.currentTimeMillis(), quote, Parts.links(text).mapNotNull { MacLink.previews.value[Parts.openable(it)]?.takeUnless { r -> r.url in hiddenLinks } }, hiddenLinks))
             val replyTo = quoting.remove(id)?.takeIf { quote != null }?.removeSuffix("#a")
             MacLink.send(id, text, replyTo, clientId, onAccepted = { accepted(id, clientId) }) { why ->
@@ -313,6 +354,7 @@ object Messages {
         photos.forEachIndexed { i, uri ->
             val clientId = java.util.UUID.randomUUID().toString()
             val type = context.contentResolver.getType(uri) ?: "image/jpeg"
+            markEntrance(id, clientId)
             val waiting = real.waiting(id, clientId, summaries.getOrElse(i) { "1 Photo" }, now + i, if (i == 0) quote else null)
             publish(waiting.withFiles(id, "c:$clientId", listOf("local:$uri|$type")))
             MacLink.sendFile(context, id, uri, clientId, onAccepted = { accepted(id, clientId) }) { why ->
@@ -322,6 +364,7 @@ object Messages {
         }
         if (text.isNotBlank()) {
             val clientId = java.util.UUID.randomUUID().toString()
+            markEntrance(id, clientId)
             publish(real.waiting(id, clientId, text, now + photos.size))
             MacLink.send(id, text, null, clientId, onAccepted = { accepted(id, clientId) }) { why ->
                 failed(id, clientId)
@@ -365,6 +408,7 @@ object Messages {
         quote: String?,
     ) {
         synchronized(this) {
+            markEntrance(id, clientId)
             val waiting = real.waiting(id, clientId, VOICE, System.currentTimeMillis(), quote)
             publish(waiting.withFiles(id, "c:$clientId", listOf("local:${ogg.path}|$VOICE_MIME")))
         }
@@ -425,7 +469,8 @@ object Messages {
         val macId = message.id?.takeIf { linked && !it.startsWith("c:") }?.removeSuffix("#a") ?: return
         val mine = "me:$kind"
         val remove = mine in message.tapbacks
-        val changed = message.copy(tapbacks = message.tapbacks.filterNot { it.startsWith("me:") } + listOfNotNull(mine.takeIf { !remove }))
+        val changed = message.copy(tapbacks = message.tapbacks.filterNot { it.startsWith("me:") } + listOfNotNull(mine.takeIf { !remove }),
+            reactions = message.reactions.filterNot { it.fromMe } + if (remove) emptyList() else listOf(Reaction(kind, "", true, "You")))
         publish(real.fromMac(id, null, null, listOf(changed), counting = false))
         MacLink.tapback(id, macId, kind, remove) { why -> warn(id, "Tapback not sent: $why") }
     }

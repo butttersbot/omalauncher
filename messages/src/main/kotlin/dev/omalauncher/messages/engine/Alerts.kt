@@ -67,7 +67,7 @@ object Alerts {
         context: Context,
         c: Conversation,
     ) {
-        if (!allowed(context) || front && c.id == looking) return
+        if (!allowed(context) || c.id in ChatChoices.state.value.muted || front && c.id == looking) return
         val unread = c.messages.takeLast(maxOf(c.unread, 1)).filter { !it.fromMe }.takeLast(6)
         if (unread.isEmpty() || c.unread == 0) return
         val me = Person.Builder().setName("You").build()

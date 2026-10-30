@@ -161,6 +161,17 @@ def run_step(serial, op, args, out, n):
         adb(serial, "shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", args[0]); time.sleep(1.5); wait_for_tree(serial); return True, "", None
     if op == "ime":
         adb(serial, "shell", "ime", "enable", args[0]); adb(serial, "shell", "ime", "set", args[0], check=True); return True, "", None
+    if op == "doubletap":
+        if len(args) == 2 and all(re.fullmatch(r"[\d.]+", a) for a in args):
+            p = point(serial, *args)
+        else:
+            p = find(serial, " ".join(args), wait_ms=8000)
+        if not p:
+            return False, "nothing says “" + " ".join(args) + "”", None
+        # Keep the gap on the device, independent of two host/ADB round trips.
+        adb(serial, "shell", f"input tap {p[0]} {p[1]}; sleep 0.08; input tap {p[0]} {p[1]}")
+        time.sleep(0.8)
+        return True, "", None
     if op == "tap":
         if len(args) == 2 and re.fullmatch(r"[\d.]+", args[0]) and re.fullmatch(r"[\d.]+", args[1]):
             x, y = point(serial, *args)

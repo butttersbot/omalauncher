@@ -1,5 +1,20 @@
 package dev.omalauncher.messages.ui
 
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.semantics.hideFromAccessibility
+import dev.omalauncher.ui.moveTo
+import dev.omalauncher.messages.engine.SendMotion
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -198,7 +213,9 @@ fun Inbox(
     onOpen: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val conversations = book.conversations
+    val choices by dev.omalauncher.messages.engine.ChatChoices.state.collectAsState()
+    val conversations = choices.order(book.conversations)
+    var revealedRow by remember { mutableStateOf<String?>(null) }
     val left by Desk.left.collectAsState()
     Column(modifier) {
         Column(Modifier.padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 10.dp)) {
@@ -218,6 +235,8 @@ fun Inbox(
         if (trouble.isNotEmpty() && !samples) {
             BasicText(trouble, Modifier.padding(horizontal = 18.dp, vertical = 4.dp), style = Pack.mono(Pack.size.small, Pack.muted))
         }
+        val actionNotice by Messages.notice.collectAsState()
+        if (actionNotice.isNotEmpty()) BasicText(actionNotice, Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 6.dp), style = Pack.body(Pack.size.small, Pack.accent))
         if (conversations.isEmpty()) {
             Column(Modifier.fillMaxWidth().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 BasicText(Pack.heading("Nothing yet"), style = Pack.display(20.sp))
@@ -226,25 +245,29 @@ fun Inbox(
             }
         }
         LazyColumn(Modifier.fillMaxSize()) {
-            items(conversations, key = { it.id }) { c -> ConversationRow(c, c.id == selected, left[c.id]?.draft.orEmpty()) { onOpen(c.id) } }
+            items(conversations, key = { it.id }) { c -> ConversationActionsRow(c, c.id == selected, left[c.id]?.draft.orEmpty(), choices, { onOpen(c.id) }, revealedRow, { revealedRow = it },
+                Modifier.animateItem(fadeInSpec = null, fadeOutSpec = null, placementSpec = if (Motion.reduced) snap() else Motion.spatial())) }
         }
     }
 }
 
 @Composable
-private fun ConversationRow(
+internal fun ConversationRow(
     c: Conversation,
     selected: Boolean,
     draft: String,
     onClick: () -> Unit,
+    onLongClick: () -> Unit = {},
+    choices: dev.omalauncher.messages.engine.LocalChatChoices = dev.omalauncher.messages.engine.LocalChatChoices(),
+    modifier: Modifier = Modifier,
 ) {
     val last = c.last
     Row(
-        Modifier
+        modifier
             .fillMaxWidth()
             .background(if (selected) Pack.surface else Color.Transparent)
             .semantics(mergeDescendants = true) { contentDescription = c.title + if (c.unread > 0) ", ${c.unread} unread" else "" }
-            .clickable(onClick = onClick)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick, onLongClickLabel = "Conversation actions")
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -283,6 +306,8 @@ private fun ConversationRow(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+            val badges = listOfNotNull("Pinned".takeIf { c.id in choices.pinned }, "Muted".takeIf { c.id in choices.muted })
+            if (badges.isNotEmpty()) BasicText(Pack.caption(badges.joinToString(" · ")), style = Pack.mono(Pack.size.small, Pack.muted))
         }
         if (c.unread > 0) {
             Spacer(Modifier.size(10.dp))
@@ -322,6 +347,7 @@ fun Thread(
     pending: Pending,
     onBack: (() -> Unit)?,
     modifier: Modifier = Modifier,
+    onModalChange: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -330,6 +356,15 @@ fun Thread(
     var stuck by remember(c.id) { mutableStateOf(false) }
     var noOpenBubbles by remember(c.id) { mutableStateOf(false) }
     var held by remember(c.id) { mutableStateOf<Message?>(null) }
+    var reactors by remember(c.id) { mutableStateOf<Message?>(null) }
+    val modal = held != null || reactors != null
+    DisposableEffect(c.id, modal) { onModalChange(modal); onDispose { onModalChange(false) } }
+    val timeWidth = with(LocalDensity.current) { 72.dp.toPx() }
+    var timePull by remember(c.id) { mutableFloatStateOf(0f) }
+    var timeDragging by remember(c.id) { mutableStateOf(false) }
+    val timeReveal by animateFloatAsState(timePull, if (timeDragging || Motion.reduced) snap() else Motion.spatial, label = "message times")
+    val onTimeDelta: (Float) -> Unit = { dx -> timeDragging = true; timePull = (timePull - dx).coerceIn(0f, timeWidth) }
+    val onTimeEnd: () -> Unit = { timeDragging = false; timePull = 0f }
     val pulse = remember(c.id) { dev.omalauncher.messages.engine.TypingPulse() }
     val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
     DisposableEffect(c.id, lifecycle) {
@@ -458,12 +493,17 @@ fun Thread(
             )
             // A short conversation sits down on the composer too, as in Messages, not up under the name with paper below.
             LazyColumn(
-                Modifier.fillMaxSize().padding(horizontal = 12.dp),
+                Modifier.fillMaxSize().padding(horizontal = 12.dp)
+                    .messageDrag(c.id, { 0f }, with(density) { 24.dp.toPx() }, allowReply = false,
+                        delta = { _, dx -> onTimeDelta(dx) }, end = { _, _ -> onTimeEnd() }),
                 state = list,
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = pillRoom),
                 verticalArrangement = Arrangement.Bottom,
             ) {
                 itemsIndexed(c.messages, key = { _, m -> m.renderKey }) { i, m ->
+                    val entering = remember(m.renderKey) { SendMotion.take(m.renderKey) && !Motion.reduced }
+                    val entrance = remember(m.renderKey) { Animatable(if (entering) 0f else 1f) }
+                    LaunchedEffect(m.renderKey) { entrance.moveTo(1f, Motion.spatial) }
                     val prev = c.messages.getOrNull(i - 1)
                     val next = c.messages.getOrNull(i + 1)
                     val first = prev == null || prev.sender != m.sender
@@ -484,6 +524,10 @@ fun Thread(
                             m,
                             tail = tail && j == parts.lastIndex && !bare,
                             bare = bare,
+                            timeOffset = { timeReveal },
+                            showTime = j == 0,
+                            onTimeDelta = onTimeDelta,
+                            onTimeEnd = onTimeEnd,
                             flush = part is Part.Link && m.richLinks.any { it.url == Parts.openable(part.url) && it.state != "unavailable" && it.url !in m.hiddenLinks },
                             onReply = {
                                 pending.quotes[c.id] = quoteOf(m)
@@ -492,13 +536,18 @@ fun Thread(
                             onHold = { held = m },
                             onTap = tapFor(part, c.id, context, openLink),
                             // A photo stands a little clear of the balloon under it (the 0.8.3 walk: 3 px apart).
-                            modifier = Modifier.padding(top = if (first && j == 0) 8.dp else 2.dp, bottom = if (bare) 2.dp else 0.dp),
+                            modifier = Modifier.graphicsLayer {
+                                val progress = entrance.value
+                                transformOrigin = androidx.compose.ui.graphics.TransformOrigin(if (m.fromMe) 1f else 0f, 1f)
+                                scaleX = 0.92f + progress * 0.08f; scaleY = scaleX
+                                translationY = (1f - progress) * 24.dp.toPx(); alpha = 0.6f + progress * 0.4f
+                            }.padding(top = if (first && j == 0) 8.dp else 2.dp, bottom = if (bare) 2.dp else 0.dp),
                         ) { ink ->
                             if (j == 0) m.quote?.let { QuoteInBalloon(it, ink) }
                             PartContent(part, ink, m.files, onHold = { held = m }, richLink = (part as? Part.Link)?.let { p -> m.richLinks.filter { it.url !in m.hiddenLinks }.firstOrNull { it.url == Parts.openable(p.url) } })
                         }
                     }
-                    if (m.tapbacks.isNotEmpty()) Tapbacks(m)
+                    Tapbacks(m) { reactors = m }
                     if (m.failed && next?.failed != true) {
                         // Words can go again from here; photos are picked again.
                         val again = Parts.of(m.text).none { it is Part.Attachment } || m.files.any { it.startsWith("local:") }
@@ -534,7 +583,11 @@ fun Thread(
             }
             // Back closes the menu, and only the menu: it went to the screen's own back (the slide away), which left the
             // conversation's taps dead after it (the 0.7.8 walk: a link tapped after closing the menu did nothing).
-            androidx.activity.compose.BackHandler(enabled = held != null) { held = null }
+            androidx.activity.compose.BackHandler(enabled = held != null || reactors != null) { held = null; reactors = null }
+            reactors?.let { selected ->
+                val current = c.messages.firstOrNull { it.renderKey == selected.renderKey } ?: selected
+                ReactorMenu(current) { reactors = null }
+            }
             held?.let { m ->
                 HoldMenu(
                     onReply = {
@@ -798,7 +851,7 @@ private fun PartContent(
             } else if (Messages.linked && files.any { !it.startsWith("local:") }) {
                 // Anything else from the Mac (a PDF, a document): fetched on a tap and opened in the app for it.
                 val context = LocalContext.current
-                Box(Modifier.combinedClickable(onLongClick = onHold) { openMedia(context, files.first()) }.semantics { contentDescription = part.summary + ", tap to open" }) {
+                Box(Modifier.combinedClickable(onLongClick = onHold, onDoubleClick = onHold) { openMedia(context, files.first()) }.semantics { contentDescription = part.summary + ", tap to open" }) {
                     Card(part.summary, "Tap to open", "▣", ink)
                 }
             } else {
@@ -818,7 +871,8 @@ private fun Photos(
     onHold: () -> Unit = {},
 ) {
     val one = files.size == 1
-    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    val strip = rememberScrollState()
+    Row(if (one) Modifier else Modifier.horizontalScroll(strip), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         files.forEach { f ->
             val id = f.substringBefore('|')
             val context = LocalContext.current
@@ -851,7 +905,7 @@ private fun Photos(
             val size = if (one) Modifier.width(240.dp).height((240 * ratio).coerceIn(120f, 320f).dp) else Modifier.size(132.dp)
             Box(
                 // A hold is the balloon's (tapbacks, reply): the picture's own tap would otherwise take it (Boss, 2026-10-23).
-                size.clip(shape).background(Pack.surface).combinedClickable(onLongClick = onHold) { file?.let { view(context, it) } }
+                size.clip(shape).background(Pack.surface).combinedClickable(onLongClick = onHold, onDoubleClick = onHold) { file?.let { view(context, it) } }
                     .semantics { contentDescription = "Photo" },
                 contentAlignment = Alignment.Center,
             ) {
@@ -936,7 +990,7 @@ private fun Videos(
                 val ratio = (p.height.toFloat() / p.width.coerceAtLeast(1)).coerceIn(0.5f, 1.4f)
                 Box(
                     Modifier.width(240.dp).height((240 * ratio).dp).clip(MEDIA_SHAPE).background(Pack.surface)
-                        .combinedClickable(onLongClick = onHold) { open() }.semantics { contentDescription = "Video, tap to play" },
+                        .combinedClickable(onLongClick = onHold, onDoubleClick = onHold) { open() }.semantics { contentDescription = "Video, tap to play" },
                     contentAlignment = Alignment.Center,
                 ) {
                     Image(p, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
@@ -945,7 +999,7 @@ private fun Videos(
                     }
                 }
             } else {
-                Box(Modifier.combinedClickable(onLongClick = onHold) { open() }.semantics { contentDescription = "Video, tap to play" }) {
+                Box(Modifier.combinedClickable(onLongClick = onHold, onDoubleClick = onHold) { open() }.semantics { contentDescription = "Video, tap to play" }) {
                     Card("Video", if (loading) "Getting it from your Mac…" else if (failed) "Couldn't get it from your Mac · tap to try again" else "Tap to play", "▶", ink)
                 }
             }
@@ -1032,7 +1086,7 @@ private fun Voice(
             }.onFailure { state = "Couldn't play it · tap to try again" }
         }
     }
-    Box(Modifier.combinedClickable(onLongClick = onHold) { toggle() }.semantics { contentDescription = "Voice message, $state" }) {
+    Box(Modifier.combinedClickable(onLongClick = onHold, onDoubleClick = onHold) { toggle() }.semantics { contentDescription = "Voice message, $state" }) {
         Card("Voice message", state, if (player[0] != null) "■" else "▶", ink)
     }
 }
@@ -1277,7 +1331,7 @@ private fun HoldMenu(
     onTapback: ((String) -> Unit)? = null,
     mine: List<String> = emptyList(),
 ) {
-    Box(Modifier.fillMaxSize().background(Pack.foreground.copy(alpha = 0.18f)).clickable(onClick = onDismiss), contentAlignment = Alignment.Center) {
+    MessageOverlay(onDismiss) {
         val shape = composerShape(14.dp)
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
         // iMessage's six tapbacks, above the actions; the owner's own one is marked, and a second tap takes it off.
@@ -1309,17 +1363,39 @@ private val TAPBACKS = listOf("love" to "❤️", "like" to "👍", "dislike" to
 
 /** The tapbacks on [m], small, under its balloon on its side: the owner's own outlined. An emoji tapback shows as itself. */
 @Composable
-private fun Tapbacks(m: Message) {
-    val glyphs = m.tapbacks.map { t -> t.removePrefix("me:").let { k -> TAPBACKS.firstOrNull { it.first == k }?.second ?: k } to t.startsWith("me:") }
-    Row(
-        Modifier.fillMaxWidth().padding(top = 2.dp, start = 10.dp, end = 10.dp),
-        horizontalArrangement = if (m.fromMe) Arrangement.End else Arrangement.Start,
-    ) {
-        glyphs.forEach { (g, mine) ->
-            Box(
-                Modifier.padding(end = 4.dp).clip(CircleShape).background(Pack.surface).then(if (mine) Modifier.border(1.5.dp, Pack.foreground, CircleShape) else Modifier)
-                    .padding(horizontal = 6.dp, vertical = 2.dp),
-            ) { BasicText(g, style = Pack.body(Pack.size.small)) }
+private fun Tapbacks(m: Message, onOpen: () -> Unit) {
+    AnimatedContent(targetState = m.tapbacks, label = "tapback change", transitionSpec = {
+        if (Motion.reduced) EnterTransition.None togetherWith ExitTransition.None
+        else (fadeIn(Motion.fade()) + scaleIn(Motion.spatial, initialScale = 0.8f)) togetherWith fadeOut(Motion.fade())
+    }) { reactions ->
+        if (reactions.isNotEmpty()) Row(
+            Modifier.fillMaxWidth().padding(top = 2.dp, start = 10.dp, end = 10.dp),
+            horizontalArrangement = if (m.fromMe) Arrangement.End else Arrangement.Start,
+        ) {
+            reactions.forEach { reaction ->
+                val kind = reaction.removePrefix("me:")
+                val glyph = TAPBACKS.firstOrNull { it.first == kind }?.second ?: kind
+                val mine = reaction.startsWith("me:")
+                Box(Modifier.padding(end = 4.dp).clip(CircleShape).background(Pack.surface)
+                    .then(if (mine) Modifier.border(1.5.dp, Pack.foreground, CircleShape) else Modifier)
+                    .semantics { contentDescription = "Reactions on: " + m.text.take(40); role = Role.Button }.clickable(onClick = onOpen)
+                    .padding(horizontal = 6.dp, vertical = 2.dp)) { BasicText(glyph, style = Pack.body(Pack.size.small)) }
+            }
+        } else Spacer(Modifier.height(0.dp))
+    }
+}
+
+@Composable private fun ReactorMenu(m: Message, onDismiss: () -> Unit) {
+    MessageOverlay(onDismiss) {
+        Column(Modifier.widthIn(min = 220.dp, max = 320.dp).background(Pack.background, composerShape(14.dp))
+            .border(2.dp, Pack.foreground, composerShape(14.dp)).pointerInput(Unit) { detectTapGestures(onTap = {}) }.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            BasicText("Reactions", Modifier.semantics { contentDescription = "People who reacted" }, style = Pack.body(Pack.size.item).copy(fontWeight = FontWeight.SemiBold))
+            val labels = if (m.reactions.isNotEmpty()) m.reactions.map { (it.name ?: if (it.fromMe) "You" else it.sender.ifEmpty { "Someone" }) to it.kind }
+                else m.tapbacks.map { (if (it.startsWith("me:")) "You" else "Someone") to it.removePrefix("me:") }
+            labels.forEach { (name, kind) ->
+                BasicText((TAPBACKS.firstOrNull { it.first == kind }?.second ?: kind) + "  " + name, Modifier.semantics { contentDescription = "Reaction from $name: $kind" }, style = Pack.body(Pack.size.body))
+            }
+            BasicText("Done", Modifier.semantics { role = Role.Button }.clickable(onClick = onDismiss).padding(vertical = 8.dp), style = Pack.body(Pack.size.item))
         }
     }
 }
@@ -1338,6 +1414,10 @@ private fun Balloon(
     tail: Boolean,
     bare: Boolean = false,
     flush: Boolean = false,
+    timeOffset: () -> Float = { 0f },
+    showTime: Boolean = true,
+    onTimeDelta: (Float) -> Unit = {},
+    onTimeEnd: () -> Unit = {},
     onReply: () -> Unit,
     onHold: () -> Unit,
     onTap: (() -> Unit)?,
@@ -1347,7 +1427,14 @@ private fun Balloon(
     val density = LocalDensity.current
     val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
-    val drag = remember { Animatable(0f) }
+    var pull by remember { mutableFloatStateOf(0f) }
+    var pulling by remember { mutableStateOf(false) }
+    var armed by remember { mutableStateOf(false) }
+    var rootLeft by remember { mutableFloatStateOf(0f) }
+    val drag by animateFloatAsState(pull, if (pulling || Motion.reduced) snap() else Motion.spatial, label = "reply drag")
+    val currentReply by rememberUpdatedState(onReply)
+    val currentHold by rememberUpdatedState(onHold)
+    val currentTap by rememberUpdatedState(onTap)
     val mark = with(density) { REPLY_AT.toPx() }
     val corner = 20.dp
     val balloon = inked && tail
@@ -1357,42 +1444,41 @@ private fun Balloon(
     val ink = if (m.fromMe) Pack.background else Pack.foreground
     val line = Pack.foreground
     // Only the balloon itself takes the reply drag; a drag anywhere else in the conversation is the way back.
-    val replyDrag =
-        Modifier
-            .pointerInput(m) {
-                var armed = false
-                detectHorizontalDragGestures(
-                    onDragEnd = {
-                        if (armed) onReply()
-                        armed = false
-                        scope.launch { drag.animateTo(0f, Motion.spatial) }
-                    },
-                    onDragCancel = {
-                        armed = false
-                        scope.launch { drag.animateTo(0f, Motion.spatial) }
-                    },
-                ) { change, dx ->
-                    change.consume()
-                    val raw = (drag.value + dx).coerceAtLeast(0f)
-                    // Past the mark it gets heavier, as if on a spring.
-                    val x = if (raw <= mark * 1.3f) raw else mark * 1.3f + (raw - mark * 1.3f) * 0.3f
-                    if ((x >= mark) != armed) {
-                        armed = x >= mark
-                        if (armed) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                    }
-                    scope.launch { drag.snapTo(x) }
+    val replyDrag = Modifier.onGloballyPositioned { rootLeft = it.boundsInRoot().left }
+        .messageDrag(m.renderKey, { rootLeft }, with(density) { 24.dp.toPx() }, delta = { times, dx ->
+            if (times) onTimeDelta(dx) else {
+                pulling = true
+                val raw = (pull + dx).coerceAtLeast(0f)
+                pull = if (raw <= mark * 1.3f) raw else mark * 1.3f + (raw - mark * 1.3f) * 0.3f
+                if ((pull >= mark) != armed) {
+                    armed = pull >= mark
+                    if (armed) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                 }
-            }.pointerInput(m, onTap) { detectTapGestures(onTap = onTap?.let { tap -> { tap() } }, onLongPress = { onHold() }) }
+            }
+        }, end = { times, completed ->
+            if (times) onTimeEnd() else {
+                if (completed && armed) currentReply()
+                armed = false; pulling = false; pull = 0f
+            }
+        }).pointerInput(m.renderKey) {
+            detectTapGestures(onTap = { currentTap?.invoke() }, onDoubleTap = { currentHold() }, onLongPress = { currentHold() })
+        }
     Box(modifier.fillMaxWidth()) {
         // The reply arrow, uncovered as the message moves.
-        val shown = (drag.value / mark).coerceIn(0f, 1f)
+        val shown = (drag / mark).coerceIn(0f, 1f)
+        if (showTime) {
+            val context = LocalContext.current
+            val stamp = remember(m.time) { android.text.format.DateFormat.getTimeFormat(context).format(java.util.Date(m.time)) }
+            BasicText(stamp, Modifier.align(Alignment.CenterEnd).semantics { contentDescription = "Message time, $stamp"; if (timeOffset() <= 0f) hideFromAccessibility() }.graphicsLayer { alpha = (timeOffset() / with(density) { 72.dp.toPx() }).coerceIn(0f, 1f) },
+                style = Pack.mono(Pack.size.small, Pack.muted))
+        }
         Box(
             Modifier.align(Alignment.CenterStart).padding(start = 4.dp).size(28.dp).graphicsLayer { alpha = shown; scaleX = 0.5f + shown / 2; scaleY = 0.5f + shown / 2 }
                 .clip(CircleShape).background(if (shown >= 1f) Pack.foreground else Pack.surface),
             contentAlignment = Alignment.Center,
         ) { BasicText("↩", style = Pack.body(Pack.size.body, if (shown >= 1f) Pack.background else Pack.foreground)) }
         Row(
-            Modifier.fillMaxWidth().offset { IntOffset(drag.value.roundToInt(), 0) }.padding(bottom = if (balloon) 11.dp else 0.dp),
+            Modifier.fillMaxWidth().offset { IntOffset((drag - timeOffset()).roundToInt(), 0) }.padding(bottom = if (balloon) 11.dp else 0.dp),
             horizontalArrangement = if (m.fromMe) Arrangement.End else Arrangement.Start,
         ) {
             Box(

@@ -6,6 +6,7 @@ import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -316,6 +317,8 @@ private fun Rail(
     modifier: Modifier = Modifier,
 ) {
     val left by Desk.left.collectAsState()
+    val choices by dev.omalauncher.messages.engine.ChatChoices.state.collectAsState()
+    var actionChat by remember { mutableStateOf<Conversation?>(null) }
     val faces by animateFloatAsState(if (all) 0f else 1f, Motion.spatial, label = "faces")
     Column(modifier.background(Pack.paper).padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         BasicText("S", Modifier.padding(top = 2.dp, bottom = 6.dp), style = Pack.display(30.sp))
@@ -336,12 +339,13 @@ private fun Rail(
         }
         Spacer(Modifier.height(8.dp))
         LazyColumn(Modifier.weight(1f).alpha(faces), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(book.conversations, key = { it.id }) { c ->
+            items(choices.order(book.conversations), key = { it.id }) { c ->
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Box(
                     Modifier
                         .padding(3.dp)
                         .semantics { role = Role.Button; contentDescription = c.title + if (c.unread > 0) ", ${c.unread} unread" else "" }
-                        .clickable(enabled = !all) { onPick(c.id) },
+                        .combinedClickable(enabled = !all, onClick = { onPick(c.id) }, onLongClick = { actionChat = c }, onLongClickLabel = "Conversation actions"),
                 ) {
                     Box(if (c.id == shown) Modifier.border(2.dp, Pack.foreground, CircleShape).padding(3.dp) else Modifier.padding(3.dp)) { Avatar(c.title, 42) }
                     if (c.unread > 0) Box(Modifier.align(Alignment.TopEnd).size(12.dp).clip(CircleShape).background(Pack.accent))
@@ -352,9 +356,13 @@ private fun Rail(
                         }
                     }
                 }
+                val badges = listOfNotNull("Pinned".takeIf { c.id in choices.pinned }, "Muted".takeIf { c.id in choices.muted })
+                if (badges.isNotEmpty()) BasicText(Pack.caption(badges.joinToString(" · ")), style = Pack.mono(7.sp, Pack.muted))
+                }
             }
         }
     }
+    actionChat?.let { ChatActionsDialog(it, choices) { actionChat = null } }
 }
 
 /** The shared table: links, then photos and files, from this conversation, or from every chat while All is open. */
