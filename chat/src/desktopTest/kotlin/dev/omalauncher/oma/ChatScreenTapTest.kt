@@ -1,5 +1,9 @@
 package dev.omalauncher.oma
 
+import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextClearance
+import androidx.compose.ui.test.pressKey
+import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
@@ -282,6 +286,33 @@ class ChatScreenTapTest : ChatScreenTestBase() {
         onNodeWithText("Codex").performClick()
         settle()
         assertEquals("mac/t1" to dev.omalauncher.assist.MacPick("codex"), host.switched)
+    }
+
+    /** A tab's Rename takes a name with spaces, typed key by key, and Enter saves it (Boss, 2026-10-29: Space closed it on Linux). */
+    @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
+    @Test fun renameTakesSpacesAndEnterSaves() = androidx.compose.ui.test.runComposeUiTest {
+        val host = SampleHost()
+        host.book = TabMeta().started("c1", host.now)
+        mainClock.autoAdvance = false
+        setContent { OmaChatScreen(host, prefill = null, onPrefilled = {}, wanted = chatKey("c1"), onTab = {}) }
+        fun settle() = mainClock.advanceTimeBy(1_200)
+        settle()
+        onNodeWithContentDescription("Show the tabs").performClick()
+        settle()
+        onAllNodes(hasText("New chat") and hasClickAction()).onFirst().performTouchInput { longClick() }
+        settle()
+        onNodeWithText("Rename").performClick()
+        settle()
+        val field = onNode(androidx.compose.ui.test.hasSetTextAction() and androidx.compose.ui.test.isFocused())
+        field.performTextClearance()
+        field.performTextInput("Fold")
+        field.performKeyInput { pressKey(androidx.compose.ui.input.key.Key.Spacebar) }
+        field.performTextInput(" GPU")
+        settle()
+        onNodeWithText("Rename New chat", ignoreCase = true).assertExists()
+        field.performKeyInput { pressKey(androidx.compose.ui.input.key.Key.Enter) }
+        settle()
+        assertEquals("Fold GPU", host.book.names[chatKey("c1")])
     }
 
     /** Needs you answers through the chat's own path: his tap on approve or deny reaches answerMac with that ticket, once. */

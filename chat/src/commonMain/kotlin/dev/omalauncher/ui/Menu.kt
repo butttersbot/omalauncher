@@ -24,6 +24,10 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 
 /**
@@ -47,7 +51,10 @@ fun Menu(
             .fillMaxSize()
             .then(if (shown != null) Modifier.fades { shown.value } else Modifier)
             .background(Pack.overlay)
-            .clickable(onClick = onDismiss)
+            // A click or touch on the scrim closes it, never a key: a clickable also answers Space and Enter, which a field
+            // in the menu passes on, so typing a space in a tab's name closed the menu (Boss, 2026-10-29, Soma on Linux).
+            .pointerInput(onDismiss) { detectTapGestures { onDismiss() } }
+            .semantics { onClick { onDismiss(); true } }
             // A menu with a field in it stays above the keyboard.
             .imePadding(),
         contentAlignment = Alignment.Center,

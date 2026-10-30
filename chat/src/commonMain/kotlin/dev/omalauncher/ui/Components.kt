@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.Dp
@@ -46,7 +47,9 @@ fun OverlayPanel(
         Modifier
             .fillMaxSize()
             .background(Pack.overlay)
-            .clickable(onClick = onDismiss)
+            // A click or touch closes it, never a key a field inside passes on (Menu's scrim, 2026-10-29).
+            .pointerInput(onDismiss) { detectTapGestures { onDismiss() } }
+            .semantics { onClick { onDismiss(); true } }
             .safeDrawingPadding()
             .padding(PageGap),
     ) {

@@ -1056,7 +1056,11 @@ private fun TabMenu(
                     singleLine = true,
                     textStyle = Pack.body(Pack.size.item, Pack.foreground),
                     cursorBrush = SolidColor(Pack.accent),
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp).framed(Pack.mark, Pack.accent, Pack.surface).padding(10.dp).focusRequester(focus),
+                    // Enter saves the name, as [ done ] does (Boss, 2026-10-29).
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp).framed(Pack.mark, Pack.accent, Pack.surface).padding(10.dp).focusRequester(focus)
+                        .onPreviewKeyEvent { e ->
+                            if (e.type == KeyEventType.KeyDown && (e.key == Key.Enter || e.key == Key.NumPadEnter)) { onRename(name); onDismiss(); true } else false
+                        },
                 )
                 Row(Modifier.padding(top = 4.dp)) {
                     BracketAction("done", Pack.accent) {
