@@ -450,7 +450,7 @@ Design for both; the side panel is the narrowest real width a mockup gets unfold
 - Do keep everything in one offline file: `soma.css` inlined, no CDN, no web fonts, no network calls.
 - Do look before sending: `soma-look FILE` renders it at cover, unfolded and side-panel sizes, prints the PNGs and
   warns on overlapping or clipped text, horizontal overflow, empty (zero-height) content, network references, and a
-  file made for a different look than the active one. `soma-canvas propose` refuses a file that hasn't been looked at.
+  file made for a different look than the active one.
 - Don't hard-code colours or font names, use fixed heights that can come out zero, scale-to-fit
   (`transform: scale` from a measured height), or hover-only controls.
 """

@@ -1,5 +1,10 @@
 # Design gate: approved → shipped → diffed, before "done"
 
+**Replaced, Boss, 2026-10-30: "We need to remove the blockers."** Nothing on Canvas ever holds a build, a take or an install, and
+nothing is refused on propose. After a build's walks, each passed walk's screens are published as Shipped with one quick diff per
+changed screen (one look), listed in the lane's result as advice. When he has a problem with a design: `soma-canvas focus CARD "the
+feature"`. Approvals are records. The rest of this file is history.
+
 Boss, 2026-10-29: "The approved designs should have been automatically added to Canvas. And the implemented screens
 that got shipped also should have been added to Canvas. … some sort of automated way to diff implemented versus
 approved … reports that back to the agent so he can make the required fixes before he marks it as done … What is the

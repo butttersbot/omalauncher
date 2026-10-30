@@ -7,7 +7,6 @@
 Offered only when all of it holds, and refused otherwise (nothing is written):
   - the APK is Soma (dev.omalauncher.boss), Hunch, Soma Notes or Soma Messages, signed with this phone's working key;
   - its walks PASSed: DIR (or a .zip) holds the walk folders' results.json (or verdicts.txt); one FAIL refuses it;
-  - the design gate shows no unwaived drift (design_gate.py gate: the report beside the walks, or the lane's in ~/Inbox).
 UNAPPROVED and UNCHECKED cards don't refuse it: the sheet says so in its design line.
 Nothing is installed here. Soma itself waits for Boss's tap; the other apps update by themselves once they're closed.
 """
@@ -76,8 +75,6 @@ def refuse_reason(package, cert, expected, verdicts, gate_code):
     failed = sorted(w for w, (p, f) in verdicts.items() if f or not p)
     if failed:
         return 'walks did not all PASS: ' + ', '.join(failed) + '.'
-    if gate_code == 3:
-        return 'DESIGN FAIL: walked cards differ from Approved (above). Build them as Approved, or Boss waives it.'
     return None
 
 

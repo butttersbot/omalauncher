@@ -153,21 +153,12 @@ walk_report() {
     else
       cat "$wdir/summary.txt" 2>/dev/null || echo "Walks: none ran."
     fi
-    # DESIGN FAIL is its own verdict beside PASS/FAIL: the walk passed, the screen is not as approved. Printed, not
-    # held: DESIGN UNAPPROVED (nothing Approved yet: ask Boss once) and DESIGN UNCHECKED (couldn't be checked).
+    # The quick diff: advisory, holds nothing.
     [ -s "$wdir/design.txt" ] && cat "$wdir/design.txt"
     echo "Screenshots and logs: walk-$short-$code.zip (Taildropped)."
   } >"$wdir/report.txt"
   local design=""
-  grep -q '^DESIGN FAIL' "$wdir/design.txt" 2>/dev/null && design=", DESIGN FAIL"
-  grep -q '^DESIGN UNCHECKED' "$wdir/design.txt" 2>/dev/null && design="$design, DESIGN UNCHECKED"
-  grep -q '^DESIGN UNAPPROVED' "$wdir/design.txt" 2>/dev/null && design="$design, DESIGN UNAPPROVED"
-  grep -q '^FONT FALLBACK' "$wdir/design.txt" 2>/dev/null && design="$design, FONT FALLBACK"
-  # Carded walks ran but the gate itself left no report: that is unchecked too, never silence.
-  if ls "$wdir"/*/canvas.json >/dev/null 2>&1 && [ ! -s "$wdir/design-report.json" ]; then
-    echo "DESIGN UNCHECKED: the design gate left no report (see design.txt)" >>"$wdir/report.txt"
-    case $design in *UNCHECKED*) ;; *) design="$design, DESIGN UNCHECKED" ;; esac
-  fi
+  grep -q '^Design diff (advisory' "$wdir/design.txt" 2>/dev/null && design=", design differences listed"
   "$tmsg" send "$phone${lane:+:$lane}" --title "Soma $short walks${lane:+ (lane $lane)}$design" <"$wdir/report.txt" >/dev/null 2>&1 &&
     echo "Walk report mailed to $phone${lane:+:$lane}." || echo "Walk report: mailing it failed (see $wdir/report.txt)."
 }
@@ -327,8 +318,8 @@ if [ ${#walks[@]} -gt 0 ]; then
       echo "$commit" > "$state/walked-commit"
     fi
   fi
-  # The design gate (design/soma-canvas/DESIGN-GATE.md): each passed walk's carded screenshots (shot NAME card=ID)
-  # become Shipped on Soma Canvas and are checked against Approved; take and install refuse unwaived drift.
+  # Each passed walk's carded screenshots (shot NAME card=ID) become Shipped on Soma Canvas, with one quick diff per
+  # changed screen. Advisory: nothing on Canvas holds a build (design/soma-canvas/DESIGN-GATE.md).
   if [ -s "$wdir/verdicts.txt" ] && ls "$wdir"/*/canvas.json >/dev/null 2>&1; then
     python3 tools/walkthrough/design_gate.py run "$wdir" --version "$code" --build "$short" > "$wdir/design.txt" 2>&1
     cat "$wdir/design.txt"

@@ -31,7 +31,7 @@ class OfferTest(unittest.TestCase):
         self.assertIn('working key', offer.refuse_reason('dev.omalauncher.boss', 'zzz', 'abc', ok, 0))
         self.assertIn('no walk results', offer.refuse_reason('dev.omalauncher.boss', 'abc', 'abc', {}, 0))
         self.assertIn('did not all PASS: w', offer.refuse_reason('dev.omalauncher.boss', 'abc', 'abc', {'w': (3, 1)}, 0))
-        self.assertIn('DESIGN FAIL', offer.refuse_reason('dev.omalauncher.boss', 'abc', 'abc', ok, 3))
+        self.assertIsNone(offer.refuse_reason('dev.omalauncher.boss', 'abc', 'abc', ok, 3))  # nothing on Canvas holds a build
 
     def test_design_line_counts(self):
         self.assertEqual({'checked': False, 'match': 0, 'unapproved': 0, 'unchecked': 0}, offer.design_line(None))

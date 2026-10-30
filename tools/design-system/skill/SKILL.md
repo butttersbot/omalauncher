@@ -33,7 +33,7 @@ the choice; the one Boss picked is. When he asks for another style for one piece
    and reports errors (empty, overflow, clipped, overlapping text, network references). Fix every error, then open the
    PNGs and look at them yourself. On a computer, render it at those sizes in a headless browser and look, or mail it
    to a phone builder (`oma msg send phone:C ...`) to soma-look it. Say in your message that you looked, and at which
-   sizes. `soma-canvas propose` refuses an HTML file without a clean soma-look receipt.
+   sizes.
 6. **Propose, don't approve.** Every mockup you show Boss also goes on Canvas (`soma-canvas propose`, same screen = same
    card), name, size, screen and version explicit. Approving is his alone.
 

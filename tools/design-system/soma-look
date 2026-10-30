@@ -4,7 +4,7 @@ soma-look FILE.html [--sizes cover,unfolded,side] [--out DIR]
 
 Looks at a mockup the way Boss will see it, before anyone sends it: renders FILE at the Fold's sizes
 (cover full screen 475x751, unfolded 932x704, side panel 466x704, in CSS px), checks the page for what keeps going
-wrong, prints a PNG per size, and writes a receipt that `soma-canvas propose` asks for.
+wrong, prints a PNG per size.
 
 Checks, inside the page at each size:
   empty      content with no height (a fit() that scales to nothing, a height that comes out 0)
