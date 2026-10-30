@@ -1,0 +1,28 @@
+{
+ "bundled": [
+  {
+   "role": "symbols",
+   "family": "Noto Sans Symbols 2",
+   "file": "c4a0a80f0041ce4be81e2478faad22776d23edb98ae3f0d19bd37044820ecf9d.ttf",
+   "sha256": "c4a0a80f0041ce4be81e2478faad22776d23edb98ae3f0d19bd37044820ecf9d",
+   "size": 671568,
+   "asset": "fonts/NotoSansSymbols2.ttf"
+  }
+ ],
+ "fetched": [
+  {
+   "role": "emoji",
+   "family": "Noto Color Emoji",
+   "file": "4d82a18d8d95f60ba883ce242bbadbf84a576e987745dd7ba38d71c67cff2d73.ttf",
+   "sha256": "4d82a18d8d95f60ba883ce242bbadbf84a576e987745dd7ba38d71c67cff2d73",
+   "size": 25332736
+  },
+  {
+   "role": "cjk",
+   "family": "Noto Sans CJK JP",
+   "file": "68a3fc98800b2a27b371f2fb79991daf3633bd89309d4ffaa6946fd587f375b5.otf",
+   "sha256": "68a3fc98800b2a27b371f2fb79991daf3633bd89309d4ffaa6946fd587f375b5",
+   "size": 16467736
+  }
+ ]
+}

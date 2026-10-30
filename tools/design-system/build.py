@@ -11,16 +11,23 @@ Reads app/src/main/assets/packs/<pack>/pack.toml (default: the look picked on th
 
   python3 tools/design-system/build.py [--pack auto|manga|riso|...]
 
-Needs fonttools (pyftsubset) to cut the faces to Latin; without it the faces are left out and it says so.
+The faces come from Soma Canvas's font store (`soma-canvas fonts THEME`; Boss, 2026-10-29), whole, never cut to Latin:
+each voice's stack is the theme's face, then the pinned symbols font, then emoji and CJK. The theme's faces and the
+symbols font are inlined; emoji and CJK (tens of MB) only into a page that has such characters:
+
+  python3 tools/design-system/build.py --inline MOCKUP.html     adds the emoji/CJK faces that page needs, nothing else
+
+With Canvas out of reach and nothing cached, the pack's own files are inlined whole and it says so.
 """
 import argparse, base64, os, re, shutil, subprocess, sys, tempfile, tomllib
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import somafonts
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 FOLD = {  # The Fold's two screens, in CSS px at 420 dpi (2.625 px per CSS px), and how an artifact sits on each.
     "cover": (1248, 1972, 475, 751, "the artifact fills the cover screen"),
     "unfolded": (2448, 1848, 932, 704, "the artifact sits in the side panel, about half the width (≈466 × 704)"),
 }
-UNICODES = "U+0020-007E,U+00A0-00FF,U+2013-2014,U+2018-201D,U+2022,U+2026,U+00B7,U+2190-2193,U+25BE,U+2715,U+2713"
 
 
 def color(value, palette, seen=()):
@@ -37,15 +44,11 @@ def color(value, palette, seen=()):
     return f"rgba({r}, {g}, {b}, {float(alpha):g})"
 
 
-def subset(src):
-    """The face cut to Latin as a woff2 data URL, or None without fonttools."""
-    if not shutil.which("pyftsubset"):
-        return None
-    with tempfile.TemporaryDirectory() as tmp:
-        out = os.path.join(tmp, "f.woff2")
-        subprocess.run(["pyftsubset", src, f"--unicodes={UNICODES}", "--flavor=woff2", "--layout-features=*",
-                        f"--output-file={out}"], check=True, capture_output=True)
-        return "data:font/woff2;base64," + base64.b64encode(open(out, "rb").read()).decode()
+def pack_face(src):
+    """A pack's own face, whole, as a data URL: only when the store can't be had."""
+    ext = src.rsplit(".", 1)[-1].lower()
+    return f"data:{somafonts.MIME.get(ext, 'font/' + ext)};base64," + base64.b64encode(open(src, "rb").read()).decode(), \
+        somafonts.FORMATS.get(ext, ext)
 
 
 def active_pack():
@@ -92,28 +95,32 @@ def build(pack_id):
     body_px = size.get("body", 15)
 
     faces, missing = [], []
-    names = {"display": "Soma Display", "body": "Soma Body", "hand": "Soma Hand", "mono": "Soma Mono"}
-    generic = {"sans-serif": '"Helvetica Neue", Arial, sans-serif', "serif": "Georgia, serif",
-               "monospace": "ui-monospace, Menlo, monospace", "cursive": '"Comic Sans MS", cursive'}
+    manifest, folder = somafonts.fetch(pack_id)
     stacks = {}
-    for voice in ("display", "body", "hand", "mono"):
-        spec = pack["type"].get(voice, pack["type"]["body"])
-        fallback = generic.get(spec.get("family", "sans-serif"), "sans-serif")
-        url = subset(os.path.join(pack_dir, spec["file"])) if spec.get("file") else None
-        if url:
-            faces.append(f'@font-face {{ font-family: "{names[voice]}"; src: url({url}) format("woff2"); '
-                         f'font-weight: 100 900; font-display: block; }}')
-            stacks[voice] = f'"{names[voice]}", {fallback}'
-        else:
+    if manifest:
+        # Theme faces and the symbols font are carried by every design; emoji/CJK only by a page that needs them.
+        faces = [somafonts.face_css(f, folder) for f in somafonts.faces(manifest) if f.get("bundle")]
+        stacks = {v: somafonts.stack(manifest, v) for v in ("display", "body", "hand", "mono")}
+        fonts_meta = f"{pack_id}@{manifest['version'][:12]}"
+    else:
+        names = {"display": "Soma Display", "body": "Soma Body", "hand": "Soma Hand", "mono": "Soma Mono"}
+        for voice in ("display", "body", "hand", "mono"):
+            spec = pack["type"].get(voice, pack["type"]["body"])
             if spec.get("file"):
+                url, fmt = pack_face(os.path.join(pack_dir, spec["file"]))
+                faces.append(f'@font-face {{ font-family: "{names[voice]}"; src: url({url}) format("{fmt}"); '
+                             f'font-weight: 100 900; font-display: block; }}')
+                stacks[voice] = f'"{names[voice]}"'
+            else:
                 missing.append(voice)
-            stacks[voice] = fallback
+                stacks[voice] = spec.get("family", "sans-serif")
+        fonts_meta = f"{pack_id}@pack"
     voice_css = {v: (pack["type"].get(v, {}).get("weight", 400), "uppercase" if pack["type"].get(v, {}).get("uppercase") else "none",
                      pack["type"].get(v, {}).get("tracking", 0)) for v in ("display", "body", "hand", "mono")}
 
     mono = pack["type"]["mono"]
     css = f"""/* soma.css: Soma's design system, generated from the active look's pack by tools/design-system/build.py.
-   soma-pack: {pack_id}  ({pack['pack']['name']})
+   soma-pack: {pack_id}  ({pack['pack']['name']})   soma-fonts: {fonts_meta}
    Don't edit by hand; when the look changes, rebuild. Inline this whole file in a <style> (mockups are offline, single files). */
 {chr(10).join(faces)}
 :root {{
@@ -198,6 +205,7 @@ p {{ margin: 0; }}
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="soma-pack" content="{pack_id}">
+<meta name="soma-fonts" content="{fonts_meta}">
 <meta name="soma-reply-to" content="">
 <title>Mockup title</title>
 <style>
@@ -260,6 +268,7 @@ window.addEventListener('soma-answer-result', function(event) {{
     page = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="soma-pack" content="{pack_id}">
+<meta name="soma-fonts" content="{fonts_meta}">
 <title>Soma design system</title>
 <style>
 {css}
@@ -372,8 +381,11 @@ Actions are Soma's bracketed words in every look (`[ Approve ]`, one line, never
 | Mono | {face('mono')} |
 | Hand | {face('hand')} |
 
-Card line {hair} px, corner {radius} px, shadow `{shadow}`. The faces are embedded in `soma.css` as data URLs
-(Latin only), so a mockup is one offline file; a look that uses system fonts embeds none.
+Card line {hair} px, corner {radius} px, shadow `{shadow}`. The faces are embedded in `soma.css` as data URLs,
+whole, from Soma Canvas's font store ({fonts_meta}), so a mockup is one offline file. Each voice's stack is the theme's
+face, then Noto Sans Symbols 2, then Noto Color Emoji and Noto Sans CJK JP, and no generic family: emoji and CJK are
+inlined only into a page that has such characters (`build.py --inline FILE`), and `soma-look` flags FONT FALLBACK for
+any character none of the page's fonts draws.
 
 ## Artifact question replies
 
@@ -440,14 +452,49 @@ Design for both; the side panel is the narrowest real width a mockup gets unfold
 """
     open(os.path.join(ROOT, "docs/DESIGN-SYSTEM.md"), "w").write(md)
     print("wrote design/soma/soma.css, template.html, design-system.html, docs/DESIGN-SYSTEM.md")
+    if not manifest:
+        print(f"WARNING: Soma Canvas's font store couldn't be reached and nothing is cached for {pack_id}: the pack's own "
+              "files are inlined (no symbols, emoji or CJK fonts); rebuild when Canvas answers", file=sys.stderr)
     if missing:
-        print("WARNING: no fonttools (pyftsubset): faces left out for", ", ".join(missing), file=sys.stderr)
+        print(f"WARNING: {pack_id} names device fonts for {', '.join(missing)} (no files): those voices draw in device fonts",
+              file=sys.stderr)
+
+
+def inline(path):
+    """Adds to one page the store's faces it needs and doesn't carry (emoji, CJK), only those; replaces an earlier
+    such block. The page's theme comes from its soma-fonts (or soma-pack) meta."""
+    html = open(path, encoding="utf-8").read()
+    m = re.search(r'<meta name="soma-(?:fonts|pack)" content="([\w-]+)', html)
+    if not m:
+        sys.exit(f"{path}: no soma-fonts/soma-pack meta; start from design/soma/template.html")
+    manifest, folder = somafonts.fetch(m.group(1))
+    if not manifest:
+        sys.exit(f"no font store for {m.group(1)} (Canvas out of reach and nothing cached)")
+    html = re.sub(r'<style id="soma-fonts-extra">.*?</style>\n?', "", html, flags=re.S)
+    css = somafonts.extra_css(html, manifest, folder)
+    if css:
+        block = f'<style id="soma-fonts-extra">\n{css}\n</style>\n'
+        html = html.replace("</head>", block + "</head>", 1) if "</head>" in html else block + html
+    open(path, "w", encoding="utf-8").write(html)
+    missing, could = somafonts.fallback(html, manifest)
+    print(f"{path}: added {len(css.splitlines()) if css else 0} face(s); " +
+          (f"still no font for {' '.join(c for c, _ in missing)}" if missing else "every character has a font from the store"))
 
 
 if __name__ == "__main__":
     a = argparse.ArgumentParser()
     a.add_argument("--pack", default="auto")
-    pid = a.parse_args().pack
+    a.add_argument("--inline", metavar="FILE", help="add the emoji/CJK faces FILE needs, then stop")
+    a.add_argument("--app-fonts", action="store_true",
+                   help="refresh the apps' bundled symbols font and the pins of the fonts they fetch (assets/fonts), then stop")
+    args = a.parse_args()
+    if args.app_fonts:
+        print("wrote app/src/main/assets/fonts/:", ", ".join(somafonts.app_assets(ROOT)))
+        sys.exit(0)
+    if args.inline:
+        inline(args.inline)
+        sys.exit(0)
+    pid = args.pack
     if pid == "auto":
         pid = active_pack() or "manga"
         print("active look:", pid)

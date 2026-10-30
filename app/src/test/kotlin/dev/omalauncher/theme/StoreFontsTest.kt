@@ -1,0 +1,64 @@
+package dev.omalauncher.theme
+
+import java.io.ByteArrayInputStream
+import java.io.File
+import java.nio.file.Files
+import java.security.MessageDigest
+import org.junit.Assert.*
+import org.junit.Test
+
+/** The fonts each device fetches once from Soma Canvas's store (Boss, 2026-10-29: emoji and CJK aren't bundled). */
+class StoreFontsTest {
+    private fun sha(b: ByteArray) = MessageDigest.getInstance("SHA-256").digest(b).joinToString("") { "%02x".format(it) }
+    private val emoji = "emoji-bytes".toByteArray()
+    private val pin = StoreFonts.Pin("emoji", "Noto Color Emoji", sha(emoji) + ".ttf", sha(emoji), emoji.size.toLong(), null)
+
+    @Test fun thePinsAreTheBundledSymbolsThenTheFetchedFacesInStackOrder() {
+        val (bundled, fetched) = StoreFonts.pins(File("src/main/assets/fonts/store.json").let { if (it.exists()) it else File("app/src/main/assets/fonts/store.json") }.readText())
+        assertEquals(listOf("symbols"), bundled.map { it.role })
+        assertEquals("fonts/NotoSansSymbols2.ttf", bundled.single().asset)
+        assertEquals(listOf("emoji", "cjk"), fetched.map { it.role })
+        assertTrue(fetched.all { it.asset == null && it.sha256.length == 64 && it.size > 1_000_000 })
+        // The bundled file is the one the store pins.
+        val asset = File("src/main/assets/fonts/NotoSansSymbols2.ttf").let { if (it.exists()) it else File("app/src/main/assets/fonts/NotoSansSymbols2.ttf") }
+        assertEquals(bundled.single().sha256, sha(asset.readBytes()))
+    }
+
+    @Test fun aFaceIsKeptOnlyWholeAndAsPinnedAndFetchedOnce() {
+        val dir = Files.createTempDirectory("store-fonts").toFile()
+        var asked = 0
+        val urls = mutableListOf<String>()
+        fun serve(bytes: ByteArray): (String) -> java.io.InputStream = { url -> asked++; urls += url; ByteArrayInputStream(bytes) }
+        // A file that isn't the pinned one (same size, other bytes) is thrown away, and nothing is kept.
+        assertEquals(emptyList<StoreFonts.Pin>(), StoreFonts.fetchMissing(dir, "http://canvas:5860/", listOf(pin), serve("emoji-BYTES".toByteArray())))
+        assertNull(StoreFonts.cached(dir, pin))
+        assertTrue(dir.listFiles()!!.isEmpty())
+        // A longer one too.
+        assertEquals(emptyList<StoreFonts.Pin>(), StoreFonts.fetchMissing(dir, "http://canvas:5860", listOf(pin), serve(emoji + emoji)))
+        // The right one is kept under its pinned name, from the store's file route.
+        assertEquals(listOf(pin), StoreFonts.fetchMissing(dir, "http://canvas:5860/", listOf(pin), serve(emoji)))
+        assertEquals("http://canvas:5860/api/fonts/files/${pin.file}", urls.last())
+        assertArrayEquals(emoji, StoreFonts.cached(dir, pin)!!.readBytes())
+        // Kept: not asked again.
+        val before = asked
+        assertEquals(emptyList<StoreFonts.Pin>(), StoreFonts.fetchMissing(dir, "http://canvas:5860", listOf(pin), serve(emoji)))
+        assertEquals(before, asked)
+        // Canvas out of reach: nothing kept, nothing thrown.
+        val other = pin.copy(file = "0".repeat(64) + ".otf", sha256 = "0".repeat(64))
+        assertEquals(emptyList<StoreFonts.Pin>(), StoreFonts.fetchMissing(dir, "http://canvas:5860", listOf(other)) { throw java.io.IOException("offline") })
+        assertNull(StoreFonts.cached(dir, other))
+    }
+
+    @Test fun aPinnedNameNeverBecomesAPath() {
+        val dir = Files.createTempDirectory("store-fonts").toFile()
+        val evil = pin.copy(file = "../../evil.ttf")
+        StoreFonts.fetchMissing(dir, "http://canvas", listOf(evil)) { ByteArrayInputStream(emoji) }
+        assertFalse(File(dir.parentFile.parentFile, "evil.ttf").exists())
+    }
+
+    @Test fun everyVoiceGetsTheStoreFallbacksBehindItsOwnFace() {
+        val text = File("src/main/kotlin/dev/omalauncher/theme/ThemeStore.kt").let { if (it.exists()) it else File("app/src/main/kotlin/dev/omalauncher/theme/ThemeStore.kt") }.readText()
+        assertTrue(text.contains("Typeface.CustomFallbackBuilder(own).apply { storeFallbacks().forEach { addCustomFallback(it) } }"))
+        assertFalse("no Latin cut, no generic family in front of the store's", text.contains("FontFamily.SansSerif"))
+    }
+}
