@@ -97,8 +97,10 @@ class LinkedQuestionDeliveryTest : ChatScreenTestBase() {
         val carried = CarriedAnswers.list.single()
         assertFalse("once only", CarriedAnswers.claim("ticket-mb"))
         BossTouch.touched(physical = true)
+        val receipts = host.receipts.size
         host.undoCarried(carried)
         assertTrue(said.single().startsWith("macbook-pro/t1703ae4f|Undo: the answer \"Yes, keep them deleted\""))
+        assertEquals("Soma's words, not signed as his", receipts, host.receipts.size)
         assertTrue(CarriedAnswers.list.isEmpty())
     }
 

@@ -200,21 +200,19 @@ object SameSuggestions {
 }
 
 /**
- * [ undo ] on an answer Soma carried over: that thread is told, in his words, that it wasn't his answer there and to ask
- * again. A follow-up to the thread, as if he had typed it there (his tap, his receipt); the answer itself has gone.
+ * [ undo ] on an answer Soma carried over: that thread is told that it wasn't his answer there and to ask
+ * again. A follow-up to the thread in Soma's words, so it carries no receipt of his: only what he typed or answered is
+ * signed as his. The answer itself has gone.
  */
 internal fun ChatHost.undoCarried(carried: CarriedAnswer) {
     val text = "Undo: the answer \"${carried.words}\" to your question was carried over automatically from ${carried.from}, where I " +
         "answered what looked like the same question. It is not my answer here: ask me again if you still need it."
-    val vouched = BossTouch.mayVouch()
     val thread = carried.target.thread
     if (thread.startsWith("phone:")) {
         val builder = dev.omalauncher.assist.BuilderId.entries.firstOrNull { it.letter == thread.removePrefix("phone:") } ?: return
         build(text, emptyList(), BuildWay.FollowUp, builder)
-        bossSaid(BossWords.chat("phone", text, vouched))
     } else {
         sayToMac(text, thread, carried.target.where, "")
-        bossSaid(BossWords.chat("mac:$thread", text, vouched))
     }
     CarriedAnswers.list.remove(carried)
 }
