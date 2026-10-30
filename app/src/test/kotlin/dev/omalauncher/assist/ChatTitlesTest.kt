@@ -30,7 +30,7 @@ class ChatTitlesTest {
         assertEquals("$TITLE_ASK\n\nBoss: hi", titlePrompt(TitleAsk(" hi ")))
         assertEquals(TITLE_SIDE_CHARS, titlePrompt(TitleAsk("x".repeat(5_000))).removePrefix("$TITLE_ASK\n\nBoss: ").length)
         val command = titleCommand(ask)
-        assertTrue(command.startsWith("mkdir -p /tmp/oma-title && cd /tmp/oma-title && claude -p --model haiku --output-format json --tools '' -- "))
+        assertTrue(command.startsWith("mkdir -p /tmp/oma-title && cd /tmp/oma-title && claude -p --no-session-persistence --model haiku --output-format json --tools '' -- "))
         assertFalse("--resume" in command); assertFalse("--allowedTools" in command); assertTrue(command.endsWith(" < /dev/null"))
     }
 
