@@ -74,9 +74,6 @@ object Motion {
     val reduced: Boolean get() = reducedMotion(if (systemAnimationsOn()) 1f else 0f)
 }
 
-/** Whether the system runs animations at all; Android's "remove animations" turns them off. Read by [Motion.reduced]. */
-expect fun systemAnimationsOn(): Boolean
-
 /**
  * Whether motion is left out, from the system's animator duration scale: at zero ("remove animations") it
  * is, and nothing here moves or fades. Any other scale is Compose's to apply, as it does to every animation.
