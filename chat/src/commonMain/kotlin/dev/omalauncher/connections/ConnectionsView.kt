@@ -26,6 +26,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -44,6 +46,10 @@ private fun Words(text: String, style: TextStyle, lines: Int = Int.MAX_VALUE, mo
 private fun sans(size: TextUnit, color: Color = Pack.foreground, weight: FontWeight? = null) =
     Pack.body(size, color).let { if (weight == null) it else it.copy(fontWeight = weight) }
 private fun caption(size: TextUnit = 10.sp, color: Color = Pack.muted) = Pack.mono(size, color)
+/** The v6 CSS sets the flag, status words, section heads and step numbers in the mono face at its regular weight
+ * (`font: 10px var(--font-mono)`), not the pack's bold caption voice; [tracking] as the card's em. */
+private fun plainMono(size: TextUnit, color: Color = Pack.foreground, tracking: Float = 0f) =
+    Pack.mono(size, color).copy(fontWeight = FontWeight.Normal, letterSpacing = tracking.em)
 private val ConnectionTone.color get() = when (this) { ConnectionTone.Good -> Pack.green; ConnectionTone.Bad -> Pack.accent; ConnectionTone.Quiet -> Pack.muted }
 
 private fun Modifier.rule(top: Boolean = false, bottom: Boolean = false) = drawBehind {
@@ -55,9 +61,9 @@ private fun Modifier.bar(color: Color) = drawBehind { drawRect(color, Offset.Zer
 
 /** [ Label ] in the body face and the accent, flush left, a 44dp target. */
 @Composable
-private fun ConnectionAction(label: String, action: () -> Unit, modifier: Modifier = Modifier, size: TextUnit = 13.sp) {
+private fun ConnectionAction(label: String, action: () -> Unit, modifier: Modifier = Modifier, size: TextUnit = 13.sp, tight: Boolean = false) {
     Box(modifier.heightIn(min = 44.dp).clickable(onClick = action), contentAlignment = Alignment.CenterStart) {
-        BasicText("[ $label ]", style = sans(size, Pack.accent))
+        BasicText(if (tight) "[$label]" else "[ $label ]", style = sans(size, Pack.accent))
     }
 }
 /** Three bars: done in green, the current one in the accent, the rest in the pack's highlight. */
@@ -71,8 +77,8 @@ private fun ProgressRail(stage: Int, modifier: Modifier = Modifier) {
 @Composable
 private fun SectionHead(left: String, right: String, rightColor: Color = Pack.foreground) {
     Row(Modifier.fillMaxWidth().padding(bottom = 10.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-        Words(Pack.caption(left), caption(10.sp, Pack.foreground), 1)
-        Words(Pack.caption(right), caption(10.sp, rightColor), 1)
+        Words(left.uppercase(), plainMono(10.sp, Pack.foreground, .07f), 1)
+        Words(right.uppercase(), plainMono(10.sp, rightColor, .07f), 1)
     }
 }
 private fun repairCardSummary(text: String): String = when {
@@ -111,7 +117,7 @@ fun ConnectionsModule(size: ModuleSize, now: Long, modifier: Modifier = Modifier
                     allReady -> "✓" to ConnectionTone.Good
                     else -> "?" to ConnectionTone.Quiet
                 }
-                Words(flag, caption(11.sp, tone.color), 1)
+                Words(flag, plainMono(11.sp, tone.color), 1)
             }
             if (showSummary) {
                 // Restored and verified: the v6 healthy card, "Everything is ready" over what came back.
@@ -146,15 +152,21 @@ fun ConnectionsModule(size: ModuleSize, now: Long, modifier: Modifier = Modifier
                         val status = connectionStatus(row, incidents, card = true)
                         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(if (small) 3.dp else 4.dp),
                             modifier = Modifier.weight(1f).semantics { contentDescription = "${capability.title}: ${status.word}" }) {
-                            Words(row.state.mark, sans(17.sp, status.tone.color), 1)
+                            Words(row.state.mark, sans(if (row.state.mark == "✓") 17.sp else 26.sp, status.tone.color), 1, Modifier.height(24.dp).wrapContentHeight())
                             Words(capability.band.orEmpty(), sans(10.sp, weight = FontWeight.Medium), 1)
                         }
                     }
                 }
             }
             // A child clickable consumes the tap: Restore does not open the detail modal.
-            Box(Modifier.fillMaxWidth().height(45.dp).rule(top = true), contentAlignment = Alignment.CenterStart) {
-                ConnectionAction(if (ConnectionsSource.checking) "Checking…" else "Restore", { ConnectionsSource.restore() }, size = if (small) 11.sp else 12.sp)
+            // Small card (v6 .small .controls: 8px insets): the rule and [Restore] run 4dp wider than the text column.
+            val reach = if (small) 4.dp else 0.dp
+            Box(Modifier.fillMaxWidth().layout { m, c ->
+                val extra = (reach * 2).roundToPx()
+                val p = m.measure(c.copy(minWidth = c.maxWidth + extra, maxWidth = c.maxWidth + extra))
+                layout(c.maxWidth, p.height) { p.place(-reach.roundToPx(), 0) }
+            }.height(45.dp).rule(top = true), contentAlignment = Alignment.CenterStart) {
+                ConnectionAction(if (ConnectionsSource.checking) "Checking…" else "Restore", { ConnectionsSource.restore() }, size = if (small) 11.sp else 12.sp, tight = small)
             }
         }
     }
@@ -215,9 +227,9 @@ private fun ConnectionsRepair(snapshot: ConnectionsSnapshot, now: Long) {
             Column(Modifier.fillMaxWidth().bar(Pack.accent)) {
                 Words(Pack.caption(copy.caption), caption(10.sp))
                 Words(copy.headline, sans(19.sp, weight = FontWeight.SemiBold), modifier = Modifier.padding(top = 10.dp, bottom = 6.dp))
-                Words(copy.impact, sans(13.sp))
+                Words(copy.impact, sans(13.sp).copy(lineHeight = 19.5.sp))
                 RestoreBlock(stage, copy.steps)
-                Words(copy.note, Pack.hand(18.sp), modifier = Modifier.padding(top = 10.dp))
+                Words(copy.note, Pack.hand(13.sp), modifier = Modifier.padding(top = 10.dp))
                 AgentTools()
             }
         }
@@ -245,7 +257,7 @@ private fun RestoreBlock(stage: Int, steps: List<String>) {
             val current = stage == i
             val color = if (done) Pack.green else if (current) Pack.foreground else Pack.muted
             Row(Modifier.padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Words(if (done) "✓" else "0${i + 1}", caption(11.sp, color), 1, Modifier.widthIn(min = 18.dp))
+                Words(if (done) "✓" else "0${i + 1}", plainMono(11.sp, color), 1, Modifier.widthIn(min = 18.dp))
                 Words(step, sans(12.sp, color, if (current) FontWeight.SemiBold else null))
             }
         }
@@ -275,7 +287,7 @@ private fun ConnectionDisclosure(row: ConnectionReading, status: ConnectionStatu
         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { open = !open }
             .semantics { contentDescription = "${row.capability.title}: ${status.word}" }, verticalAlignment = Alignment.CenterVertically) {
             Words(row.capability.title, sans(13.sp), modifier = Modifier.weight(1f))
-            Words(status.text, caption(10.sp, status.tone.color), 1)
+            Words(status.text, plainMono(10.sp, status.tone.color), 1)
         }
         if (open) Words(row.detail, sans(12.sp, Pack.muted), modifier = Modifier.padding(bottom = 12.dp))
     }

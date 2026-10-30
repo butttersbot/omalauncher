@@ -14,7 +14,7 @@ class ConnectionsViewTest {
         var restores = 0
         ConnectionsSource.restore = { restores++ }
         setContent { Box(Modifier.size(235.dp, 180.dp)) { ConnectionsModule(ModuleSize.Card, 100_000) } }
-        onNodeWithText("[ Restore ]").assertIsDisplayed().performClick()
+        onNodeWithText("[Restore]").assertIsDisplayed().performClick()
         assertEquals(1, restores)
         onNodeWithContentDescription("Close Connections").assertDoesNotExist()
         onNodeWithText("Connections").performClick()

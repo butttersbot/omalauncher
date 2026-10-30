@@ -13,7 +13,7 @@ expect Agents
 expect Canvas
 expect runner not responding
 shot connections-small-cover card=connections-small-cover
-tap [ Restore ]
+tap [Restore]
 expect Restore utility used
 expect Repair blocked
 # Utility must not open the modal.
