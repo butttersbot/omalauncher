@@ -46,13 +46,15 @@ fun serviceInventoryReadings(reply: ConnectionReply, displayHost: String, source
             val notInstalled = row.has("installed") && !row.optBoolean("installed") && row.optString("state") != "running"
             val groups = checks.groupBy({ it.first }, { it.second }).ifEmpty { mapOf(capability to emptyList()) }
             groups.map { (scope, evidence) ->
+                // A check of something this host doesn't have (no Codex, no mirror agent) says nothing about the rest.
+                val required = evidence.filter { it.result != "not_installed" }
                 val state = when {
                     // Absence is not an outage, and not an unknown either: an Unknown would outrank another host's Ready.
-                    notInstalled -> ConnectionState.Disabled
+                    notInstalled || (evidence.isNotEmpty() && required.isEmpty()) -> ConnectionState.Disabled
                     proofTime <= 0 -> ConnectionState.Unknown
                     evidence.any { it.code in setOf(401, 403) || it.result == "auth" } -> ConnectionState.Auth
                     evidence.any { it.result == "fail" } -> ConnectionState.Failed
-                    evidence.isNotEmpty() && evidence.all { it.result == "pass" } -> ConnectionState.Ready
+                    required.isNotEmpty() && required.all { it.result == "pass" } -> ConnectionState.Ready
                     else -> ConnectionState.Unknown
                 }
                 val detail = when (state) {
@@ -60,6 +62,7 @@ fun serviceInventoryReadings(reply: ConnectionReply, displayHost: String, source
                     ConnectionState.Auth -> "$id: reachable, but authenticated ${scope.title.lowercase()} is not verified."
                     ConnectionState.Failed -> "$id: a required ${scope.title.lowercase()} check failed."
                     ConnectionState.Disabled -> if (id == "syncthing") "$id: optional service is not installed/configured on this host."
+                        else if (id == "runner") "$id: this host has nothing to check for ${scope.title.lowercase()}."
                         else "$id: not installed on this host; ${scope.title.lowercase()} is checked where it runs."
                     else -> "$id: ${scope.title.lowercase()} evidence is incomplete; a running process is not sufficient."
                 }

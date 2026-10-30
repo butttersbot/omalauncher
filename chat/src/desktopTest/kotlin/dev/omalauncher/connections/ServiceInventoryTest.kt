@@ -24,6 +24,16 @@ class ServiceInventoryTest {
         assertEquals(ConnectionState.Stale, state(reply("pass"), 200_000))
         assertTrue(serviceInventoryReadings(ConnectionReply(200, "{}"), "Mac", "mac", 100_000).isEmpty())
     }
+    @Test fun aCheckOfSomethingThisHostLacksIsNeitherProofNorAnUnknown() {
+        fun of(vararg results: String) = ConnectionReply(200, JSONObject().put("ok", true).put("host", "fictional-mac").put("checked_at", 100_000)
+            .put("services", JSONArray().put(JSONObject().put("id", "canvas").put("state", "running").put("pid", 123)
+                .put("probe", JSONObject().put("checks", JSONArray().also { checks -> results.forEachIndexed { i, r -> checks.put(JSONObject().put("check", "c$i").put("result", r)) } })
+                    .put("checked_at", 100_000).put("pending", false)))).toString())
+        assertEquals(ConnectionState.Ready, state(of("pass", "not_installed")))
+        assertEquals(ConnectionState.Disabled, state(of("not_installed")))
+        assertEquals(ConnectionState.Unknown, state(of("unverified", "not_installed")))
+        assertEquals(ConnectionState.Failed, state(of("fail", "not_installed")))
+    }
     @Test fun cachedProofKeepsItsOwnAgeAndPendingHasNoInventedReadyState() {
         val body = JSONObject(reply("pass").text)
         body.put("checked_at", 200_000)
