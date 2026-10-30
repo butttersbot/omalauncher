@@ -243,3 +243,19 @@ DEMO provenance: lane-owned isolated `e32d0ec2a12b3e837d075c04ab62a67a6c031615` 
 This closes the **MacBook baseline emulator verification** gate only. Native outgoing rich-link capability remains FALSE/OFF. Full pinned native sender/client/codegen, forbidden excluded build inputs, NAC/MMCS/APNs, recipient rendering/opt-out behavior, physical acceptance and later rollout retain the exact limits and separate owner-authorization requirements in the final handoff above. No deployment or phone installation is authorized by these passing walks. The optional anchor walk was not run; no new anchor-regression result is claimed.
 
 Evidence handling clarification: laneA reported that a leading-hyphen expired DEMO token bypassed its initial grep redaction in the historical `0a334081/reduced-setup.log` and `reduced-setup/results.json`. Those two historical files were subsequently redacted; laneA reports no remaining matches in the historical or final evidence. No token value is recorded here.
+
+## Live API deployment — Boss directly authorized, 2026-10-30 14:40 PDT
+
+Boss directly instructed this MacBook thread: “Restart the live iMessage service and deploy, as I answered on the card.” This lifts the prior live-deployment restriction for the prepared API replacement/restart. Native outgoing rich links remain OFF; no agent sends real messages or changes account/registration/pairing state.
+
+Deployed the staged Swift API production inputs at backend `3ccca07d6e4c3dd0576a56ce59623a2b6899582e`. The validated cached debug-configuration binary came from isolated `e32d0ec` plus the verified Swift patch: all30production/package files and449Vendor source files match3ccca07 byte for byte, and compilation postdates those inputs. A fresh optimized build was blocked by missing SwiftUI preview macros in the Command Line Tools environment; its plugin retry was stopped. No claim of a fresh optimized build is made. Installed signed executable SHA256: `0e6b8d89f37276bdaf2b7269fa4f507d89b6fc6489f517c4f941e55744b03425`. The existing Apple Development signing identity and exact designated requirement are preserved. Existing native runtime resources were retained unchanged; the Direct transport was not restarted or replaced.
+
+The prepared switch verified source signature/hash and the unchanged installed baseline, switched `~/Applications/Soma iMessage Direct.app`, then restarted only `gui/501/dev.omalauncher.soma-imessage.direct-api` **once**. Post-deployment authenticated health on8765 passed: `ok=true`, `messagesAccess=true`, `sendReady=true`, `watching=true`, `readOnly=false`, `problem=null`, `richLinkSend=false`. Evidence: `~/Projects/soma-messages-release-0.8.7/service/post-health.json`. This is service readiness, not recipient acceptance or physical messaging proof. No account, registration or pairing changes and no real message sends occurred.
+
+Backup: `~/Projects/soma-messages-release-0.8.7/service/backup/Soma iMessage Direct.app`, previous signed executable SHA256 `055b0a0dc69dc90b1fed8271137215f8bb54517bf8afcafa3a1570287ca98081`. One-command rollback (restores the signed bundle and restarts only the API):
+
+```sh
+python3 /Users/jackkim/Projects/soma-messages-release-0.8.7/service/switch-service.py rollback
+```
+
+App release: version0.8.7/code28 at `a8c0fd781e33ea497ed000a2a026071f998979e8`; `:messages:assembleRelease` passed with no new walks, retaining the closed baseline. Unsigned payload SHA256 `d51e9b925d973b8ae1e29cd5bb818df97812f00a4ca4f2a444d29ec117749b9f` plus JSON reached PhoneA. Signing stays on the phone; PhoneA confirmed receipt/matching hash and signing, and was notified that the service is now ready. Final signed filename/hash and installation result are owned by PhoneA and pending its report here. Runtime behavior/animations remain the approved baseline; this release changes the app version only.
