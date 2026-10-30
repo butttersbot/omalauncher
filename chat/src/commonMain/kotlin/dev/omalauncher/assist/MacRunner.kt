@@ -72,7 +72,8 @@ object MacRequests {
 
     fun health() = MacRequest("GET", "/health")
 
-    fun threads() = MacRequest("GET", "/threads")
+    /** Every thread; [all] adds the internal ones (agents' tests, proofs and helpers), which Boss's lists leave out. */
+    fun threads(all: Boolean = false) = MacRequest("GET", if (all) "/threads?all=1" else "/threads")
 
     /** The project registry the runner serves. */
     fun projects() = MacRequest("GET", "/projects")
@@ -86,8 +87,10 @@ object MacRequests {
      * A new thread called [name] in [project], running the agent [kind] (`claude`, `codex`, `grok` or `cursor`) on [model];
      * none named is the runner's default, Claude, and no model the agent's own default.
      */
-    fun makeThread(name: String, project: String, kind: String = "", model: String = "", mode: String = "") =
-        MacRequest("POST", "/threads", JSONObject().put("name", name).put("project", project).apply { if (kind.isNotEmpty()) put("kind", kind) }.apply { if (model.isNotEmpty()) put("model", model) }.apply { if (mode.isNotEmpty()) put("mode", mode) }.toString())
+    fun makeThread(name: String, project: String, kind: String = "", model: String = "", mode: String = "", internal: Boolean = false) =
+        MacRequest("POST", "/threads", JSONObject().put("name", name).put("project", project).apply { if (kind.isNotEmpty()) put("kind", kind) }.apply { if (model.isNotEmpty()) put("model", model) }.apply { if (mode.isNotEmpty()) put("mode", mode) }
+            // An agent's test or proof thread: kept off Boss's tabs by the runner (Boss, 2026-10-29).
+            .apply { if (internal) put("internal", true) }.toString())
 
     /** The owner's words exactly as he said them: nothing is trimmed or added here. */
     fun sendMessage(threadId: String, text: String) = MacRequest("POST", "/threads/${part(threadId)}/messages", JSONObject().put("text", text).toString())
@@ -412,7 +415,7 @@ class MacRunnerClient(private val config: MacRunnerConfig?, private val machine:
         return macHealthResult(runCatching { asked.get(HEALTH_LIMIT_MS.toLong(), TimeUnit.MILLISECONDS) }.getOrNull())
     }
 
-    fun threads(): MacAnswer<List<MacThread>> = when (val listed = parseMacThreads(send(MacRequests.threads()))) {
+    fun threads(all: Boolean = false): MacAnswer<List<MacThread>> = when (val listed = parseMacThreads(send(MacRequests.threads(all)))) {
         is MacAnswer.Ok -> MacAnswer.Ok(listed.value.map { macOnMachine(machine, it) })
         else -> listed
     }
@@ -423,7 +426,7 @@ class MacRunnerClient(private val config: MacRunnerConfig?, private val machine:
 
     fun handoff(name: String): MacAnswer<MacHandoff> = parseMacHandoff(send(MacRequests.handoff(name)))
 
-    fun makeThread(name: String, project: String, kind: String = "", model: String = "", mode: String = ""): MacAnswer<MacThread> = ours(parseMacThread(send(MacRequests.makeThread(name, project, kind, model, mode))))
+    fun makeThread(name: String, project: String, kind: String = "", model: String = "", mode: String = "", internal: Boolean = false): MacAnswer<MacThread> = ours(parseMacThread(send(MacRequests.makeThread(name, project, kind, model, mode, internal))))
 
     fun sendMessage(threadId: String, text: String): MacAnswer<MacTaken> = parseMacTaken(send(MacRequests.sendMessage(own(threadId), text)))
 

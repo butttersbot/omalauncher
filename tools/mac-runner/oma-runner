@@ -16,13 +16,15 @@ Only exact Codex command scopes the owner explicitly saved may reuse that decisi
   GET  /release                          the latest desktop build published here: {release: {commit, committed, notes, artifacts}}
   GET  /release/files/NAME               one file that record names (the bytes); nothing else in the folder is served
   GET  /release/engine/NAME              one HTML-engine file the record's engine names (RELEASE/engine/), the same way
-  GET  /threads                          every thread: id, name, summary, status, last_worked, tail, pending, bot
+  GET  /threads[?all=1]                  every thread: id, name, summary, status, last_worked, tail, pending, bot; internal ones
+                                         (made by agents for tests, proofs and helpers) only with all=1
+  POST /threads/ID/internal  {internal}  marks a thread internal (hidden from the list) or not; nothing is deleted
   GET  /bots/ID                          one bot this machine hosts: its settings, instructions and notes (read only)
   POST /threads/ID/fresh                 a bot's session starts over: its conversation is archived, its notes stay
   POST /threads/ID/model   {model}       the Venice model a bot's session runs from its next message ("" for bot.json's)
   POST /threads/ID/mode    {mode}        auto or manual: how a Claude or Codex thread runs from its next message (Soma's /mode)
-  POST /threads   {name, project, kind, model, mode}   makes one under an allowed root; kind claude (default), codex, cursor, grok or venice;
-                                         mode auto (default) or manual
+  POST /threads   {name, project, kind, model, mode, internal}   makes one under an allowed root; kind claude (default), codex, cursor,
+                                         grok or venice; mode auto (default) or manual; internal true for an agent's test or proof
   GET  /threads/ID                       one thread
   POST /threads/ID/messages   {text}     the owner's words; {taken: "now"} or {taken: "queued", position}
   GET  /threads/ID/stream[?after=N]      server-sent events from event N+1 on (or the Last-Event-ID header)
@@ -2834,7 +2836,7 @@ class Thread:
                 'kind': self.meta['kind'], 'mode': mode(self.meta), 'model': self.model, 'summary': self.meta.get('summary', ''), 'status': self.meta['status'],
                 'last_worked': self.meta.get('last_worked'), 'tail': self.meta.get('tail', ''), 'waiting_turns': len(self.queue),
                 'last_event': len(self.events), 'external': bool(self.meta.get('codex_external') or self.meta.get('claude_external')),
-                'read_only': False,
+                'read_only': False, 'internal': bool(self.meta.get('internal')),
                 'bot': self.bot_fields(),
                 'background': list(self.kept.driver.background.values()) if self.kept and not self.kept.done else [],
                 'pending': [{'approval': key, 'nonce': entry['nonce'], 'tool': entry['tool'], 'input': entry['input'], 'explanation': entry['explanation'], 'can_remember': entry.get('command_scope') is not None, 'asked_at': entry.get('asked_at')} for key, entry in self.pending.items()]}
@@ -3020,6 +3022,19 @@ def claude_discovery_start():
     return int(json.loads(marker.read_text())['since'])
 
 
+INTERNAL_MARKER = '.soma-internal'
+
+
+def marked_internal(project):
+    """A session found in a folder an agent marked as its own (a test's or a helper's: INTERNAL_MARKER in it) is internal:
+    kept off Boss's tabs from the start (Boss, 2026-10-29). Headless helper calls should rather not be saved at all
+    (claude -p --no-session-persistence); this is for the ones that must be."""
+    try:
+        return {'internal': True} if (pathlib.Path(project) / INTERNAL_MARKER).is_file() else {}
+    except OSError:
+        return {}
+
+
 def claude_visible(row):
     """Only the owner's prompts and visible assistant text, never tool results or thinking."""
     if row.get('isSidechain') or row.get('isMeta') or row.get('isCompactSummary') or row.get('type') not in ('user', 'assistant'):
@@ -3107,7 +3122,7 @@ def sync_claude():
                         continue
                     thread = Thread({'id': tid, 'name': claude_visible(first).strip()[:160], 'project': str(project),
                                      'kind': 'claude', 'session': sid, 'status': 'idle', 'mode': 'auto', 'model': None,
-                                     'created': int(stat_now.st_mtime), 'summary': '', 'tail': '', 'claude_external': True})
+                                     'created': int(stat_now.st_mtime), 'summary': '', 'tail': '', 'claude_external': True, **marked_internal(project)})
                     threads[tid] = thread
                     thread.save()
                     thread.emit('note', text='Claude Code conversation from the Mac. Phone replies wait for a busy Mac turn; an open Mac conversation continues in its own phone copy.')
@@ -3228,7 +3243,7 @@ def sync_codex(catalog):
                     thread = Thread({'id': tid, 'name': (entry.get('name') or entry.get('preview') or 'Codex')[:160],
                                      'project': str(project), 'kind': 'codex', 'model': entry.get('model'), 'session': sid,
                                      'status': 'idle', 'created': entry['createdAt'], 'last_worked': updated, 'summary': '', 'tail': '',
-                                     'mode': 'auto', 'codex_external': True})
+                                     'mode': 'auto', 'codex_external': True, **marked_internal(project)})
                     threads[tid] = thread
                     thread.save()
                 if thread.worker is not None:
@@ -3485,12 +3500,12 @@ def top_section(text):
     return top + '\n\n' + clip('\n'.join(nxt).strip(), 8000 - len(top) - 2)
 
 
-def make(name, project, kind='claude', model=None, chosen=None):
+def make(name, project, kind='claude', model=None, chosen=None, internal=False):
     with changed:
         entry_id = 't' + secrets.token_hex(4)
         thread = Thread({'id': entry_id, 'name': name, 'project': str(project), 'kind': kind, 'model': model, 'session': None,
                          'status': 'idle', 'created': int(time.time()), 'last_worked': None, 'summary': '', 'tail': '',
-                         'mode': mode({'kind': kind, 'mode': chosen})})
+                         'mode': mode({'kind': kind, 'mode': chosen}), **({'internal': True} if internal else {})})
         thread.save()
         threads[entry_id] = thread
         return thread
@@ -4244,7 +4259,9 @@ class Runner(BaseHTTPRequestHandler):
         if parts == ['threads']:
             with changed:
                 sync_bots()
-                return self.answer(200, {'ok': True, 'threads': [thread.view() for thread in threads.values() if not thread.meta.get('bot_gone')]})
+                every = (query.get('all') or [''])[0] == '1'
+                return self.answer(200, {'ok': True, 'threads': [thread.view() for thread in threads.values()
+                                                                 if not thread.meta.get('bot_gone') and (every or not thread.meta.get('internal'))]})
         if len(parts) == 2 and parts[0] == 'bots':
             shown = bot_view(parts[1])
             return self.answer(200, {'ok': True, **shown}) if shown else self.answer(404, {'ok': False, 'error': 'no such bot here'})
@@ -4400,7 +4417,7 @@ class Runner(BaseHTTPRequestHandler):
             chosen = body.get('mode') or None
             if chosen is not None and chosen not in MODES:
                 return self.answer(400, {'ok': False, 'error': 'mode must be "auto" or "manual"'})
-            return self.answer(200, {'ok': True, 'thread': make(name, project, kind, model, chosen).view()})
+            return self.answer(200, {'ok': True, 'thread': make(name, project, kind, model, chosen, body.get('internal') is True).view()})
         thread = threads.get(parts[1]) if len(parts) in (3, 4) and parts[0] == 'threads' else None
         if thread is None:
             return self.answer(404, {'ok': False, 'error': 'not found'})
@@ -4412,6 +4429,18 @@ class Runner(BaseHTTPRequestHandler):
             if result.get('taken') == 'refused':
                 return self.answer(409, {'ok': False, **result})
             return self.answer(200, {'ok': True, **result})
+        if parts[2:] == ['internal']:
+            # An agent's test, proof or helper thread kept off Boss's tabs (Boss, 2026-10-29), or put back; nothing is deleted.
+            if not isinstance(body.get('internal'), bool):
+                return self.answer(400, {'ok': False, 'error': 'internal must be true or false'})
+            with changed:
+                if body['internal']:
+                    thread.meta['internal'] = True
+                else:
+                    thread.meta.pop('internal', None)
+                thread.save()
+                changed.notify_all()
+            return self.answer(200, {'ok': True, 'thread': thread.view()})
         if parts[2:] == ['stop']:
             return self.answer(200, {'ok': True, 'stopped': stop(thread)})
         if parts[2:] == ['command-approvals', 'clear']:

@@ -45,11 +45,11 @@ object Check {
         fun thread(id: String) = (client.thread(id) as? MacAnswer.Ok)?.value
 
         say("runner ${machine.id} (${machine.config.url}), project $project")
-        val claude = made(client.makeThread("Scratch Claude", project, "claude"), "Scratch Claude") ?: return 1
+        val claude = made(client.makeThread("Scratch Claude", project, "claude", internal = true), "Scratch Claude") ?: return 1
         client.sendMessage(claude.id, "Scratch check from Soma desktop. Reply with exactly SCRATCH-CLAUDE-OK and nothing else.")
         step("Claude answered", until { "SCRATCH-CLAUDE-OK" in texts(claude.id) && thread(claude.id)?.status == MacThreadStatus.Idle })
 
-        val codex = made(client.makeThread("Scratch Codex", project, "codex", mode = "manual"), "Scratch Codex") ?: return 1
+        val codex = made(client.makeThread("Scratch Codex", project, "codex", mode = "manual", internal = true), "Scratch Codex") ?: return 1
         client.sendMessage(codex.id, "Scratch check from Soma desktop. Run the shell command `touch scratch-ok.txt && echo ok` in this folder, then reply with SCRATCH-CODEX- followed by its output in capitals.")
         var asked: dev.omalauncher.assist.MacApproval? = null
         step("Codex asked for approval", until { thread(codex.id)?.pending?.firstOrNull()?.also { asked = it } != null })

@@ -78,7 +78,7 @@ object Mesh {
             val client = dev.omalauncher.assist.MacRunnerClient(m.config, m.id)
             // The runner says which folders it allows when asked for one it doesn't: the first of them.
             val roots = (client.makeThread("x", "/nonexistent-mesh-probe") as? dev.omalauncher.assist.MacAnswer.Refused)?.roots.orEmpty()
-            val made = roots.firstOrNull()?.let { client.makeThread("$MESH_PROOF$me $stamp", it) }
+            val made = roots.firstOrNull()?.let { client.makeThread("$MESH_PROOF$me $stamp", it, internal = true) }
             val thread = (made as? dev.omalauncher.assist.MacAnswer.Ok)?.value
             if (thread != null) say("made on ${m.id}: \"${thread.name}\" ${thread.id}") else { failed++; say("FAILED on ${m.id}: ${made ?: "it named no folder to make one in"}") }
         }
@@ -89,15 +89,15 @@ object Mesh {
      * `soma --mesh --list`: every thread on every runner this Soma reaches, by name and how it stands (a phone runner's
      * sessions, Phone A to D, among them), read from here: the read half of a new leg's proof where a thread can't be made.
      */
-    fun list(say: (String) -> Unit): Int = read(say) { true }
+    fun list(say: (String) -> Unit): Int = read(say, all = false) { true }
 
     /** `soma --mesh --read`: the proof threads on every runner this Soma reaches, whoever made them, read from here. */
-    fun read(say: (String) -> Unit): Int = read(say) { it.name.startsWith(MESH_PROOF) }
+    fun read(say: (String) -> Unit): Int = read(say, all = true) { it.name.startsWith(MESH_PROOF) }
 
-    private fun read(say: (String) -> Unit, which: (dev.omalauncher.assist.MacThread) -> Boolean): Int {
+    private fun read(say: (String) -> Unit, all: Boolean, which: (dev.omalauncher.assist.MacThread) -> Boolean): Int {
         var failed = 0
         for (m in RunnerKeys.read()) {
-            when (val listed = dev.omalauncher.assist.MacRunnerClient(m.config, m.id).threads()) {
+            when (val listed = dev.omalauncher.assist.MacRunnerClient(m.config, m.id).threads(all)) {
                 is dev.omalauncher.assist.MacAnswer.Ok -> {
                     val shown = listed.value.filter(which)
                     say("${m.id}: ${shown.size} thread${if (shown.size == 1) "" else "s"}" + shown.joinToString("") { "\n  ${it.name} (${it.id}, ${it.status.name.lowercase()})" })
