@@ -20,7 +20,7 @@ expect didn’t update by itself: Android asked for a confirmation
 expect update Soma Messages
 absent update Hunch
 shot update-sheet-cover card=soma-update-sheet-cover
-scrollto Updated by themselves
+scrollto Soma updates only when you tap
 expect Hunch 0.7.2 → 0.7.3
 expect Soma updates only when you tap
 clearlog
@@ -36,6 +36,7 @@ tap cancel
 log fixture update cancel
 expect update and restart Soma
 key BACK
+wait 1500
 absent What changed
 expect Update Soma · 176
 shell am force-stop dev.omalauncher.artifactpreview
@@ -51,11 +52,12 @@ tap updated
 expect Soma 176 is running. 6 phone checks wait for us
 shot update-state-updated-cover
 tap later
+wait 1500
 absent What changed
 absent updated
 shell am force-stop dev.omalauncher.artifactpreview
 shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es updates failed
-tap didn't update
+tap didn’t update
 expect Kept 175: Android refused the package
 expect try again
 expect copy details for an agent
