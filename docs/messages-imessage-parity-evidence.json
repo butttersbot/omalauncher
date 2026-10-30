@@ -1,0 +1,100 @@
+{
+  "date": "2026-10-29",
+  "scope": "audit and plan only",
+  "sourceCommit": "4b6283e03f4a30a0e7f6383e7ba6bc846a181027",
+  "planBase": "b4fe1f035108c264807d03d67b0d4b1c0e66a308",
+  "identity": {
+    "installedApkSha256": "bce7151820fa6c52ad640bf250708259ed7783bb817c7ffad2f49bcf6efde745",
+    "existing4b6283e0ApkSha256": "bce7151820fa6c52ad640bf250708259ed7783bb817c7ffad2f49bcf6efde745",
+    "match": true
+  },
+  "evidencePath": "/Users/jackkim/Projects/soma-imessage-parity-evidence/isolated",
+  "send": {
+    "method": "One warm hardware-Enter send; demo process SIGSTOP before input. Timings are host dispatch to adb screencap start/return, NOT Android input-to-present latency. Visually inspect frames to establish coarse upper bound only.",
+    "inputCommandReturnedMs": 29.6,
+    "captures": [
+      {
+        "sample": 0,
+        "captureStartedMs": 29.6,
+        "captureReturnedMs": 174.4
+      },
+      {
+        "sample": 1,
+        "captureStartedMs": 174.4,
+        "captureReturnedMs": 319.5
+      },
+      {
+        "sample": 2,
+        "captureStartedMs": 319.6,
+        "captureReturnedMs": 458.8
+      },
+      {
+        "sample": 3,
+        "captureStartedMs": 458.8,
+        "captureReturnedMs": 596.5
+      }
+    ],
+    "samples": 1
+  },
+  "display": [
+    {
+      "resolution": "1248 x 1972",
+      "renderFrameRate": "53.333332",
+      "supportedRefreshRates": "[160.0, 80.0, 53.333332, 40.0, 32.0, 26.666666, 22.857143, 20.0]"
+    },
+    {
+      "resolution": "2448 x 1848",
+      "renderFrameRate": "60.000004",
+      "supportedRefreshRates": "[60.000004, 30.000002, 20.0]"
+    }
+  ],
+  "runs": {
+    "walk": {
+      "verdicts": {
+        "PASS": 49,
+        "LOOK": 13,
+        "FAIL": 1
+      },
+      "pngsReviewed": 29,
+      "failures": [
+        "expect Photos & files: \u201cPhotos & files\u201d not on screen"
+      ]
+    },
+    "unfolded-check": {
+      "verdicts": {
+        "PASS": 9,
+        "LOOK": 2
+      },
+      "pngsReviewed": 6,
+      "failures": []
+    }
+  },
+  "performance": {
+    "gfx-baseline": {
+      "frames": "396",
+      "jank": "68 (17.17%)",
+      "p50": "25ms",
+      "p90": "44ms",
+      "p95": "53ms",
+      "p99": "200ms"
+    },
+    "gfx-send": {
+      "frames": "43",
+      "jank": "29 (67.44%)",
+      "p50": "28ms",
+      "p90": "46ms",
+      "p95": "57ms",
+      "p99": "73ms"
+    }
+  },
+  "unverified": [
+    "iPhone reference capture and timing",
+    "iOS Simulator: no runtime",
+    "Mac Messages: no accessible window",
+    "physical Fold 120Hz and tactile feel",
+    "live X metadata and real transport",
+    "production backend health or deployment"
+  ],
+  "limitations": "Debug virtual device, host under other build load, mixed scenarios; not physical performance. Shared emulator attempts excluded. One send capture gives only an ADB host-time upper bound; visible in capture 1 by 319.5ms while demo server was stopped.",
+  "cleanup": "Demo process stopped and private temp config removed. Emulator stopped before app-clear completed; disposable audit AVD/image and its test pairing then deleted. Production service and shared emulator left running."
+}
