@@ -184,9 +184,9 @@ internal class ConnectionRestorer(private val context: Context, private val runt
             }
             val operation = ServiceOperation.parse(JSONObject(response.text).getJSONObject("operation"), id, approval)
             if (operation.terminal) {
-                val entry = record(approval.service, approval.host, operation.stage, "Service operation ${operation.id}", operation.checks)
+                val entry = record(approval.service, approval.host, if (operation.outcome.isNotEmpty()) operation.outcome else operation.stage, "Service operation ${operation.id}", operation.checks)
                 removePending(approval.id)
-                publish(if (operation.restored) "Restored · ${approval.host}: ${approval.service}." else "Restore ${operation.stage}.", entry)
+                publish(operation.said(), entry)
             } else publish("Verifying · ${approval.host}: ${approval.service}.")
         }
     }

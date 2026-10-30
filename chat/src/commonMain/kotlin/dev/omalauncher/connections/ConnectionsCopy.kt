@@ -117,12 +117,20 @@ fun incidentCopy(incident: ConnectionIncident, snapshot: ConnectionsSnapshot, no
     }
 }
 
+/** The sheet's line after "Restarted": once a row says real traffic has passed since, the line says so too. */
+fun repairAfterTraffic(repair: String?, snapshot: ConnectionsSnapshot): String? {
+    val said = repair?.takeIf { it.startsWith("Restarted · ") } ?: return repair
+    val (host, service) = said.removePrefix("Restarted · ").substringBefore(". ").split(": ").takeIf { it.size == 2 } ?: return repair
+    val confirmed = snapshot.readings.flatMap { it.checks }.any { it.name == "restart_confirmed" && it.fields["service"] == service && it.fields["host"] == host }
+    return if (confirmed) "Confirmed · $host: $service. Real traffic has passed since the restart." else repair
+}
+
 /** The three bars and steps: which step a repair is on, read from the restorer's own words. -1 idle, 3 all done. */
 fun repairStage(repair: String?, checking: Boolean): Int {
     val text = repair.orEmpty()
     return when {
-        text.startsWith("Restored", ignoreCase = true) -> 3
-        text.startsWith("Verifying", ignoreCase = true) -> 2
+        text.startsWith("Restored", ignoreCase = true) || text.startsWith("Confirmed", ignoreCase = true) -> 3
+        text.startsWith("Verifying", ignoreCase = true) || text.startsWith("Restarted", ignoreCase = true) -> 2
         text.startsWith("Owner approval", ignoreCase = true) || text.contains("in progress", ignoreCase = true) -> 1
         checking || text.startsWith("Checking", ignoreCase = true) -> 0
         else -> -1

@@ -1643,11 +1643,13 @@ try:
           and any(c['code'] == 'reachable_unverified' for c in soma['probe']['checks']))
     soma_health['mode'] = 'ok'
     (services_dir / 'live-soma').unlink()
+    (services_dir / 'down-until-restarted').write_text('')
     challenge = call('POST', '/services/soma/restart', {}, token=now)[1]['approval']
     code, got = call('POST', '/services/soma/restart', owner_answer(challenge), token=now)
-    code, found = operation_by_approval(challenge['id'], ('blocked', 'failed', 'restored'), now)
-    check('services: a service whose end-to-end proof is incomplete is refused before any restart',
-          found['operation']['stage'] == 'blocked' and any(c['code'] == 'evidence_missing' for c in found['operation']['checks']))
+    code, found = operation_by_approval(challenge['id'], ('interrupted', 'blocked', 'failed', 'restored'), now)
+    check('services: a service only traffic can prove says restarted, never restored',
+          found['operation']['stage'] == 'interrupted' and found['operation']['outcome'] == 'restarted_unconfirmed' and found['operation']['verified'] is False)
+    (services_dir / 'down-until-restarted').unlink()
     # As the runner ends, every canvas token it gave out is revoked at the service: one minted by this runner for a new turn.
     calling_as('phone')
     before = len(service_calls)

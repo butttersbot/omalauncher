@@ -97,6 +97,8 @@ class Base(unittest.TestCase):
         # Controller mechanics are tested with every service's evidence complete; MissingEvidence tests the real policy.
         self.saved_missing, S.MISSING_EVIDENCE = S.MISSING_EVIDENCE, {}
         self.addCleanup(lambda: setattr(S, 'MISSING_EVIDENCE', self.saved_missing))
+        self.saved_traffic, S.TRAFFIC_PROOF = S.TRAFFIC_PROOF, {}
+        self.addCleanup(lambda: setattr(S, 'TRAFFIC_PROOF', self.saved_traffic))
         installed, S.installed = S.installed, lambda service: True  # portable: this host's real plists don't matter here
         self.addCleanup(lambda: setattr(S, 'installed', installed))
         self.private, self.key_id, self.public = owner_key()
@@ -733,10 +735,9 @@ class MissingEvidence(Base):
         S.MISSING_EVIDENCE = self.saved_missing
 
     def test_identity_or_process_only_services_carry_required_unverified_checks(self):
-        for service in ('soma', 'tailshare-serve', 'tailshare-receive'):
-            extra = S.missing_checks(service)
-            self.assertTrue(extra, service)
-            self.assertTrue(all(c['result'] == 'unverified' and c['fields']['required'] is True and c['fields']['missing'] for c in extra), service)
+        S.MISSING_EVIDENCE = {'soma': [('soma_extra', 'something not probed')]}
+        extra = S.missing_checks('soma')
+        self.assertTrue(all(c['result'] == 'unverified' and c['fields']['required'] is True and c['fields']['missing'] for c in extra) and extra)
         for service in ('runner', 'canvas', 'herd'):  # real probes now carry this evidence themselves
             self.assertEqual(S.missing_checks(service), [], service)
         for service in ('syncthing', 'tailscaled', 'whisper', 'imessage-api'):
@@ -750,13 +751,9 @@ class MissingEvidence(Base):
         self.assertEqual([(c['check'], c['result']) for c in checks], [('launchd_running', 'pass'), ('receive_freshness', 'unverified')])
         self.assertEqual(checks[-1]['code'], 'not_waiting')
         # A service with no real evidence for its entry still carries the placeholder.
-        S.MISSING_EVIDENCE = {**self.saved_missing, 'whisper': [('whisper_extra', 'something not probed')]}
+        S.MISSING_EVIDENCE = {'whisper': [('whisper_extra', 'something not probed')]}
         got = S.capability_probe('whisper', fetch=lambda url, **k: (200, {'status': 'ok'}), run=lambda argv, **k: Fake(returncode=0, stdout='{}', stderr=''))
         self.assertEqual(got[-1]['code'], 'evidence_missing')
-
-    def test_real_evidence_does_not_unlock_a_restart(self):
-        for service in ('soma', 'tailshare-serve', 'tailshare-receive'):
-            self.assertFalse(S.verifiable(service), service)
 
     def test_embeddings_and_the_transport_restart_only_when_down_and_only_on_the_owners_signature(self):
         for service in ('embeddings', 'imessage-transport'):
@@ -805,15 +802,60 @@ class MissingEvidence(Base):
         # A build tool or an agent's error on the runner's row isn't the runner being down.
         checks = [S.mkcheck('runner_self', 'runner', 'ok', 'pass'), S.mkcheck('build_toolchain.jdk', 'runner', 'no_usable_jdk', 'fail'),
                   S.mkcheck('agent_turn.claude', 'claude', 'overloaded', 'fail')]
-        self.assertEqual([c['check'] for c in S.healthy_now(checks)], ['runner_self'])
-        # Quiet is not down, and is not what proves it up; really down is restarted.
-        self.assertEqual(S.healthy_now([S.mkcheck('receive_freshness', 'x', 'q', 'quiet')]), [])
-        self.assertEqual(S.healthy_now([S.mkcheck('x', 'x', 'down', 'fail')]), [])
+        self.assertEqual([c['check'] for c in S.healthy_now('runner', checks)], ['runner_self'])
+        # Quiet is an answer, unproven is not, and really down is restarted.
+        self.assertEqual([c['result'] for c in S.healthy_now('x', [S.mkcheck('x', 'x', 'q', 'quiet')])], ['pass'])
+        self.assertEqual(S.healthy_now('x', [S.mkcheck('x', 'x', 'q', 'unverified')]), [])
+        self.assertEqual(S.healthy_now('x', [S.mkcheck('x', 'x', 'down', 'fail')]), [])
         self.up_before = False
         op = self.op(self.control.approve('canvas', self.approve_body(self.control.request('canvas'))))
         self.assertEqual((op['stage'], self.backend.calls), ('restored', [('gui', 'canvas')]))
 
+    def test_a_service_only_real_traffic_can_prove_says_restarted_and_is_confirmed_by_traffic(self):
+        S.TRAFFIC_PROOF = self.saved_traffic
+        answering = S.mkcheck('soma_identity', 'soma', 'ok', 'pass')
+        old = S.mkcheck('soma_sync', 'soma', 'synced_recently', 'pass', {'last_synced_at': self.clock() - 1000})
+        self.probe_result = [answering, old]
+        op = self.op(self.control.approve('soma', self.approve_body(self.control.request('soma'))))
+        # Restarted, never "restored", though a stale delivery in the record still passes.
+        self.assertEqual((op['stage'], op['verified'], op['outcome'], op['restarted']), ('interrupted', False, 'restarted_unconfirmed', True))
+        self.assertTrue(self.backend.calls)
+        by = lambda: {s['id']: s for s in self.control.inventory(budget=2)['services']}
+        self.assertEqual(by()['soma']['restart_note']['state'], 'unconfirmed')
+        self.clock.t += 5000
+        self.probe_result = [answering, S.mkcheck('soma_sync', 'soma', 'synced_recently', 'pass', {'last_synced_at': self.clock()})]
+        for _ in range(40):  # the probe round in flight, then the new one
+            note = by()['soma']['restart_note']
+            if note['state'] == 'confirmed':
+                break
+            time.sleep(0.05)
+        self.assertEqual(note['state'], 'confirmed')
+        self.clock.t += S.CONFIRMED_NOTE_MS + 10_000
+        for _ in range(40):
+            row = by()['soma']
+            if 'restart_note' not in row:
+                break
+            time.sleep(0.05)
+        self.assertNotIn('restart_note', row)
+        # Still down afterwards: a failure, with no note.
+        self.backend.calls.clear()
+        self.probe_result = [S.mkcheck('soma_probe', 'soma', 'unreachable', 'fail')]
+        op = self.op(self.control.approve('soma', self.approve_body(self.control.request('soma'))))
+        self.assertEqual((op['stage'], op.get('outcome')), ('failed', None))
+        # Healthy: left alone, and says so. Soma answering with a refusal counts, and proves nothing else.
+        self.up_before = True
+        self.probe_result = [S.mkcheck('soma_identity', 'soma', 'answers_no_runner_key', 'quiet'), S.mkcheck('soma_sync', 'soma', 'no_recent_sync', 'quiet')]
+        self.backend.calls.clear()
+        op = self.op(self.control.approve('soma', self.approve_body(self.control.request('soma'))))
+        self.assertEqual((op['stage'], op['outcome'], self.backend.calls), ('restored', 'already_healthy', []))
+        self.assertTrue(all(c['result'] == 'pass' for c in op['checks']))
+        # The receive worker running is not enough: its waiter has to be back.
+        waiting = lambda w: [S.mkcheck('launchd_running', 'r', 'running', 'pass'), S.mkcheck('receive_freshness', 'r', 'x', 'quiet', {'waiting': w})]
+        self.assertTrue(S.answers_after_restart('tailshare-receive', waiting(True)))
+        self.assertFalse(S.answers_after_restart('tailshare-receive', waiting(False)))
+
     def test_a_restart_that_could_only_be_half_verified_is_refused_before_it_starts(self):
+        S.MISSING_EVIDENCE = {'soma': [('soma_sync', 'a sync made after the restart')]}
         op = self.op(self.control.approve('soma', self.approve_body(self.control.request('soma'))))
         self.assertEqual((op['stage'], op['verified'], self.backend.calls), ('blocked', False, []))
         self.assertIn('soma_sync', [c['check'] for c in op['checks']])

@@ -1082,13 +1082,16 @@ def _probe(service, fetch=http_json, run=subprocess.run, state=None, keys=None):
 # End-to-end evidence a service's restart needs beyond what its probe can show today. Each becomes a REQUIRED unverified
 # check in every probe, so identity, health or process evidence alone never reads as Ready or Restored, and a restart is
 # refused before it starts (nothing is restarted that could only be half-verified). Remove an entry only with a real probe.
-# A check of the same name from evidence_checks or the service's probe replaces the placeholder in readings; the entry itself
-# still holds its restart: these only read past traffic, so nothing can show a restart worked until the next real delivery.
-MISSING_EVIDENCE = {
-    'soma': [('soma_sync', 'a sync made after the restart; the record only shows the last one')],
-    'tailshare-serve': [('tailshare_delivery', 'a delivery made after the restart; the mail folder only shows the last one')],
-    'tailshare-receive': [('receive_freshness', 'a file received after the restart; the worker has no endpoint and no test file is sent')],
+# A check of the same name from evidence_checks or the service's probe replaces the placeholder in readings.
+MISSING_EVIDENCE = {}
+# These only prove themselves by real traffic, and none is ever made up: a restart of one (Boss, 2026-10-30) ends "restarted, can't
+# confirm yet" once it answers, and is confirmed when real traffic has passed since. service: (its check, that check's time field).
+TRAFFIC_PROOF = {
+    'soma': ('soma_sync', 'last_synced_at'),
+    'tailshare-serve': ('tailshare_delivery', 'last_delivery_at'),
+    'tailshare-receive': ('receive_freshness', 'last_received_at'),
 }
+CONFIRMED_NOTE_MS = 24 * 3600_000  # how long a row keeps saying its restart was confirmed
 
 
 def missing_checks(service):
@@ -1226,11 +1229,25 @@ class ProbeCache:
             return out
 
 
-def healthy_now(checks):
-    """The service's own checks, if every one passes, else nothing. A scoped row (a build tool, an agent's error) is not the
-    service being down, and a restart wouldn't change it; the phone's restoreTriage reads them the same way."""
-    own = [c for c in checks if not (c.get('fields') or {}).get('capability') and c.get('result') not in ('not_installed', 'quiet')]
-    return own if own and all(c.get('result') == 'pass' for c in own) else []
+def healthy_now(service, checks):
+    """The service's own checks, if it is up, else nothing. A scoped row (a build tool, an agent's error) is not the service being
+    down, and a restart wouldn't change it; the phone's restoreTriage reads them the same way. Quiet is an answer with no
+    traffic to show; what is handed back is what the phone accepts for "restored": passes only."""
+    own = [c for c in checks if not (c.get('fields') or {}).get('capability') and c.get('result') != 'not_installed']
+    if not own or any(c.get('result') not in ('pass', 'quiet') for c in own):
+        return []
+    return [c for c in own if c.get('result') == 'pass'] or [mkcheck(service + '_answers', service, 'answering', 'pass')]
+
+
+def answers_after_restart(service, checks):
+    """A service that proves itself by traffic is back as far as can be told: everything but that traffic passes (Soma's refusal
+    of a keyless asker is an answer), and the receive worker is waiting again."""
+    name, _ = TRAFFIC_PROOF[service]
+    own = [c for c in checks if not (c.get('fields') or {}).get('capability') and c.get('check') != name]
+    traffic = next((c for c in checks if c.get('check') == name), None)
+    if service == 'tailshare-receive' and not (traffic and traffic.get('fields', {}).get('waiting')):
+        return False
+    return bool(own) and all(c.get('result') in ('pass', 'quiet') for c in own)
 
 
 # ---- the controller -----------------------------------------------------------------------------------------------
@@ -1243,6 +1260,7 @@ class Controller:
         self.challenges = Challenges(host=host, clock=clock)
         self.host, self.clock, self.sleep = self.challenges.host, clock, sleep
         self.probes = ProbeCache(probe, state, clock)
+        self.lock = threading.Lock()  # the restart notes
 
     def inventory(self, budget=None, keys=None):
         trust = self.trust()
@@ -1251,6 +1269,7 @@ class Controller:
             counts = self.work()
         services = []
         rows = self.probes.snapshot(list(SERVICES), budget, keys)
+        notes = self.restart_notes(rows)
         for service in SERVICES:
             domain, label, mode = placement(service)
             row = rows[service]
@@ -1266,6 +1285,7 @@ class Controller:
                              'installed': installed(service), 'optional': service in OPTIONAL, 'loaded': bool(launchd.get('loaded')),
                              'running': launchd.get('state') == 'running' and bool(launchd.get('pid')), 'state': launchd['state'], 'pid': launchd['pid'],
                              'restart': {'mode': mode, 'supported': blocked is None and trust.state == 'ready', **({'blocked_reason': blocked} if blocked else {})},
+                             **({'restart_note': notes[service]} if service in notes else {}),
                              'probe': {'checks': row['checks'], 'checked_at': row['checked_at'], 'pending': row['pending']}})
         return redact({'ok': True, 'host': self.host, 'checked_at': self.clock(), 'owner_trust': {'state': trust.state, 'detail': trust.detail},
                        'work': {**(counts or {'unknown': True}), 'locks': self.gate.lock_state(), 'admission': 'open' if self.gate.admit() else 'closed'},
@@ -1319,9 +1339,10 @@ class Controller:
                                       + '; '.join(missing) + '). Nothing was restarted.')
                 return self._fail(op, 'blocked', 'no_capability_probe', 'This service has no capability check, so a restart could not be verified. Nothing was restarted.')
             # What the owner tapped may have recovered since: a healthy service is left alone.
-            own = healthy_now(self._probe_now(service, keys))
+            own = healthy_now(service, self._probe_now(service, keys))
             if own:
                 op['restarted'] = False
+                op['outcome'] = 'already_healthy'
                 op['checks'].extend(own)
                 return self._save(op, stage='restored', verified=True)
             with self.gate.exclusive(self.work):
@@ -1346,6 +1367,36 @@ class Controller:
         except Exception as e:  # noqa: BLE001
             self._fail(op, 'failed', 'restart_error', redact(str(e))[:300])
 
+    def _note_restart(self, service):
+        with self.lock:
+            notes = self._restart_notes()
+            notes[service] = {'at': self.clock(), 'state': 'unconfirmed'}
+            _write_private(self.records.root / 'restart-notes.json', notes)
+
+    def _restart_notes(self):
+        with contextlib.suppress(OSError, ValueError):
+            notes = json.loads((self.records.root / 'restart-notes.json').read_text())
+            return notes if isinstance(notes, dict) else {}
+        return {}
+
+    def restart_notes(self, rows):
+        """Each traffic-proved service's last restart: unconfirmed until real traffic is newer than it, then confirmed for a day."""
+        with self.lock:
+            notes, changed = self._restart_notes(), False
+            for service, note in list(notes.items()):
+                if note.get('state') == 'unconfirmed' and service in TRAFFIC_PROOF:
+                    name, field = TRAFFIC_PROOF[service]
+                    check = next((c for c in rows.get(service, {}).get('checks', []) if c.get('check') == name), None)
+                    last = (check or {}).get('fields', {}).get(field)
+                    if isinstance(last, int) and last > note.get('at', 0):
+                        notes[service], changed = {**note, 'state': 'confirmed', 'confirmed_at': last}, True
+                elif note.get('state') == 'confirmed' and self.clock() - note.get('confirmed_at', 0) > CONFIRMED_NOTE_MS:
+                    del notes[service]
+                    changed = True
+            if changed:
+                _write_private(self.records.root / 'restart-notes.json', notes)
+            return notes
+
     def _probe_now(self, service, keys=None):
         with contextlib.suppress(Exception):
             return self.probe(service, keys=keys) if keys else self.probe(service)
@@ -1358,7 +1409,14 @@ class Controller:
             checks = []
             with contextlib.suppress(Exception):
                 checks = self.probe(service, keys=keys) if keys else self.probe(service)
-            if checks and all(c['result'] == 'pass' for c in checks):  # unsupported or unverified is never success
+            if service in TRAFFIC_PROOF and answers_after_restart(service, checks):
+                # Not "restored": an old phone reads this stage as a restore that stopped, and a new one reads the outcome.
+                op['checks'].extend(checks)
+                op['restarted'] = True
+                op['outcome'] = 'restarted_unconfirmed'
+                self._note_restart(service)
+                return self._save(op, stage='interrupted', verified=False)
+            if service not in TRAFFIC_PROOF and checks and all(c['result'] == 'pass' for c in checks):  # unsupported or unverified is never success
                 op['checks'].extend(checks)
                 return self._save(op, stage='restored', verified=True)
         op['checks'].extend(checks or [mkcheck(service + '_probe', service, 'no_result', 'fail')])

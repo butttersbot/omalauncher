@@ -80,4 +80,32 @@ class AgentTroubleTest {
         assertFalse(restoreTriage(service(check("fail"), check("unverified")), "mac", now).restart)
         assertFalse(restoreTriage(service(check("fail")), "mac", now + 60_000).restart)
     }
+    private fun approval(service: String) = ServiceApproval("svc-aaaaaaaaaaaaaaaa", "", service, "mac", now + 60_000)
+    private fun operation(json: JSONObject, service: String) = ServiceOperation.parse(json.put("id", "op-aaaaaaaaaaaa").put("approval", "svc-aaaaaaaaaaaaaaaa").put("service", service).put("host", "mac"), null, approval(service))
+    @Test fun theSheetSaysWhatReallyHappened() {
+        val pass = JSONArray().put(JSONObject().put("check", "c").put("result", "pass"))
+        assertEquals("Restored · mac: canvas.", operation(JSONObject().put("stage", "restored").put("verified", true).put("checks", pass), "canvas").said())
+        assertEquals("Already healthy · mac: canvas. Nothing was restarted.", operation(JSONObject().put("stage", "restored").put("verified", true).put("checks", pass).put("outcome", "already_healthy"), "canvas").said())
+        val restarted = operation(JSONObject().put("stage", "interrupted").put("verified", false).put("checks", pass).put("outcome", "restarted_unconfirmed"), "soma")
+        assertEquals("Restarted · mac: soma. Can't confirm until real traffic passes.", restarted.said())
+        assertFalse(restarted.restored)
+        assertTrue(restarted.terminal)
+        assertEquals(2, repairStage(restarted.said(), false))
+        assertEquals(-1, repairStage("Already healthy · mac: canvas. Nothing was restarted.", false))
+    }
+    @Test fun aRestartOnlyTrafficCanProveHoldsItsRowUntilTrafficPasses() {
+        fun inventoryWith(state: String) = ConnectionReply(200, JSONObject().put("ok", true).put("host", "mac").put("checked_at", now)
+            .put("services", JSONArray().put(JSONObject().put("id", "soma").put("state", "running").put("restart_note", JSONObject().put("state", state).put("at", 1))
+                .put("probe", JSONObject().put("checks", JSONArray().put(self().put("check", "soma_identity"))).put("checked_at", now)))).toString())
+        val waiting = serviceInventoryReadings(inventoryWith("unconfirmed"), "Mac Pro", "mac", now).single()
+        assertEquals(ConnectionState.Unknown, waiting.state)
+        assertTrue(waiting.detail, waiting.detail.startsWith("soma was restarted; can't confirm until real traffic passes."))
+        val line = "Restarted · mac: soma. Can't confirm until real traffic passes."
+        assertEquals(line, repairAfterTraffic(line, ConnectionsSnapshot(listOf(waiting), now)))
+        val confirmed = serviceInventoryReadings(inventoryWith("confirmed"), "Mac Pro", "mac", now).single()
+        assertEquals(ConnectionState.Ready, confirmed.state)
+        assertTrue(confirmed.detail, confirmed.detail.startsWith("soma was restarted, and real traffic has passed since."))
+        assertEquals("Confirmed · mac: soma. Real traffic has passed since the restart.", repairAfterTraffic(line, ConnectionsSnapshot(listOf(confirmed), now)))
+        assertEquals("Other words", repairAfterTraffic("Other words", ConnectionsSnapshot(listOf(confirmed), now)))
+    }
 }

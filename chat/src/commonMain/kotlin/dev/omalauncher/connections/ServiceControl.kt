@@ -84,9 +84,16 @@ class ServiceControlClient(private val base: ConnectionEndpoint,
 
 /** A response is evidence only for the exact operation submitted; transport success is never restoration. */
 data class ServiceOperation(val id: String, val approval: String, val service: String, val host: String,
-    val stage: String, val verified: Boolean, val checks: List<ConnectionCheck>) {
+    val stage: String, val verified: Boolean, val checks: List<ConnectionCheck>, val outcome: String = "") {
     val terminal get() = stage in setOf("restored", "failed", "blocked", "interrupted")
     val restored get() = stage == "restored" && verified && checks.isNotEmpty() && checks.all { it.result == "pass" }
+    /** What the sheet says happened: a restart only ever reads as restored when one ran and its proof passed. */
+    fun said(): String = when {
+        outcome == "already_healthy" && restored -> "Already healthy · $host: $service. Nothing was restarted."
+        outcome == "restarted_unconfirmed" -> "Restarted · $host: $service. Can't confirm until real traffic passes."
+        restored -> "Restored · $host: $service."
+        else -> "Restore $stage."
+    }
     companion object {
         fun parse(json: JSONObject, expectedId: String?, approval: ServiceApproval): ServiceOperation {
             val id = json.getString("id")
@@ -104,7 +111,7 @@ data class ServiceOperation(val id: String, val approval: String, val service: S
                     fields.optInt("http_status").takeIf { it in 100..599 }, c.getString("result").take(40),
                     details + ("code" to c.optString("code").take(100)), c.optString("stderr_tail").take(2048))
             }
-            val result = ServiceOperation(id, approval.id, approval.service, approval.host, stage, json.optBoolean("verified", false), checks)
+            val result = ServiceOperation(id, approval.id, approval.service, approval.host, stage, json.optBoolean("verified", false), checks, json.optString("outcome").take(40))
             require(stage != "restored" || result.restored) { "Restoration lacks complete capability verification" }
             return result
         }
