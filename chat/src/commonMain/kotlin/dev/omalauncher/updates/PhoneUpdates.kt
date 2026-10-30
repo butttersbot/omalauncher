@@ -174,13 +174,21 @@ fun PhoneUpdateSheet(u: PhoneUpdates) {
                             }
                         }
                     } else panels.forEach { Box(Modifier.padding(bottom = 12.dp)) { it(Modifier) } }
-                    Column(Modifier.fillMaxWidth().padding(top = 2.dp).ruleTop().padding(top = 10.dp)) {
-                        Words("Soma updates only when you tap. An app that couldn’t update by itself waits here.", sans(13.sp, Pack.muted))
-                        Action("later", Pack.foreground) { u.close() }
-                    }
+                    if (!wide) SheetFooter(u, Modifier.padding(top = 2.dp))
                 }
+                // Unfolded, the footer stays on screen under the panels (Boss, 2026-10-29: the note and [ later ] visible
+                // without scrolling, as on soma-update-sheet-unfolded); on the cover it ends the scroll as on its card.
+                if (wide) SheetFooter(u, Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp))
             }
         }
+    }
+}
+
+@Composable
+private fun SheetFooter(u: PhoneUpdates, modifier: Modifier) {
+    Column(modifier.fillMaxWidth().ruleTop().padding(top = 10.dp)) {
+        Words("Soma updates only when you tap. An app that couldn’t update by itself waits here.", sans(13.sp, Pack.muted))
+        Action("later", Pack.foreground) { u.close() }
     }
 }
 
