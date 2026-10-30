@@ -30,7 +30,7 @@ class ConnectionsViewTest {
         onNodeWithText("Design Canvas").performScrollTo().assertIsDisplayed().performClick()
         onAllNodesWithText("Not checked yet.").onLast().assertExists()
     }
-    @Test fun incidentShowsTheCardsHeadlineStepsAndKeepsTheAgentTools() = runComposeUiTest {
+    @Test fun incidentShowsTheCardsHeadlineStepsAndOnlyBossesControls() = runComposeUiTest {
         val now = 100_000L
         ConnectionsSource.snapshot = ConnectionsSnapshot(Capability.entries.map { c ->
             val hit = c == Capability.Agents || c == Capability.Builds
@@ -46,8 +46,10 @@ class ConnectionsViewTest {
             onNodeWithText("One repair. Two features back.").assertExists()
             onNodeWithContentDescription("Agent runs: Needs repair").assertExists()
             onNodeWithContentDescription("Builds & installs: Affected").assertExists()
-            onNodeWithText("[ Details for agents ]").performScrollTo().assertIsDisplayed()
-            onNodeWithText("[ Check again ]").assertExists()
+            // Boss's widget has his controls only: agents read the incident with `oma connections incident`.
+            onNodeWithText("[ Check again ]").performScrollTo().assertIsDisplayed()
+            onAllNodesWithText("Details for agents", substring = true).assertCountEquals(0)
+            onAllNodesWithText("Pause monitoring", substring = true).assertCountEquals(0)
             onNodeWithText("Notify me about unexpected outages and recovery").performScrollTo().performClick()
             assertEquals(1, alerts)
         } finally { ConnectionsSource.snapshot = ConnectionsSnapshot() }

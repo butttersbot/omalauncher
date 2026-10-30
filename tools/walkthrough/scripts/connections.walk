@@ -13,11 +13,6 @@ expect Agents
 expect Canvas
 expect runner not responding
 shot connections-small-cover card=connections-small-cover
-tap [Restore]
-expect Restore utility used
-expect Repair blocked
-# Utility must not open the modal.
-absent Close Connections
 tap Connections
 expect All capabilities
 expect Your Fictional Mac is connected.
@@ -25,12 +20,9 @@ expect Its runner needs a restart.
 expect Restart the agent runner
 expect One repair. Two features back.
 shot connections-expanded-cover card=connections-expanded-cover
-scrollto Details for agents
-expect Check again
-tap Details for agents
-expect fixture_only
-shot connections-agent-details-cover
-tap Details for agents
+# Agents read the incident with `oma connections incident`; his widget has no button for them (Boss, 2026-10-29).
+absent Details for agents
+scrollto Check again
 scrollto Builds & installs
 expect Affected
 expect Needs repair
@@ -39,6 +31,7 @@ tap Design Canvas
 expect CORE Design Canvas
 scrollto Notify me about unexpected outages and recovery
 expect After 60 seconds · one alert per incident
+absent Pause monitoring
 tap Notify me about unexpected outages and recovery
 scrollto Fixture only
 expect Fixture only
@@ -54,6 +47,15 @@ expect Connected
 expect Synced
 expect Design Canvas
 shot connections-large-cover card=connections-large-cover
+tap [ Restore ]
+expect Restore utility used
+expect Repair blocked
+# Utility must not open the modal.
+absent Close Connections
+tap Connections
+expect Blocked: active jobs cannot be verified
+shot connections-blocked-details-cover card=connections-expanded-blocked-cover
+key BACK
 tap Active jobs
 tap [ Restore ]
 expect Repair blocked
@@ -66,7 +68,7 @@ expect Repair failed
 shot connections-failed-cover
 tap Connections
 expect Failed: fictional
-shot connections-failed-details-cover
+shot connections-failed-details-cover card=connections-expanded-failed-cover
 key BACK
 tap Successful repair
 tap [ Restore ]
@@ -76,7 +78,7 @@ shot connections-restored-cover
 tap Connections
 expect Restored: fictional
 expect Back in working order.
-shot connections-restored-details-cover
+shot connections-restored-details-cover card=connections-expanded-restored-cover
 key BACK
 tap Auth check
 tap Connections
@@ -117,7 +119,7 @@ expect Your Fictional Mac is connected.
 expect Optional tools
 shot connections-expanded-portrait card=connections-expanded-upright
 swipe 0.50 0.70 0.50 0.30 500
-scrollto Pause monitoring for 1 hour
+scrollto Fixture only
 expect Fixture only
 within 0.10 0.95 Fixture only
 shot connections-portrait-scrolled

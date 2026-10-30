@@ -263,15 +263,11 @@ private fun RestoreBlock(stage: Int, steps: List<String>) {
         }
     }
 }
-/** Boss's agent-readable log and a fresh check, under the repair they belong to. */
+/** [ Check again ] under the repair. Agents read the same record with `oma connections incident`: no button for them
+ * on his widget (Boss, 2026-10-29: "these widget controls are really just for me"). */
 @Composable
 private fun AgentTools() {
-    var details by remember { mutableStateOf(false) }
-    Row(Modifier.fillMaxWidth().padding(top = 12.dp).rule(top = true).padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-        ConnectionAction("Details for agents", { details = !details })
-        ConnectionAction("Check again", { ConnectionsSource.refresh() })
-    }
-    if (details) Words(ConnectionsSource.diagnostic?.take(24_000) ?: "No diagnostic record yet. Use Check again.", caption(10.sp))
+    ConnectionAction("Check again", { ConnectionsSource.refresh() }, Modifier.padding(top = 4.dp))
 }
 @Composable
 private fun ConnectionsInventory(snapshot: ConnectionsSnapshot, now: Long) {
@@ -304,7 +300,6 @@ private fun ConnectionsFooter() {
             Words("Notify me about unexpected outages and recovery", sans(12.sp, Pack.muted))
         }
         Words("After 60 seconds · one alert per incident · planned pauses stay quiet.", sans(11.sp, Pack.muted))
-        ConnectionAction(if (ConnectionsSource.paused) "Resume monitoring" else "Pause monitoring for 1 hour", { ConnectionsSource.togglePause() })
         Words(ConnectionsSource.alerts, caption(10.sp), modifier = Modifier.padding(top = 4.dp))
     }
 }
