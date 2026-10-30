@@ -45,8 +45,8 @@ log fixture mac answered
 wait 1500
 absent Questions waiting
 shot alike-question-answered-cover
-# 3. By meaning (Boss, 2026-10-29 22:2x): the MacBook asks the same thing in its own words and options, no link. The
-# fast model (the fixture's verdict: what Haiku said of tonight's pair) finds it; it is answered with ITS option, as his,
+# 3. By meaning (Boss, 2026-10-29 22:2x): the MacBook asks the same thing in its own words and options, no link. Its
+# runner matches it (POST /questions/match; the fixture's answer for tonight's pair); Soma delivers ITS option, as his,
 # and the Oma tab says so with [ undo ], which tells that thread in his words.
 shell am force-stop dev.omalauncher.artifactpreview
 shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es waitingQuestion meaning --ez touchVouches true
@@ -55,7 +55,7 @@ expect Questions waiting
 tap answer questions
 tap Restore them
 log fixture phone answered
-log fixture same-question asked
+log fixture runner match asked from Phone A
 log Put them back from the backup
 shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es waitingQuestion meaning --es startTab oma --ez touchVouches true
 wait 1500
