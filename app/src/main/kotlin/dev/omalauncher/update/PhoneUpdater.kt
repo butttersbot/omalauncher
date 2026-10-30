@@ -211,7 +211,7 @@ class PhoneUpdater(private val context: Context) {
             json(updatedFile)?.let { u -> withContext(Dispatchers.Main) { model.launcher = LauncherState.Updated(u.optString("version"), u.optJSONArray("phoneSteps").strings().size) } }
             return
         }
-        val now = info(context.packageName)?.let(::code) ?: return
+        val now = info(context.packageName)?.let { code(it) } ?: return
         if (now < p.optLong("version")) return
         pendingFile.delete()
         val steps = p.optJSONArray("phoneSteps") ?: JSONArray()
