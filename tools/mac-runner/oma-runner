@@ -2795,12 +2795,15 @@ def services():
             test = os.environ.get('OMA_RUNNER_SERVICES_TEST') if os.environ.get('OMA_RUNNER_BIND') == '127.0.0.1' else None
             if test:  # loopback proof only (test-runner.py): a mock backend, test trust, scripted probes; nothing real is touched
                 folder = pathlib.Path(test)
-                _services = module.Controller(module.MockBackend(), runner_work, records=module.Records(folder / 'state'),
+                backend = module.MockBackend()
+                _services = module.Controller(backend, runner_work, records=module.Records(folder / 'state'),
                                               trust=lambda: module.load_trust(folder / 'trust.json', require_root=False),
                                               gate=module.WorkGate(folder / 'locks', admission=changed),
                                               # Scripted, except Soma once the test asks for the real probe (against its fake Soma).
                                               probe=lambda service, keys=None: (module._probe('soma', keys=keys) if service == 'soma' and (folder / 'live-soma').exists()
-                                                                                else json.loads((folder / 'probe.json').read_text())),
+                                                                                # Down until restarted, once the test says so: a healthy one is left alone.
+                                                                                else [module.mkcheck('x', service, 'down', 'fail')] if (folder / 'down-until-restarted').exists() and not any(service in c for c in backend.calls)
+                                                                                else json.loads((folder / 'probe.json').read_text()) + (module.agent_checks() if service == 'runner' else [])),
                                               state=lambda service: {'loaded': True, 'state': 'running', 'pid': 1, 'last_exit': 0}, host='testhost')
             else:
                 probe = functools.partial(module.capability_probe, keys={'soma': soma_service_key})
@@ -2843,6 +2846,9 @@ class Thread:
             record.write(json.dumps(event) + '\n')
         if kind == 'text':
             self.meta['tail'] = data['text'][-300:]
+        if kind in ('result', 'error') and self.meta['kind'] in ('claude', 'codex') and _services_module and data.get('code') != 'runner':
+            # What Connections says about an agent comes from its real turns.
+            _services_module.agent_turn_ended(self.meta['kind'], kind == 'error' or bool(data.get('failed')), data.get('text', ''), data.get('code') == 'limit')
         changed.notify_all()
         return event
 

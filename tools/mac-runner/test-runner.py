@@ -709,6 +709,18 @@ try:
     call('POST', '/threads/%s/messages' % thread, {'text': 'over the limit'})
     events = stream(thread, after=last, until=('result', 'error'))
     check('a Claude usage limit ends the turn with error code "limit", not a result', events[-1]['type'] == 'error' and events[-1]['code'] == 'limit' and 'limit' in events[-1]['text'])
+    def agent_row():
+        rows = call('GET', '/services')[1]['services']
+        for _ in range(40):  # a probe round may still be in flight
+            time.sleep(0.05)
+            rows = call('GET', '/services')[1]['services']
+        return [c for c in next(r for r in rows if r['id'] == 'runner')['probe']['checks'] if c['check'].startswith('agent_turn')]
+    settle(thread, 'idle')
+    row = agent_row()
+    check('Connections names the agent and the error from the real failed turn', [(c['check'], c['code'], c['result']) for c in row] == [('agent_turn.claude', 'usage_limit', 'fail')])
+    call('POST', '/threads/%s/messages' % thread, {'text': 'what files are here'})
+    settle(thread, 'idle')
+    check('a later good turn clears it', agent_row() == [])
     check('an unknown kind is refused', call('POST', '/threads', {'name': 'x', 'project': str(project), 'kind': 'gemini'})[0] == 400)
     check('a model that is not a name is refused', call('POST', '/threads', {'name': 'x', 'project': str(project), 'model': 'a b; rm'})[0] == 400)
     check('a model that looks like a flag is refused', all(call('POST', '/threads', {'name': 'x', 'project': str(project), 'model': given})[0] == 400 for given in ('-x', '--dangerously-skip-permissions', '../x')))
@@ -1572,6 +1584,7 @@ try:
     check('services: the fixed allowlist with owner trust ready', code == 200 and 'soma' in [x['id'] for x in inventory['services']] and inventory['owner_trust']['state'] == 'ready')
     check('services: no operation for an unknown or malformed approval',
           call('GET', '/services/approvals/svc-%s/operation' % ('0' * 32), token=now)[0] == 404 and call('GET', '/services/approvals/..%2f..%2fx/operation', token=now)[0] == 404)
+    (services_dir / 'down-until-restarted').write_text('')
     held = open(services_dir / 'locks' / 'walks.lock', 'a')
     fcntl.flock(held, fcntl.LOCK_EX)
     code, got = call('POST', '/services/syncthing/restart', {}, token=now)
@@ -1600,6 +1613,11 @@ try:
           and operation['host'] == 'testhost' and all(c['result'] == 'pass' for c in operation['checks']))
     code, got = call('POST', '/threads/%s/messages' % service_thread, {'text': 'after the restart'}, token=now)
     check('services: admission reopens after verification', code == 200 and idle_now())
+    (services_dir / 'down-until-restarted').unlink()
+    challenge = call('POST', '/services/canvas/restart', {}, token=now)[1]['approval']
+    call('POST', '/services/canvas/restart', owner_answer(challenge), token=now)
+    code, found = operation_by_approval(challenge['id'], ('restored', 'failed', 'blocked'), now)
+    check('services: Restore leaves a service that is already healthy alone', found['operation']['stage'] == 'restored' and found['operation'].get('restarted') is False)
     # Soma's identity, proved with the asking device's own key at this Mac's own Soma (no Keychain), never a redirect.
     (services_dir / 'live-soma').write_text('')
     time.sleep(0.5)  # let any probe round already in flight finish

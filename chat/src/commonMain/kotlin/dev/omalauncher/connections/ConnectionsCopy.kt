@@ -53,6 +53,9 @@ private fun counted(n: Int, one: String) = "${NUMBERS.getOrElse(n) { n.toString(
 
 /** What the tile's second line says about a failure: the host and, in a few words, what is wrong there. */
 fun connectionCause(reading: ConnectionReading, key: String?): String {
+    reading.checks.firstNotNullOfOrNull { it.agentTrouble() }?.let { t ->
+        return listOf(reading.host.ifBlank { "This phone" }, t.agent, t.words).joinToString(" · ")
+    }
     val what = when {
         reading.state == ConnectionState.Auth -> "sign-in unverified"
         reading.state == ConnectionState.Degraded -> "degraded"
@@ -85,7 +88,12 @@ fun incidentCopy(incident: ConnectionIncident, snapshot: ConnectionsSnapshot, no
     val verify = "Verify ${capabilities.map { it.short }.spoken("&")} connections"
     val note = "One repair. ${counted(capabilities.size, "feature")} back."
     val primary = capabilities.first()
+    val trouble = readings.flatMap { it.checks }.firstNotNullOfOrNull { it.agentTrouble() }
     return when {
+        // A restart wouldn't help an agent's service, so nothing here says to do one.
+        trouble != null -> IncidentCopy("$host / ${trouble.agent}", "${trouble.agent} is failing on $host.\n${trouble.words.capital()}.",
+            "Its last turn ended with: ${trouble.error.ifBlank { trouble.words }}. Nothing was restarted.",
+            listOf("Read the error", if (trouble.code == "sign_in") "Sign ${trouble.agent} in again" else "Wait for its service", "Send it a message: a good turn clears this"), note)
         key == "network" -> IncidentCopy("This phone / tailnet", "This phone has no tailnet route.\nTailscale needs a look.",
             "Soma can't reach your other devices until it is back. Nothing was changed.",
             listOf("Check Tailscale on this phone", "Reconnect to the tailnet", "Verify device connections"), note)

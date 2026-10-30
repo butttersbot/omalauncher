@@ -27,8 +27,8 @@ fun serviceInventoryReadings(reply: ConnectionReply, displayHost: String, source
             val proofTime = probe?.optLong("checked_at", 0) ?: 0
             val wireChecks = probe?.optJSONArray("checks")
             require((wireChecks?.length() ?: 0) <= 32)
-            val checks = (0 until (wireChecks?.length() ?: 0)).map { j ->
-                val check = wireChecks!!.getJSONObject(j)
+            // A runner from before 2026-10-30 still sends sign-in checks: Boss doesn't want them, agents' real errors say it.
+            val checks = (0 until (wireChecks?.length() ?: 0)).map { wireChecks!!.getJSONObject(it) }.filterNot { it.getString("check").startsWith("provider_auth") }.map { check ->
                 val fields = check.optJSONObject("fields") ?: JSONObject()
                 val name = check.getString("check").take(100)
                 val scope = if (id == "runner") when {
@@ -46,18 +46,22 @@ fun serviceInventoryReadings(reply: ConnectionReply, displayHost: String, source
             val notInstalled = row.has("installed") && !row.optBoolean("installed") && row.optString("state") != "running"
             val groups = checks.groupBy({ it.first }, { it.second }).ifEmpty { mapOf(capability to emptyList()) }
             groups.map { (scope, evidence) ->
-                // A check of something this host doesn't have (no Codex, no mirror agent) says nothing about the rest.
-                val required = evidence.filter { it.result != "not_installed" }
+                // A check of something this host doesn't have (no mirror agent), or of traffic there hasn't been lately, says
+                // nothing about the rest.
+                val required = evidence.filter { it.result !in NEUTRAL_RESULTS }
                 val state = when {
                     // Absence is not an outage, and not an unknown either: an Unknown would outrank another host's Ready.
-                    notInstalled || (evidence.isNotEmpty() && required.isEmpty()) -> ConnectionState.Disabled
+                    notInstalled || (evidence.isNotEmpty() && evidence.all { it.result == "not_installed" }) -> ConnectionState.Disabled
                     proofTime <= 0 -> ConnectionState.Unknown
                     evidence.any { it.code in setOf(401, 403) || it.result == "auth" } -> ConnectionState.Auth
                     evidence.any { it.result == "fail" } -> ConnectionState.Failed
-                    required.isNotEmpty() && required.all { it.result == "pass" } -> ConnectionState.Ready
+                    required.all { it.result == "pass" } && evidence.isNotEmpty() -> ConnectionState.Ready
                     else -> ConnectionState.Unknown
                 }
-                val detail = when (state) {
+                val trouble = evidence.firstNotNullOfOrNull { it.agentTrouble() }
+                val detail = when {
+                    trouble != null -> trouble.sentence
+                    else -> when (state) {
                     ConnectionState.Ready -> "$id: all required ${scope.title.lowercase()} checks passed."
                     ConnectionState.Auth -> "$id: reachable, but authenticated ${scope.title.lowercase()} is not verified."
                     ConnectionState.Failed -> "$id: a required ${scope.title.lowercase()} check failed."
@@ -65,6 +69,7 @@ fun serviceInventoryReadings(reply: ConnectionReply, displayHost: String, source
                         else if (id == "runner") "$id: this host has nothing to check for ${scope.title.lowercase()}."
                         else "$id: not installed on this host; ${scope.title.lowercase()} is checked where it runs."
                     else -> "$id: ${scope.title.lowercase()} evidence is incomplete; a running process is not sufficient."
+                    }
                 }
                 ConnectionReading(scope, state, detail, if (proofTime > 0) proofTime else checked,
                     if (state in setOf(ConnectionState.Failed, ConnectionState.Auth, ConnectionState.Ready))

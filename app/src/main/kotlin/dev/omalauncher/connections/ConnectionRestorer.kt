@@ -75,44 +75,9 @@ internal class ConnectionRestorer(private val context: Context, private val runt
                         val service = services.getJSONObject(i)
                         val id = service.getString("id")
                         require(id in CONNECTION_SERVICE_IDS && seen.add(id))
-                        if (service.has("installed") && !service.optBoolean("installed") && service.optString("state") != "running") {
-                            blocked += ConnectionCheck(id, host, result = "unverified", fields = mapOf("reason" to "Managed service is not installed on this host; no restart inferred."))
-                            continue
-                        }
-                        val probe = service.optJSONObject("probe")
-                        val proofAge = System.currentTimeMillis() - (probe?.optLong("checked_at", 0) ?: 0)
-                        if (probe == null || proofAge !in 0..30_000) {
-                            blocked += ConnectionCheck(id, host, result = "unverified", fields = mapOf("reason" to "Service proof is absent or stale; no repair inferred."))
-                            continue
-                        }
-                        val checks = probe.optJSONArray("checks") ?: JSONArray()
-                        val failed = (0 until checks.length()).any { checks.getJSONObject(it).optString("result") == "fail" }
-                        if (!failed) {
-                            for (j in 0 until checks.length()) {
-                                val check = checks.getJSONObject(j)
-                                if (check.optString("result") == "pass") continue
-                                val http = check.optJSONObject("fields")?.optInt("http_status")?.takeIf { it in 100..599 }
-                                blocked += ConnectionCheck(check.optString("check", id), host, http,
-                                    if (http in setOf(401, 403)) "auth" else "unverified", mapOf("code" to check.optString("code")))
-                            }
-                            continue // Missing proof and authentication never infer a restart.
-                        }
-                        if ((0 until checks.length()).any { checks.getJSONObject(it).optString("result") !in setOf("pass", "fail", "auth") }) {
-                            blocked += ConnectionCheck(id, host, result = "unverified", fields = mapOf("reason" to "At least one required capability proof is unsupported or incomplete."))
-                            continue
-                        }
-                        val authRequired = (0 until checks.length()).any {
-                            val check = checks.getJSONObject(it)
-                            check.optString("result") == "auth" || check.optJSONObject("fields")?.optInt("http_status") in setOf(401, 403)
-                        }
-                        if (authRequired) {
-                            blocked += ConnectionCheck(id, host, result = "auth", fields = mapOf("reason" to "Authentication requires a separate diagnostic; no restart inferred."))
-                            continue
-                        }
-                        if (service.optJSONObject("restart")?.optBoolean("supported") != true) {
-                            blocked += ConnectionCheck(id, host, result = "blocked", fields = mapOf("reason" to service.optJSONObject("restart")?.optString("blocked_reason").orEmpty()))
-                            continue
-                        }
+                        val triage = restoreTriage(service, host, System.currentTimeMillis())
+                        blocked += triage.blocked
+                        if (!triage.restart) continue
                         val response = client.challenge(id)
                         require(response.code == 202) { "Service approval unavailable (HTTP ${response.code})" }
                         val approval = ServiceApproval.parse(JSONObject(response.text).getJSONObject("approval"), id, host, System.currentTimeMillis())

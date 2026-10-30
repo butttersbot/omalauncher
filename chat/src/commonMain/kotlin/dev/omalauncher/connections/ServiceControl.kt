@@ -111,6 +111,35 @@ data class ServiceOperation(val id: String, val approval: String, val service: S
     }
 }
 
+/** What a Restore does with one service of a Mac's inventory: only a service that is really down is restarted. */
+data class RestoreTriage(val restart: Boolean, val blocked: List<ConnectionCheck> = emptyList())
+fun restoreTriage(service: JSONObject, host: String, now: Long): RestoreTriage {
+    val id = service.getString("id")
+    if (service.has("installed") && !service.optBoolean("installed") && service.optString("state") != "running")
+        return RestoreTriage(false, listOf(ConnectionCheck(id, host, result = "unverified", fields = mapOf("reason" to "Managed service is not installed on this host; no restart inferred."))))
+    val probe = service.optJSONObject("probe")
+    val proofAge = now - (probe?.optLong("checked_at", 0) ?: 0)
+    if (probe == null || proofAge !in 0..30_000)
+        return RestoreTriage(false, listOf(ConnectionCheck(id, host, result = "unverified", fields = mapOf("reason" to "Service proof is absent or stale; no repair inferred."))))
+    val wire = probe.optJSONArray("checks") ?: JSONArray()
+    // A scoped row (a build tool, an agent's error) isn't this service being down, and a restart wouldn't change it. A quiet
+    // one is no problem at all.
+    val checks = (0 until wire.length()).map { wire.getJSONObject(it) }
+        .filter { it.optJSONObject("fields")?.has("capability") != true && it.optString("result") !in NEUTRAL_RESULTS }
+    if (checks.none { it.optString("result") == "fail" }) // Healthy: left alone. Missing proof and authentication never infer a restart.
+        return RestoreTriage(false, checks.filter { it.optString("result") != "pass" }.map { check ->
+            val http = check.optJSONObject("fields")?.optInt("http_status")?.takeIf { it in 100..599 }
+            ConnectionCheck(check.optString("check", id), host, http, if (http in setOf(401, 403)) "auth" else "unverified", mapOf("code" to check.optString("code")))
+        })
+    if (checks.any { it.optString("result") !in setOf("pass", "fail", "auth") })
+        return RestoreTriage(false, listOf(ConnectionCheck(id, host, result = "unverified", fields = mapOf("reason" to "At least one required capability proof is unsupported or incomplete."))))
+    if (checks.any { it.optString("result") == "auth" || it.optJSONObject("fields")?.optInt("http_status") in setOf(401, 403) })
+        return RestoreTriage(false, listOf(ConnectionCheck(id, host, result = "auth", fields = mapOf("reason" to "Authentication requires a separate diagnostic; no restart inferred."))))
+    if (service.optJSONObject("restart")?.optBoolean("supported") != true)
+        return RestoreTriage(false, listOf(ConnectionCheck(id, host, result = "blocked", fields = mapOf("reason" to service.optJSONObject("restart")?.optString("blocked_reason").orEmpty()))))
+    return RestoreTriage(true)
+}
+
 /** These errors are emitted only by challenge validation, before an operation is created or executed. */
 fun definitiveServiceRefusal(reply: ConnectionReply): Boolean {
     if (reply.code !in setOf(400, 403, 404, 410, 423)) return false

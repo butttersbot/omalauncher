@@ -82,7 +82,16 @@ class Clock:
         return self.t
 
 
+DOWN = [S.mkcheck('x_probe', 'x', 'unreachable', 'fail')]  # what a service reads until the test's fake restarts it
+
+
 class Base(unittest.TestCase):
+    up_before = False
+
+    def scripted_probe(self, service):
+        restarted = self.up_before or any(service in call for call in self.backend.calls)
+        return list(self.probe_result if restarted else DOWN)
+
     def setUp(self):
         self.dir = pathlib.Path(tempfile.mkdtemp()).resolve()  # /var is a symlink on macOS; the trust chain refuses symlinks
         # Controller mechanics are tested with every service's evidence complete; MissingEvidence tests the real policy.
@@ -106,7 +115,7 @@ class Base(unittest.TestCase):
         self.probe_result = [S.mkcheck('soma_identity', 'soma', 'ok', 'pass')]
         self.control = S.Controller(self.backend, lambda: dict(self.counts), records=S.Records(self.dir / 'state'),
                                     trust=lambda: S.load_trust(self.trust_file, require_root=False), gate=S.WorkGate(self.locks),
-                                    probe=lambda service: list(self.probe_result), state=lambda service: {'loaded': True, 'state': 'running', 'pid': 1},
+                                    probe=self.scripted_probe, state=lambda service: {'loaded': True, 'state': 'running', 'pid': 1},
                                     host='jacks-mac-pro', clock=self.clock, sleep=lambda s: None, spawn=lambda fn, *a: fn(*a))
 
     def approve_body(self, challenge, **over):
@@ -389,7 +398,7 @@ class Modes(Base):
 
     def test_the_root_helper_gets_the_owners_own_proof_which_is_never_recorded(self):
         seen = []
-        self.backend.privileged = lambda service, proof: seen.append((service, proof))
+        self.backend.privileged = lambda service, proof: (self.backend.calls.append(('privileged', service)), seen.append((service, proof)))
         self.probe_result = [S.mkcheck('herd_identity', 'herd', 'ok', 'pass')]
         c = self.control.request('herd')
         body = self.approve_body(c)
@@ -611,7 +620,15 @@ class Probes(unittest.TestCase):
     def test_soma_needs_the_runners_key_sends_it_and_never_records_it(self):
         os.environ['OMA_RUNNER_SOMA_SERVICE'] = 'http://127.0.0.1:1'
         try:
-            self.assertEqual(S._probe('soma')[0]['code'], 'no_runner_key')
+                # With no key, Soma's refusal is its answer: up, and not a problem; nothing there at all is down.
+            def refuses(url, headers=None, **k):
+                self.assertIsNone(headers)
+                raise urllib.error.HTTPError(url, 401, 'no', {}, None)
+            got = S._probe('soma', fetch=refuses)[0]
+            self.assertEqual((got['check'], got['code'], got['result']), ('soma_identity', 'answers_no_runner_key', 'quiet'))
+            def nothing(url, **k):
+                raise urllib.error.URLError('refused')
+            self.assertEqual(S._probe('soma', fetch=nothing)[0]['result'], 'fail')
             sent = []
             def fetch(url, headers=None, **k):
                 sent.append(headers)
@@ -745,6 +762,23 @@ class MissingEvidence(Base):
         self.assertEqual((by['herd']['installed'], by['herd']['restart']['blocked_reason']), (False, 'not_installed'))
         self.assertEqual((by['syncthing']['optional'], by['syncthing']['loaded'], by['syncthing']['running']), (True, True, True))
 
+    def test_restore_leaves_a_service_that_is_already_healthy_alone(self):
+        S.MISSING_EVIDENCE = {}
+        self.up_before = True
+        op = self.op(self.control.approve('canvas', self.approve_body(self.control.request('canvas'))))
+        self.assertEqual((op['stage'], op['verified'], op['restarted'], self.backend.calls), ('restored', True, False, []))
+        self.assertTrue(all(c['result'] == 'pass' for c in op['checks']))  # the phone only accepts "restored" on these
+        # A build tool or an agent's error on the runner's row isn't the runner being down.
+        checks = [S.mkcheck('runner_self', 'runner', 'ok', 'pass'), S.mkcheck('build_toolchain.jdk', 'runner', 'no_usable_jdk', 'fail'),
+                  S.mkcheck('agent_turn.claude', 'claude', 'overloaded', 'fail')]
+        self.assertEqual([c['check'] for c in S.healthy_now(checks)], ['runner_self'])
+        # Quiet is not down, and is not what proves it up; really down is restarted.
+        self.assertEqual(S.healthy_now([S.mkcheck('receive_freshness', 'x', 'q', 'quiet')]), [])
+        self.assertEqual(S.healthy_now([S.mkcheck('x', 'x', 'down', 'fail')]), [])
+        self.up_before = False
+        op = self.op(self.control.approve('canvas', self.approve_body(self.control.request('canvas'))))
+        self.assertEqual((op['stage'], self.backend.calls), ('restored', [('gui', 'canvas')]))
+
     def test_a_restart_that_could_only_be_half_verified_is_refused_before_it_starts(self):
         op = self.op(self.control.approve('soma', self.approve_body(self.control.request('soma'))))
         self.assertEqual((op['stage'], op['verified'], self.backend.calls), ('blocked', False, []))
@@ -754,11 +788,6 @@ class MissingEvidence(Base):
         by = {x['id']: x for x in self.control.inventory(budget=2)['services']}
         self.assertEqual((by['soma']['restart']['supported'], by['soma']['restart']['blocked_reason']), (False, 'incomplete_capability_proof'))
         self.assertTrue(by['syncthing']['restart']['supported'])
-
-
-def jwt(exp):
-    part = lambda obj: base64.urlsafe_b64encode(json.dumps(obj).encode()).decode().rstrip('=')
-    return part({'alg': 'none'}) + '.' + part({'exp': exp, 'email': 'owner@example.com'}) + '.sig-SECRET'
 
 
 class RunnerCapabilities(unittest.TestCase):
@@ -772,40 +801,6 @@ class RunnerCapabilities(unittest.TestCase):
     def tearDown(self):
         if self.saved_env is not None:
             os.environ['CODEX_HOME'] = self.saved_env
-
-    def codex(self, **data):
-        (self.home / '.codex').mkdir(exist_ok=True)
-        (self.home / '.codex/auth.json').write_text(json.dumps(data))
-
-    def providers(self, platform='darwin'):
-        return {c['target']: c for c in S.provider_checks(home=self.home, platform=platform, now=self.now)}
-
-    def test_sign_ins_are_never_ready_and_expired_access_with_refresh_is_not_an_owner_login(self):
-        future, past = self.now // 1000 + 3600, self.now // 1000 - 3600
-        self.codex(tokens={'access_token': jwt(future), 'refresh_token': 'rt-SECRET', 'id_token': jwt(future), 'account_id': 'acct-SECRET'}, last_refresh='x')
-        got = self.providers()
-        self.assertEqual((got['codex']['code'], got['codex']['result']), ('local_valid_remote_unverified', 'unverified'))
-        self.assertEqual((got['codex']['check'], got['codex']['fields']['capability']), ('provider_auth.codex', 'Agents'))
-        self.assertEqual(got['codex']['fields']['access_expires_at'], future * 1000)
-        self.codex(tokens={'access_token': jwt(past), 'refresh_token': 'rt-SECRET'})
-        self.assertEqual(self.providers()['codex']['code'], 'access_expired_refresh_available')
-        self.assertEqual(self.providers()['codex']['result'], 'unverified')
-        self.codex(tokens={'access_token': jwt(past)})
-        self.assertEqual((self.providers()['codex']['code'], self.providers()['codex']['result']), ('owner_login_needed', 'fail'))
-        self.codex(OPENAI_API_KEY='sk-SECRETSECRET', tokens=None)
-        self.assertEqual(self.providers()['codex']['code'], 'api_key_remote_unverified')
-        (self.home / '.codex/auth.json').unlink()
-        self.assertEqual((self.providers()['codex']['code'], self.providers()['codex']['result']), ('not_configured', 'not_installed'))
-        self.assertEqual(self.providers()['claude']['code'], 'keychain_not_read')  # macOS: the Keychain is never touched
-        (self.home / '.claude').mkdir()
-        (self.home / '.claude/.credentials.json').write_text(json.dumps({'claudeAiOauth': {'accessToken': 'at-SECRET', 'refreshToken': 'rt-SECRET', 'expiresAt': self.now - 1}}))
-        self.assertEqual(self.providers('linux')['claude']['code'], 'access_expired_refresh_available')
-        (self.home / '.grok').mkdir()
-        (self.home / '.grok/auth.json').write_text('{"whatever": "SECRET"}')
-        self.assertEqual(self.providers()['grok']['code'], 'format_undocumented')
-        blob = json.dumps(S.provider_checks(home=self.home, platform='linux', now=self.now))
-        for leak in ('SECRET', 'owner@example.com', 'acct-'):
-            self.assertNotIn(leak, blob)
 
     def fake_run(self, answers):
         def run(argv, **k):
@@ -878,36 +873,39 @@ class RunnerCapabilities(unittest.TestCase):
     def at(self, ms):
         return datetime.datetime.fromtimestamp(ms / 1000, datetime.timezone.utc).isoformat().replace('+00:00', 'Z')
 
-    def test_a_sign_in_is_proven_by_the_providers_own_recent_answer_and_nothing_of_it_leaves(self):
-        claude = self.home / '.claude/projects/p/s.jsonl'
-        answer = lambda ms: {'type': 'assistant', 'timestamp': self.at(ms), 'message': {'model': 'claude-x', 'content': [{'type': 'text', 'text': 'PRIVATE words'}]}}
-        refused = lambda ms: {'type': 'assistant', 'timestamp': self.at(ms), 'error': 'authentication_failed', 'isApiErrorMessage': True, 'message': {'model': '<synthetic>', 'content': []}}
-        self.transcript(claude, answer(self.now - 60_000))
-        got = self.providers()['claude']
-        self.assertEqual((got['code'], got['result'], got['fields']['last_answer_at']), ('answered_recently', 'pass', self.now - 60_000))
-        self.assertNotIn('PRIVATE', json.dumps(got))
-        # An old answer is not proof; it says how old and stays Unknown.
-        self.transcript(claude, answer(self.now - S.RECENT_PROOF_MS - 1))
-        got = self.providers()['claude']
-        self.assertEqual((got['code'], got['result'], got['fields']['last_answer_at']), ('keychain_not_read', 'unverified', self.now - S.RECENT_PROOF_MS - 1))
-        # A refused turn newer than the answer takes the proof away; other model errors say nothing about the sign-in.
-        self.transcript(claude, answer(self.now - 60_000), refused(self.now - 30_000))
-        self.assertEqual(self.providers()['claude']['code'], 'last_turn_refused')
-        self.assertEqual(self.providers()['claude']['result'], 'unverified')
-        self.transcript(claude, refused(self.now - 60_000), answer(self.now - 30_000))
-        self.assertEqual(self.providers()['claude']['result'], 'pass')
-        self.transcript(claude, {'type': 'assistant', 'timestamp': self.at(self.now - 1000), 'isApiErrorMessage': True, 'message': {'model': '<synthetic>'}})
-        self.assertEqual(self.providers()['claude']['code'], 'keychain_not_read')
-        # Codex: the rollout's assistant message, only.
-        rollout = self.home / '.codex/sessions/2026/10/30/rollout-x.jsonl'
-        self.codex(tokens={'access_token': jwt(self.now // 1000 + 3600), 'refresh_token': 'rt-SECRET'})
-        self.transcript(rollout, {'timestamp': self.at(self.now - 60_000), 'type': 'response_item', 'payload': {'type': 'message', 'role': 'user', 'content': 'PRIVATE'}})
-        self.assertEqual(self.providers()['codex']['code'], 'local_valid_remote_unverified')
-        self.transcript(rollout, {'timestamp': self.at(self.now - 60_000), 'type': 'response_item', 'payload': {'type': 'message', 'role': 'assistant', 'content': 'PRIVATE'}})
-        got = self.providers()['codex']
-        self.assertEqual((got['code'], got['result']), ('answered_recently', 'pass'))
-        self.assertNotIn('PRIVATE', json.dumps(got))
-        self.assertNotIn('SECRET', json.dumps(got))
+    def test_a_real_failed_turn_sets_an_agents_status_and_a_good_one_clears_it(self):
+        S._agent_trouble.clear()
+        self.addCleanup(S._agent_trouble.clear)
+        self.assertEqual(S.agent_checks(), [])  # nothing heard is nothing wrong
+        for words, code in (('Not logged in \u00b7 Please run /login', 'sign_in'), ('Failed to authenticate. API Error: 401 OAuth access token expired', 'sign_in'),
+                            ("You've hit your weekly limit \u00b7 resets Oct 18", 'usage_limit'), ('API Error: 429 rate_limit_error', 'usage_limit'),
+                            ('API Error: 529 overloaded_error', 'overloaded'), ('API Error: Connection lost mid-response', 'no_connection'),
+                            ('stream disconnected before completion', 'no_connection'), ('API Error: 500 internal', 'server_error')):
+            self.assertEqual(S.agent_error(words), code, words)
+        # Not the service being down: nothing is set, and an earlier error stands.
+        for words in ('Codex ended the turn: failed', "API Error: Opus's safeguards flagged this session", 'the build failed', ''):
+            self.assertIsNone(S.agent_error(words), words)
+        S.agent_turn_ended('claude', True, 'the build failed')
+        self.assertEqual(S.agent_checks(), [])
+        S.agent_turn_ended('claude', True, 'API Error: 529   overloaded_error', now=5)
+        S.agent_turn_ended('codex', True, 'no words', limited=True, now=6)
+        got = {c['target']: c for c in S.agent_checks()}
+        self.assertEqual((got['claude']['check'], got['claude']['code'], got['claude']['result']), ('agent_turn.claude', 'overloaded', 'fail'))
+        self.assertEqual(got['claude']['fields'], {'capability': 'Agents', 'agent': 'claude', 'error': 'API Error: 529 overloaded_error', 'at': 5})
+        self.assertEqual(got['codex']['code'], 'usage_limit')
+        S.agent_turn_ended('claude', True, 'Not logged in')
+        self.assertEqual({c['target']: c['result'] for c in S.agent_checks()}, {'claude': 'auth', 'codex': 'fail'})
+        S.agent_turn_ended('claude', False)  # a good turn clears only its own agent
+        self.assertEqual([c['target'] for c in S.agent_checks()], ['codex'])
+
+    def test_no_sign_in_check_and_no_transcript_is_read(self):
+        (self.home / '.claude/projects/p').mkdir(parents=True)
+        self.assertFalse(hasattr(S, 'provider_checks'))
+        self.assertNotIn('provider_auth', ' '.join(S.CAPABILITY_SCOPES))
+        import inspect
+        source = inspect.getsource(S)
+        for read in ('.claude/projects', 'rollout-', 'auth.json', '.credentials.json'):
+            self.assertNotIn(read, source, read)
 
     def test_past_traffic_is_the_evidence_and_nothing_is_sent(self):
         saved = S.SOMA_SYNCED, S.TAILSHARE_MAIL, S.RECEIVE_INBOX
@@ -919,8 +917,8 @@ class RunnerCapabilities(unittest.TestCase):
         got = S.soma_sync(self.now)
         self.assertEqual((got['code'], got['result'], got['fields']['last_synced_at']), ('synced_recently', 'pass', self.now - 60_000))
         os.utime(S.SOMA_SYNCED, (self.now / 1000 - 3600, self.now / 1000 - 3600))
-        self.assertEqual((S.soma_sync(self.now)['code'], S.soma_sync(self.now)['result']), ('no_recent_sync', 'unverified'))
-        # Delivery: the newest kept message, read or not; a quiet stretch is Unknown, never a failure.
+        self.assertEqual((S.soma_sync(self.now)['code'], S.soma_sync(self.now)['result']), ('no_recent_sync', 'quiet'))
+        # Delivery: the newest kept message, read or not; a quiet stretch is only quiet.
         self.assertEqual(S.tailshare_delivery(self.now)['code'], 'no_delivery_record')
         (S.TAILSHARE_MAIL / 'read').mkdir(parents=True)
         (S.TAILSHARE_MAIL / 'read/msg-1.json').write_text('{"text": "PRIVATE"}')
@@ -929,13 +927,13 @@ class RunnerCapabilities(unittest.TestCase):
         self.assertEqual((got['code'], got['result']), ('delivered_recently', 'pass'))
         self.assertNotIn('PRIVATE', json.dumps(got))
         got = S.tailshare_delivery(self.now + 2 * S.RECENT_PROOF_MS)
-        self.assertEqual((got['code'], got['result']), ('no_recent_delivery', 'unverified'))
+        self.assertEqual((got['code'], got['result']), ('no_recent_delivery', 'quiet'))
         # Receive: its waiter under this worker, and a file lately; a waiter under another process doesn't count.
         up = lambda service: {'state': 'running', 'pid': 42}
         ps = lambda out: self.fake_run({('/bin/ps',): (0, out, '')})
         waiter = ' 42 /Applications/T/Tailscale file get --wait --conflict=rename --verbose /x\n'
         got = S.receive_freshness(ps(waiter), up, self.now)
-        self.assertEqual((got['code'], got['result'], got['fields']['waiting']), ('waiting_no_recent_file', 'unverified', True))
+        self.assertEqual((got['code'], got['result'], got['fields']['waiting']), ('waiting_no_recent_file', 'quiet', True))
         self.assertEqual(S.receive_freshness(ps(waiter.replace('42', '43')), up, self.now)['code'], 'not_waiting')
         S.RECEIVE_INBOX.mkdir()
         (S.RECEIVE_INBOX / 'a.txt').write_text('PRIVATE')

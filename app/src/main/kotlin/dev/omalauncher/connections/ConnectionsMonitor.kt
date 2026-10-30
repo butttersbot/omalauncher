@@ -219,10 +219,10 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
             }
             val keeper = connectionKeeperProbe(runtime.proot.home)
             add(Capability.Agents, if (keeper.result == "pass") ConnectionState.Ready else ConnectionState.Unknown,
-                if (keeper.result == "pass") "Phone keeper answered its real list protocol. Provider sign-in remains a separate check."
+                if (keeper.result == "pass") "Phone keeper answered its real list protocol."
                 else "Phone keeper protocol is unverified; no running jobs are inferred or terminated.",
                 checks = listOf(keeper))
-            add(Capability.Agents, ConnectionState.Unknown, "Phone provider token validity still needs a provider-specific check.")
+            rows += phoneAgentReadings(dev.omalauncher.oma.ChatLog.of(context).tasks, System.currentTimeMillis())
         } else add(Capability.Agents, ConnectionState.Disabled, "Phone Linux runtime is off intentionally.")
         val machines = readMacMachines(runtime.proot.launcherConfig)
         working = if (machines.isEmpty()) null else 0; queued = if (machines.isEmpty()) null else 0
@@ -233,14 +233,14 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
             val reply = connectionGet(endpoint)
             val state = connectionState(reply) { it.optBoolean("ok") && it.optString("runner") == "oma-runner" && it.has("working") }
             val root = "runner:${m.id}"
-            val detail = connectionDetail(reply, state, "Authenticated runner health verified. Provider sign-in and build toolchain are separate checks.")
-            add(Capability.Agents, if (state == ConnectionState.Ready) ConnectionState.Unknown else state, detail, if (state == ConnectionState.Ready) null else root, m.name, sourceHost, listOf(checkEvidence(endpoint.url, reply, state, "runner_identity")))
+            val detail = connectionDetail(reply, state, "Authenticated runner health verified. Build toolchain is a separate check.")
+            add(Capability.Agents, state, detail, if (state == ConnectionState.Ready) null else root, m.name, sourceHost, listOf(checkEvidence(endpoint.url, reply, state, "runner_identity")))
             // /threads is the authenticated capability check; it never starts a job.
             val threads = if (state == ConnectionState.Ready) connectionGet(ConnectionEndpoint(m.config.url.trimEnd('/') + "/threads", m.config.key)) else reply
             val access = connectionState(threads) { it.optBoolean("ok") && it.optJSONArray("threads") != null }
             if (access == ConnectionState.Ready) {
                 for (capability in listOf(Capability.Agents, Capability.Builds)) add(capability, ConnectionState.Ready,
-                    "Authenticated runner inventory available again; provider/build checks below remain separate.", "runner:${m.id}", m.name, sourceHost)
+                    "Authenticated runner inventory available again; build checks below remain separate.", "runner:${m.id}", m.name, sourceHost)
                 // Android may omit a VPN interface when this app is excluded; an authenticated configured peer is stronger evidence.
                 val firstNetwork = rows.indexOfFirst { it.capability == Capability.Network && it.host.isEmpty() }
                 if (firstNetwork >= 0) rows[firstNetwork] = rows[firstNetwork].copy(state = ConnectionState.Ready,
@@ -267,10 +267,9 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
             val services = if (state == ConnectionState.Ready) connectionGet(ConnectionEndpoint(m.config.url.trimEnd('/') + "/services", m.config.key)) else null
             services?.let {
                 val readings = serviceInventoryReadings(it, m.name, sourceHost, System.currentTimeMillis())
-                if (readings.any { r -> r.capability == Capability.Agents && r.checks.any { c -> c.name.startsWith("provider_auth") } }) {
-                    rows.removeAll { r -> r.capability == Capability.Agents && r.host == m.name && r.state == ConnectionState.Unknown &&
-                        r.checks.any { c -> c.name == "runner_identity" } }
-                }
+                // The runner's own reading of its build tools takes the place of "not checked yet".
+                if (readings.any { r -> r.capability == Capability.Builds }) rows.removeAll { r -> r.capability == Capability.Builds && r.host == m.name &&
+                    r.state == ConnectionState.Unknown && r.checks.any { c -> c.name == "build_runner_dependency" } }
                 rows += readings
             }
             val advertised = services?.takeIf { it.code == 200 }?.let { runCatching { JSONObject(it.text).optString("soma") }.getOrNull() }?.takeIf { it.isNotBlank() }
@@ -281,8 +280,8 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
                 val s = connectionState(h) { it.optString("service") == "soma-serve" }
                 if (s == ConnectionState.Ready) add(Capability.Sync, ConnectionState.Ready,
                     "Authenticated Soma service identity verified again; sync freshness remains separate.", "sync:${m.id}", m.name, sourceHost)
-                add(Capability.Sync, if (s == ConnectionState.Ready) ConnectionState.Unknown else s,
-                    connectionDetail(h, s, "Soma service identity verified; screen sync cursor/ack freshness has not been checked."), if (s == ConnectionState.Ready) null else "sync:${m.id}", m.name, sourceHost, listOf(checkEvidence(service.trimEnd('/') + "/health", h, s, "workspace_service_identity")))
+                add(Capability.Sync, s,
+                    connectionDetail(h, s, "Soma service identity verified from this phone; the Mac reports its last sync."), if (s == ConnectionState.Ready) null else "sync:${m.id}", m.name, sourceHost, listOf(checkEvidence(service.trimEnd('/') + "/health", h, s, "workspace_service_identity")))
             }
         }
         configuredChecks(rows, aliases)

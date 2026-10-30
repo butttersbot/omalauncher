@@ -197,12 +197,13 @@ def stderr_tail(text, limit=400):
     return redact(text or '')[-limit:]
 
 
-CAPABILITY_SCOPES = {'provider_auth.': 'Agents', 'build_toolchain.': 'Builds', 'source_freshness.': 'Sync'}
+CAPABILITY_SCOPES = {'agent_turn.': 'Agents', 'build_toolchain.': 'Builds', 'source_freshness.': 'Sync'}
 
 
 def mkcheck(check, target, code, result, fields=None, stderr=None):
     """One check in the phone incident schema: {check, target, code, result, fields, stderr_tail}.
-    result is pass | fail | unverified (reachable, evidence incomplete) | unsupported (no probe exists)."""
+    result is pass | fail | auth | unverified (reachable, evidence incomplete) | unsupported (no probe exists) | not_installed
+    (nothing to check on this host) | quiet (answering, and no real traffic lately to prove more with; not a problem)."""
     scope = next((name for prefix, name in CAPABILITY_SCOPES.items() if check.startswith(prefix)), None)
     if scope:  # the runner's own scoped rows say which capability they belong to (a JDK problem is Builds, not Agents)
         fields = {'capability': scope, **(fields or {})}
@@ -626,137 +627,48 @@ def syncthing_folders(fetch=http_json, config=SYNCTHING_CONFIG, base=('127.0.0.1
                    'pass' if ok else 'fail', {'folders': len(folders), 'states': states, 'errors': errors})
 
 
-# ---- the runner's own capabilities: agent sign-ins, build tools, locks, source (all read-only) ------------------------
-def _jwt_exp_ms(token):
-    """The expiry of a JWT, read from its payload without verifying it; nothing else of the token is kept."""
-    with contextlib.suppress(Exception):
-        payload = token.split('.')[1]
-        exp = json.loads(base64.urlsafe_b64decode(payload + '=' * (-len(payload) % 4))).get('exp')
-        if isinstance(exp, (int, float)):
-            return int(exp * 1000)
-    return None
+# ---- how agents are doing, from their real turns: no check of its own, no ping, no quota -----------------------------------
+RECENT_PROOF_MS = 24 * 3600_000  # a real delivery this recent is proof; older, the reading says how old and is only quiet
+# The usual ways a turn fails because the agent's service does, in the order they are tried. Only a failed turn's words are
+# read; anything else (a stopped turn, a tool's failure, a refusal of the request) says nothing about the service.
+AGENT_ERRORS = (
+    ('sign_in', r'not logged in|/login\b|failed to authenticate|authentication[ _]failed|invalid api key|\b401\b|unauthori[sz]ed|token (has )?expired|codex login'),
+    ('usage_limit', r'rate.?limit|usage limit|usage credits|weekly limit|hit your .{0,40}limit|\b429\b|quota|billing'),
+    ('overloaded', r'overloaded|\b529\b'),
+    ('no_connection', r'connection (lost|error|refused|reset)|econn\w+|network error|fetch failed|stream disconnected|could not resolve|timed out'),
+    ('server_error', r'api error|server[ _]error|\b50[0-4]\b|bad gateway|service unavailable'),
+)
+_agent_trouble = {}  # agent -> (code, the error's own words, when)
+_agent_trouble_lock = threading.Lock()
 
 
-RECENT_PROOF_MS = 24 * 3600_000  # a real answer or delivery this recent is proof; older, the reading says how old and stays Unknown
-ANSWER_TAIL = 524_288
-ANSWER_FILES = 5
+def agent_error(text):
+    """Which common API error these words are, or None."""
+    if re.search(r'safeguards|invalid_request|prompt is too long', str(text or ''), re.I):
+        return None  # the service answering no to this one request
+    return next((code for code, words in AGENT_ERRORS if re.search(words, str(text or ''), re.I)), None)
 
 
-def _stamp_ms(text):
-    with contextlib.suppress(Exception):
-        return int(datetime.datetime.fromisoformat(str(text).replace('Z', '+00:00')).timestamp() * 1000)
-    return None
+def agent_turn_ended(agent, failed, text='', limited=False, now=None):
+    """A real turn of this agent ended. A good one clears its trouble; a failed one with a common API error sets it."""
+    with _agent_trouble_lock:
+        if not failed:
+            _agent_trouble.pop(agent, None)
+            return
+        code = 'usage_limit' if limited else agent_error(text)
+        if code:
+            _agent_trouble[agent] = (code, ' '.join(str(text).split())[:160], now or now_ms())
 
 
-def _claude_turn(record):
-    """A line of a Claude Code transcript: 'answered' for the model's own reply, 'refused' when the sign-in was refused."""
-    if record.get('type') != 'assistant':
-        return None
-    if record.get('error') == 'authentication_failed':
-        return 'refused'
-    model = (record.get('message') or {}).get('model')
-    return 'answered' if model and model != '<synthetic>' and not record.get('isApiErrorMessage') else None
+def agent_checks():
+    """Only an agent in trouble has a row; nothing heard is nothing wrong."""
+    with _agent_trouble_lock:
+        trouble = sorted(_agent_trouble.items())
+    return [mkcheck('agent_turn.' + agent, agent, code, 'auth' if code == 'sign_in' else 'fail', {'agent': agent, 'error': words, 'at': at})
+            for agent, (code, words, at) in trouble]
 
 
-def _codex_turn(record):
-    """A line of a Codex rollout, the same way."""
-    payload = record.get('payload') if isinstance(record.get('payload'), dict) else {}
-    if record.get('type') == 'response_item' and payload.get('type') == 'message' and payload.get('role') == 'assistant':
-        return 'answered'
-    if record.get('type') == 'event_msg' and payload.get('type') == 'error' and re.search(r'\b401\b|unauthori[sz]ed|log ?in|sign ?in', str(payload.get('message')), re.I):
-        return 'refused'
-    return None
-
-
-def _last_turns(files, kind):
-    """The newest real answer and the newest refused sign-in in the newest transcripts on this Mac, as times: a provider only
-    answers a sign-in it accepts, so this is its own word, with no token read, no call made and no quota spent. Nothing
-    else of a transcript is kept."""
-    dated = []
-    for path in files:
-        with contextlib.suppress(OSError):
-            dated.append((path.stat().st_mtime, path))
-    found = {'answered': None, 'refused': None}
-    for _, path in sorted(dated, key=lambda x: x[0], reverse=True)[:ANSWER_FILES]:
-        with contextlib.suppress(OSError):
-            with open(path, 'rb') as f:
-                f.seek(max(0, f.seek(0, os.SEEK_END) - ANSWER_TAIL))
-                lines = f.read().split(b'\n')
-            for line in lines:
-                if b'"assistant"' not in line and b'"error"' not in line and b'authentication_failed' not in line:
-                    continue
-                with contextlib.suppress(ValueError, AttributeError):
-                    record = json.loads(line)
-                    turn, at = kind(record), _stamp_ms(record.get('timestamp'))
-                    if turn and at and at > (found[turn] or 0):
-                        found[turn] = at
-    return found
-
-
-def _sign_in(provider, configured, access_expires_ms=None, refresh=None, api_key=False, why=None, now=None, turns=None):
-    """One provider's sign-in. Local files can't prove the provider still accepts it, so they alone are at best unverified
-    (remote_unverified) -- never Ready; its own recent answer on this Mac is the proof that can. Expired access with a
-    refresh token is not an owner-login problem; no usable credential at all is."""
-    now = now or now_ms()
-    fields = {'provider': provider, 'configured': configured, 'access_expires_at': access_expires_ms, 'refresh_available': refresh}
-    answered, refused = (turns or {}).get('answered'), (turns or {}).get('refused')
-    if answered or refused:
-        fields.update(last_answer_at=answered, last_refused_at=refused)
-    if answered and answered > (refused or 0) and now - answered < RECENT_PROOF_MS:
-        return mkcheck('provider_auth.' + provider, provider, 'answered_recently', 'pass', fields)
-    if refused and refused > (answered or 0):
-        return mkcheck('provider_auth.' + provider, provider, 'last_turn_refused', 'unverified', {**fields, 'next': 'its newest turn on this Mac was refused its sign-in; a new turn that answers clears this'})
-    if not configured:
-        return mkcheck('provider_auth.' + provider, provider, why or 'not_configured', 'not_installed', fields)
-    if why:
-        return mkcheck('provider_auth.' + provider, provider, why, 'unverified', fields)
-    if api_key:
-        return mkcheck('provider_auth.' + provider, provider, 'api_key_remote_unverified', 'unverified', fields)
-    if access_expires_ms and access_expires_ms > now:
-        return mkcheck('provider_auth.' + provider, provider, 'local_valid_remote_unverified', 'unverified', fields)
-    if refresh:
-        return mkcheck('provider_auth.' + provider, provider, 'access_expired_refresh_available', 'unverified', fields)
-    return mkcheck('provider_auth.' + provider, provider, 'owner_login_needed', 'fail', fields)
-
-
-def provider_checks(home=None, platform=None, now=None):
-    """Claude Code, Codex and Grok, as this Mac's runner would start them. Files are read into memory only for expiry
-    and refresh availability, transcripts only for when the provider last answered; no token, account or email leaves this
-    function, and nothing is refreshed or called."""
-    home = pathlib.Path(home or HOME)
-    out = []
-    # Codex: ~/.codex/auth.json (or CODEX_HOME).
-    codex = pathlib.Path(os.environ.get('CODEX_HOME') or home / '.codex') / 'auth.json'
-    codex_turns = _last_turns(codex.parent.glob('sessions/*/*/*/rollout-*.jsonl'), _codex_turn)
-    claude_turns = _last_turns(home.glob('.claude/projects/*/*.jsonl'), _claude_turn)
-    try:
-        data = json.loads(codex.read_text()[:65_536])
-        tokens = data.get('tokens') if isinstance(data.get('tokens'), dict) else {}
-        out.append(_sign_in('codex', True, _jwt_exp_ms(str(tokens.get('access_token') or '')), bool(tokens.get('refresh_token')),
-                            api_key=bool(data.get('OPENAI_API_KEY')) and not tokens, now=now, turns=codex_turns))
-    except FileNotFoundError:
-        out.append(_sign_in('codex', False, now=now, turns=codex_turns))
-    except Exception:  # noqa: BLE001
-        out.append(_sign_in('codex', True, why='credentials_unreadable', now=now, turns=codex_turns))
-    # Claude Code: on macOS its sign-in lives in the login Keychain, which is never read here (it could ask the owner).
-    claude = home / '.claude/.credentials.json'
-    if (platform or sys.platform) == 'darwin':
-        out.append(_sign_in('claude', True, why='keychain_not_read', now=now, turns=claude_turns))
-    else:
-        try:
-            oauth = json.loads(claude.read_text()[:65_536]).get('claudeAiOauth') or {}
-            expires = oauth.get('expiresAt')
-            out.append(_sign_in('claude', bool(oauth), int(expires) if isinstance(expires, (int, float)) else None, bool(oauth.get('refreshToken')), now=now, turns=claude_turns))
-        except FileNotFoundError:
-            out.append(_sign_in('claude', False, now=now, turns=claude_turns))
-        except Exception:  # noqa: BLE001
-            out.append(_sign_in('claude', True, why='credentials_unreadable', now=now, turns=claude_turns))
-    # Grok CLI: ~/.grok/auth.json exists or not; its format is not documented, so its validity stays unverified.
-    grok = home / '.grok/auth.json'
-    out.append(_sign_in('grok', grok.exists(), why='format_undocumented' if grok.exists() else None, now=now))
-    return out
-
-
+# ---- the runner's own capabilities: build tools, locks, source (all read-only) ---------------------------------------------
 def _run_quiet(run, argv, timeout):
     try:
         return run(argv, capture_output=True, text=True, timeout=timeout, check=False)
@@ -941,30 +853,30 @@ def _newest_file_ms(*folders):
 
 def soma_sync(now=None):
     """Soma on this Mac keeps the service's copy only after a round the service answered, so the file's time is its last
-    real exchange. Nothing is sent. A Soma that isn't running here can't say."""
+    real exchange. Nothing is sent. A Soma window not open here is only quiet."""
     now = now or now_ms()
     try:
         at = int(SOMA_SYNCED.stat().st_mtime * 1000)
     except OSError:
-        return mkcheck('soma_sync', 'soma', 'no_sync_record', 'unverified', {'missing': "Soma's sync record on this Mac; it is written when a Soma window here syncs"})
+        return mkcheck('soma_sync', 'soma', 'no_sync_record', 'quiet', {'missing': "Soma's sync record on this Mac; it is written when a Soma window here syncs"})
     fresh = now - at < SOMA_SYNC_PROOF_MS
-    return mkcheck('soma_sync', 'soma', 'synced_recently' if fresh else 'no_recent_sync', 'pass' if fresh else 'unverified', {'last_synced_at': at})
+    return mkcheck('soma_sync', 'soma', 'synced_recently' if fresh else 'no_recent_sync', 'pass' if fresh else 'quiet', {'last_synced_at': at})
 
 
 def tailshare_delivery(now=None):
     """A real message this service took in and kept: the newest in its mail folders, read or not. No test message is sent,
-    so a quiet day reads Unknown with its age, never a failure."""
+    so a quiet night is only quiet, with its age, never a problem."""
     now = now or now_ms()
     at = _newest_file_ms(TAILSHARE_MAIL / 'new', TAILSHARE_MAIL / 'read')
     if not at:
-        return mkcheck('tailshare_delivery', 'tailshare-serve', 'no_delivery_record', 'unverified', {'missing': 'any message delivered to this Mac'})
+        return mkcheck('tailshare_delivery', 'tailshare-serve', 'no_delivery_record', 'quiet', {'missing': 'any message delivered to this Mac'})
     fresh = now - at < RECENT_PROOF_MS
-    return mkcheck('tailshare_delivery', 'tailshare-serve', 'delivered_recently' if fresh else 'no_recent_delivery', 'pass' if fresh else 'unverified', {'last_delivery_at': at})
+    return mkcheck('tailshare_delivery', 'tailshare-serve', 'delivered_recently' if fresh else 'no_recent_delivery', 'pass' if fresh else 'quiet', {'last_delivery_at': at})
 
 
 def receive_freshness(run, state, now=None):
     """The worker's `tailscale file get --wait` is alive and waiting, and a file really landed in the Inbox lately. Waiting alone
-    doesn't prove a file would arrive, and no test file is sent, so that much reads Unknown with the last arrival's time."""
+    doesn't prove a file would arrive, and no test file is sent, so that much is only quiet, with the last arrival's time."""
     now = now or now_ms()
     pid = state('tailshare-receive').get('pid')
     r = _run_quiet(run, ['/bin/ps', '-ax', '-o', 'ppid=,command='], 5)
@@ -976,7 +888,7 @@ def receive_freshness(run, state, now=None):
     fields = {'waiting': waiting, 'last_received_at': at}
     if waiting and at and now - at < RECENT_PROOF_MS:
         return mkcheck('receive_freshness', 'tailshare-receive', 'received_recently', 'pass', fields)
-    return mkcheck('receive_freshness', 'tailshare-receive', 'waiting_no_recent_file' if waiting else 'not_waiting', 'unverified', fields)
+    return mkcheck('receive_freshness', 'tailshare-receive', 'waiting_no_recent_file' if waiting else 'not_waiting', 'quiet' if waiting else 'unverified', fields)
 
 
 def tailscale_status(run=subprocess.run):
@@ -1056,7 +968,7 @@ def _probe(service, fetch=http_json, run=subprocess.run, state=None, keys=None):
 
     try:
         if service == 'runner':
-            return ([check('runner_self', 'ok', True, {'host': host_identity()})] + provider_checks() + toolchain_checks(run)
+            return ([check('runner_self', 'ok', True, {'host': host_identity()})] + agent_checks() + toolchain_checks(run)
                     + [build_locks(), source_mirror(run)])
         if service == 'soma':
             base = os.environ.get('OMA_RUNNER_SOMA_SERVICE', '').rstrip('/')
@@ -1070,7 +982,14 @@ def _probe(service, fetch=http_json, run=subprocess.run, state=None, keys=None):
                 return [mkcheck('soma_identity', 'soma', 'soma_url_untrusted', 'unverified', {'reason': 'Soma URL is not this Mac (loopback or its own tailnet address)'})]
             key = (keys.get('soma') or (lambda: None))()
             if not key:
-                return [mkcheck('soma_identity', 'soma', 'no_runner_key', 'unverified', {'missing': "the runner's Soma device key", 'next': "this runner has no Soma key of its own (`Soma --mint-runner-key`, and a system daemon also needs it in ~/.config/oma-runner/soma-service-key); another device's key is refused from this Mac's address"})]
+                # Whether it is up needs no key: a refusal is its answer. Who it is, each phone checks with its own key.
+                try:
+                    status, data = fetch(base + '/health')
+                except urllib.error.HTTPError as e:
+                    if e.code not in (401, 403):
+                        raise
+                    return [mkcheck('soma_identity', 'soma', 'answers_no_runner_key', 'quiet', {'http_status': e.code})]
+                return [check('soma_identity', 'wrong_identity', status == 200 and data.get('service') == 'soma-serve', {'http_status': status})]
             status, data = fetch(base + '/health', headers={'Authorization': 'Bearer ' + key})
             return [check('soma_identity', 'wrong_identity', status == 200 and data.get('service') == 'soma-serve' and data.get('ok') is True,
                           {'http_status': status, 'service': str(data.get('service', ''))[:40]})]
@@ -1288,6 +1207,13 @@ class ProbeCache:
             return out
 
 
+def healthy_now(checks):
+    """The service's own checks, if every one passes, else nothing. A scoped row (a build tool, an agent's error) is not the
+    service being down, and a restart wouldn't change it; the phone's restoreTriage reads them the same way."""
+    own = [c for c in checks if not (c.get('fields') or {}).get('capability') and c.get('result') not in ('not_installed', 'quiet')]
+    return own if own and all(c.get('result') == 'pass' for c in own) else []
+
+
 # ---- the controller -----------------------------------------------------------------------------------------------
 class Controller:
     def __init__(self, backend, work, records=None, trust=load_trust, gate=None, probe=capability_probe, state=launchd_state,
@@ -1373,6 +1299,12 @@ class Controller:
                     return self._fail(op, 'blocked', 'incomplete_capability_proof', 'A restart could not be verified end to end (missing: '
                                       + '; '.join(missing) + '). Nothing was restarted.')
                 return self._fail(op, 'blocked', 'no_capability_probe', 'This service has no capability check, so a restart could not be verified. Nothing was restarted.')
+            # What the owner tapped may have recovered since: a healthy service is left alone.
+            own = healthy_now(self._probe_now(service, keys))
+            if own:
+                op['restarted'] = False
+                op['checks'].extend(own)
+                return self._save(op, stage='restored', verified=True)
             with self.gate.exclusive(self.work):
                 op['checks'].append(mkcheck('work_idle', 'runner', 'idle', 'pass', {'working': 0, 'waiting': 0, 'queued': 0, 'background': 0, 'locks_held': len(self.gate.held)}))
                 self._save(op, stage='restoring')
@@ -1394,6 +1326,11 @@ class Controller:
                        else 'This root service needs the Boss-installed privileged helper. Nothing was restarted.')
         except Exception as e:  # noqa: BLE001
             self._fail(op, 'failed', 'restart_error', redact(str(e))[:300])
+
+    def _probe_now(self, service, keys=None):
+        with contextlib.suppress(Exception):
+            return self.probe(service, keys=keys) if keys else self.probe(service)
+        return []
 
     def _verify(self, op, attempts=10, keys=None):
         service = op['service']

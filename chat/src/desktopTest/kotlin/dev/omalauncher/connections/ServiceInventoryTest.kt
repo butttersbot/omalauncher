@@ -33,6 +33,11 @@ class ServiceInventoryTest {
         assertEquals(ConnectionState.Disabled, state(of("not_installed")))
         assertEquals(ConnectionState.Unknown, state(of("unverified", "not_installed")))
         assertEquals(ConnectionState.Failed, state(of("fail", "not_installed")))
+        // A quiet night is no problem: an answering service with no traffic lately stays Ready, with or without other proof.
+        assertEquals(ConnectionState.Ready, state(of("pass", "quiet")))
+        assertEquals(ConnectionState.Ready, state(of("quiet")))
+        assertEquals(ConnectionState.Failed, state(of("quiet", "fail")))
+        assertEquals(ConnectionState.Unknown, state(of("quiet", "unverified")))
     }
     @Test fun cachedProofKeepsItsOwnAgeAndPendingHasNoInventedReadyState() {
         val body = JSONObject(reply("pass").text)
@@ -63,7 +68,8 @@ class ServiceInventoryTest {
         val body = JSONObject(reply("pass").text)
         val row = body.getJSONArray("services").getJSONObject(0).put("id", "runner")
         row.getJSONObject("probe").put("checks", JSONArray()
-            .put(JSONObject().put("check", "provider_auth.claude").put("result", "pass"))
+            .put(JSONObject().put("check", "runner_self").put("result", "pass"))
+            .put(JSONObject().put("check", "provider_auth.claude").put("result", "unverified"))  // a runner not updated yet
             .put(JSONObject().put("check", "build_toolchain.jdk").put("result", "fail").put("fields", JSONObject().put("reason", "JDK missing")))
             .put(JSONObject().put("check", "source_freshness.mirror").put("result", "fail").put("fields", JSONObject().put("capability", "Sync"))))
         val readings = serviceInventoryReadings(ConnectionReply(200, body.toString()), "Mac", "mac", 100_000)
