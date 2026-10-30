@@ -76,6 +76,8 @@ expect Updated by themselves
 # Boss, 2026-10-29: unfolded, the footer note and [ later ] show without scrolling.
 expect Soma updates only when you tap
 within 0.05 0.97 later
+# The history sits under Soma Messages, whole, without scrolling (Boss, 2026-10-29).
+within 0.05 0.97 Only Soma waits for your tap
 shot update-sheet-unfolded card=soma-update-sheet-unfolded
 key BACK
 shell am force-stop dev.omalauncher.artifactpreview

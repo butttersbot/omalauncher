@@ -167,10 +167,12 @@ fun PhoneUpdateSheet(u: PhoneUpdates) {
                     }
                     if (panels.isEmpty()) Words("Everything is up to date.", sans(15.sp, Pack.muted))
                     else if (wide) {
-                        panels.chunked(2).forEach { pair ->
-                            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                pair.forEach { Box(Modifier.weight(1f).fillMaxHeight()) { it(Modifier.fillMaxHeight()) } }
-                                if (pair.size == 1) Spacer(Modifier.weight(1f))
+                        // Unfolded: the first panel (Soma's own) on the left, the rest stacked on the right, the
+                        // history under the app that waits (Boss, 2026-10-29: everything fits in landscape).
+                        Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Box(Modifier.weight(1f)) { panels.first()(Modifier) }
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                panels.drop(1).forEach { it(Modifier) }
                             }
                         }
                     } else panels.forEach { Box(Modifier.padding(bottom = 12.dp)) { it(Modifier) } }
