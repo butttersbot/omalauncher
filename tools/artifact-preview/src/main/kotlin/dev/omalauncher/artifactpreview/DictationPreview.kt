@@ -92,7 +92,7 @@ internal fun DictationPreview(kind: String) {
     Box(Modifier.fillMaxSize()) {
         // The panel: the picture under the widget, as Home draws them.
         Box(Modifier.size(200.dp, 300.dp).background(moving)) {
-            ArtOverlay(inst) { Compiler.compile(FIXTURE).onTap?.run(inst.root, emptyList()) }
+            ArtOverlay(inst) { inst.program.onTap?.run(inst.root, emptyList()) }
         }
         val now = request
         ListeningLayer(
