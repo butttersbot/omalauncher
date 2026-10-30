@@ -13,7 +13,7 @@ class LinkedQuestionDeliveryTest : ChatScreenTestBase() {
         .put("options", JSONArray().put(JSONObject().put("label", "Restore them")).put(JSONObject().put("label", "Leave deleted")))))
         .apply { if (link != null) put("metadata", JSONObject().put("source", "link:$link")) }
 
-    private inner class Host(link: String?) : SampleHost() {
+    private open inner class Host(link: String?) : SampleHost() {
         val entry = PendingApproval(AgentApproval("a-req", "AskUserQuestion", form(link), ""), "nonce-a", 0)
         var macPendingList = listOf(MacPending("macbook-pro/t1703ae4f", "Skills cleanup", MacApproval("mb-req", "mb-nonce", "AskUserQuestion", form(null).toString(), ""), "ticket-mb", 0))
         val toMac = mutableListOf<JSONObject>()
@@ -26,7 +26,7 @@ class LinkedQuestionDeliveryTest : ChatScreenTestBase() {
         override fun bossSaid(words: BossWords) { receipts += words }
     }
 
-    @org.junit.Before fun clean() { BossTouch.forget(); GivenAnswers.clear() }
+    @org.junit.Before fun clean() { BossTouch.forget(); GivenAnswers.clear(); CarriedAnswers.clear(); SameSuggestions.clear() }
 
     @Test fun linkedAnswerReachesTheMacBooksCardAsHis() {
         val host = Host(link = "t1703ae4f")
@@ -38,7 +38,7 @@ class LinkedQuestionDeliveryTest : ChatScreenTestBase() {
         assertEquals("Leave deleted", host.toMac.single().getString(asked))
         assertEquals(2, host.receipts.size)
         assertTrue(host.receipts.all { it.vouched })
-        assertTrue(host.receipts.last().question.endsWith("(answered in Phone A)"))
+        assertTrue(host.receipts.last().question.endsWith("(answered in Phone A: Leave deleted)"))
     }
 
     @Test fun nothingGoesElsewhereWithoutHisFingerOrForASkipOrWithoutALink() {
@@ -62,5 +62,53 @@ class LinkedQuestionDeliveryTest : ChatScreenTestBase() {
             hint.answerThereToo!!()
             assertEquals("Leave deleted", host.toMac.single().getString(asked))
         }
+    }
+
+    /** By meaning: tonight's pair, worded apart, with no link. The model says same + clear pick: answered as his, once; undo tells the thread. */
+    @Test fun sameDecisionInOtherWordsIsAnsweredWithItsOwnOptionAndCanBeUndone() {
+        val mbQuestion = "Syncthing removed 3 skills here. Put them back, or were they meant to be gone?"
+        val mbForm = JSONObject().put("questions", JSONArray().put(JSONObject().put("question", mbQuestion)
+            .put("options", JSONArray().put(JSONObject().put("label", "Put them back")).put(JSONObject().put("label", "Meant to be gone")))))
+        val said = mutableListOf<String>()
+        val host = object : Host(link = null) {
+            init { macPendingList = listOf(MacPending("macbook-pro/t1703ae4f", "MacBook builds", MacApproval("mb-req", "mb-nonce", "AskUserQuestion", mbForm.toString(), ""), "ticket-mb", 0)) }
+            override fun askSameQuestion(prompt: String): String {
+                assertTrue(prompt.contains(mbQuestion))
+                return JSONObject().put("is_error", false).put("result", """{"verdicts":[{"key":"ticket-mb","same":"yes","mapping":"clear","picks":["Put them back"]}]}""").toString()
+            }
+            override fun sayToMac(prompt: String, thread: String, name: String, chat: String, images: List<java.io.File>) { said += "$thread|$prompt" }
+        }
+        BossTouch.touched(physical = true)
+        host.sendWaitingAnswers("nonce-a", JSONObject().put(asked, "Restore them")) {}
+        val until = System.currentTimeMillis() + 5_000
+        while (host.toMac.isEmpty() && System.currentTimeMillis() < until) Thread.sleep(20)
+        assertEquals("Put them back", host.toMac.single().getString(mbQuestion))
+        assertTrue(host.receipts.last().question.endsWith("(answered in Phone A: Restore them)"))
+        val carried = CarriedAnswers.list.single()
+        assertEquals("Phone A", carried.from)
+        // Once only: answering again elsewhere doesn't carry to it a second time.
+        assertFalse(CarriedAnswers.claim("ticket-mb"))
+        BossTouch.touched(physical = true)
+        host.undoCarried(carried)
+        assertTrue(said.single().startsWith("macbook-pro/t1703ae4f|Undo: the answer \"Restore them\""))
+        assertTrue(CarriedAnswers.list.isEmpty())
+    }
+
+    @Test fun anUnsureMatchIsOfferedNotSent() {
+        val host = object : Host(link = null) {
+            override fun askSameQuestion(prompt: String) =
+                JSONObject().put("is_error", false).put("result", """{"verdicts":[{"key":"ticket-mb","same":"unsure","mapping":"clear","picks":["Leave deleted"]}]}""").toString()
+        }
+        // Different thread names so the word-alike hint can't be what shows.
+        BossTouch.touched(physical = true)
+        host.sendWaitingAnswers("nonce-a", JSONObject().put(asked, "Leave deleted")) {}
+        val until = System.currentTimeMillis() + 5_000
+        while (SameSuggestions.get("ticket-mb") == null && System.currentTimeMillis() < until) Thread.sleep(20)
+        assertTrue(host.toMac.isEmpty())
+        val hint = host.questionHint("ticket-mb")!!
+        assertEquals("Phone A", hint.answeredIn)
+        BossTouch.touched(physical = true)
+        hint.answerThereToo!!()
+        assertEquals("Leave deleted", host.toMac.single().getString(asked))
     }
 }

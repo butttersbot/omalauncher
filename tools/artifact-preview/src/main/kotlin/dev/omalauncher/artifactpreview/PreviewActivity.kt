@@ -63,7 +63,7 @@ class PreviewActivity : ComponentActivity() {
                     val empty = intent.getBooleanExtra("empty", false)
                     val host = remember { PreviewHost(this@PreviewActivity, empty, intent.getStringExtra("mail"), intent.getBooleanExtra("questions", false), intent.getStringExtra("waitingQuestion"), intent.getBooleanExtra("rankedSessions", false), intent.getBooleanExtra("queuedBehind", false)) }
                     // --ez newChat true: opens on a new chat, with its pick rows (computer, agent, model, mode; slice 6).
-                    val start = remember { if (intent.getBooleanExtra("newChat", false)) dev.omalauncher.oma.newChatTab(host) else if (intent.getStringExtra("waitingQuestion") == "builder") PHONE_THREAD else if (intent.getStringExtra("waitingQuestion") in setOf("linked", "alike")) { if (intent.getStringExtra("startTab") == "oma") OMA_TAB else PHONE_THREAD } else if (empty) PHONE_THREAD_B else OMA_TAB }
+                    val start = remember { if (intent.getBooleanExtra("newChat", false)) dev.omalauncher.oma.newChatTab(host) else if (intent.getStringExtra("waitingQuestion") == "builder") PHONE_THREAD else if (intent.getStringExtra("waitingQuestion") in LINKED_MODES) { if (intent.getStringExtra("startTab") == "oma") OMA_TAB else PHONE_THREAD } else if (empty) PHONE_THREAD_B else OMA_TAB }
                     // --es updates offer|waiting|updating|updated|failed: the update pill, fictional offers only (UpdatesPreview).
                     val updates = remember { intent.getStringExtra("updates")?.let(::updatesFixture) }
                     if (updates != null) androidx.compose.runtime.CompositionLocalProvider(dev.omalauncher.oma.LocalTopBarExtra provides { dev.omalauncher.updates.PhoneUpdatePill(updates) }) {
@@ -109,7 +109,7 @@ Open the preview to try the layout. We can keep talking while you look at it.
                 return bundled.map { if (it.time == 1L) it.copy(status = TaskStatus.Done, result = "Combined handoff complete.") else it } +
                     ChatTask(5, "Codex", "Legacy update", mail = "Agent mail", status = TaskStatus.Done, result = "Delivered in the bundled agent handoff.")
             }
-            if (waitingQuestion == "linked" || waitingQuestion == "alike") return listOf(ChatTask(LinkedFixture.began, "Claude Code", "Fictional skills question", builder = BuilderId.A.saved,
+            if (waitingQuestion in LINKED_MODES) return listOf(ChatTask(LinkedFixture.began, "Claude Code", "Fictional skills question", builder = BuilderId.A.saved,
                 status = if (LinkedFixture.phoneDone) TaskStatus.Done else TaskStatus.Running,
                 approvals = listOf(dev.omalauncher.oma.ChatApproval("AskUserQuestion", "Restore or leave the skills", if (LinkedFixture.phoneDone) dev.omalauncher.oma.ApprovalAnswer.Approved else dev.omalauncher.oma.ApprovalAnswer.Waiting, linkedEntry.nonce))))
             if (waitingQuestion == "builder") return listOf(ChatTask(now, "Claude Code", "Fictional four-question phone builder", builder = BuilderId.A.saved,
@@ -135,7 +135,7 @@ Open the preview to try the layout. We can keep talking while you look at it.
         }
         override fun updateTask(time: Long, save: Boolean, change: (ChatTask) -> ChatTask) {}
         override fun working() = false
-        override fun builders() = if (waitingQuestion == "linked" || waitingQuestion == "alike") mapOf(BuilderId.A to BuilderState(!LinkedFixture.phoneDone, if (LinkedFixture.phoneDone) emptyList() else listOf(linkedEntry), "Questions waiting")) else if (waitingQuestion == "builder") mapOf(BuilderId.A to BuilderState(!questionDone, if (questionDone) emptyList() else listOf(builderQuestionEntry), "Questions waiting")) else emptyMap<BuilderId, BuilderState>()
+        override fun builders() = if (waitingQuestion in LINKED_MODES) mapOf(BuilderId.A to BuilderState(!LinkedFixture.phoneDone, if (LinkedFixture.phoneDone) emptyList() else listOf(linkedEntry), "Questions waiting")) else if (waitingQuestion == "builder") mapOf(BuilderId.A to BuilderState(!questionDone, if (questionDone) emptyList() else listOf(builderQuestionEntry), "Questions waiting")) else emptyMap<BuilderId, BuilderState>()
         override fun continuing() = false
         override fun front() = FrontState()
         private var questionDone by mutableStateOf(false)
@@ -152,9 +152,19 @@ Open the preview to try the layout. We can keep talking while you look at it.
             .put("question", "Restore the 3 deleted skills or leave them deleted?").put("header", "Skills")
             .put("options", org.json.JSONArray().put(org.json.JSONObject().put("label", "Restore them")).put(org.json.JSONObject().put("label", "Leave deleted")))))
             .apply { if (link) put("metadata", org.json.JSONObject().put("source", "link:t1703ae4f")) }
+        // --es waitingQuestion meaning: the MacBook asks the same thing in its own words and options; the fast model's
+        // verdict is the fixture's own (what Haiku said of tonight's pair), so nothing leaves the emulator.
+        private val meaningMacForm = org.json.JSONObject().put("questions", org.json.JSONArray().put(org.json.JSONObject()
+            .put("question", "Syncthing's first pass removed 3 skills here. Should I put them back, or were they meant to be gone?").put("header", "3 skills")
+            .put("options", org.json.JSONArray().put(org.json.JSONObject().put("label", "Put them back from the backup")).put(org.json.JSONObject().put("label", "They were meant to be gone")))))
+        override fun askSameQuestion(prompt: String): String? {
+            if (waitingQuestion != "meaning") return null
+            android.util.Log.i("SomaWalk", "fixture same-question asked")
+            return org.json.JSONObject().put("is_error", false).put("result", """{"verdicts":[{"key":"linked-mac-ticket","same":"yes","mapping":"clear","picks":["Put them back from the backup"]}]}""").toString()
+        }
         private val linkedEntry by lazy { PendingApproval(AgentApproval("linked-request", "AskUserQuestion", linkedForm(waitingQuestion == "linked"), "Skills"), "linked-phone-nonce", 0) }
         override fun answerBuilderQuestions(entry: PendingApproval, answers: org.json.JSONObject): ApprovalOutcome {
-            if (waitingQuestion == "linked" || waitingQuestion == "alike") {
+            if (waitingQuestion in LINKED_MODES) {
                 android.util.Log.i("SomaWalk", "fixture phone answered $answers"); LinkedFixture.phoneDone = true; return ApprovalOutcome.Decided
             }
             val response = ClaudeProtocol.decision(entry.approval, true, answers)
@@ -165,11 +175,12 @@ Open the preview to try the layout. We can keep talking while you look at it.
             questionDone = true
             return ApprovalOutcome.Decided
         }
-        override fun macPending() = if (waitingQuestion == "linked" || waitingQuestion == "alike") {
-            if (LinkedFixture.macDone) emptyList() else listOf(MacPending("macbook-pro/t1703ae4f", "Skills cleanup", MacApproval("linked-mac-request", "linked-mac-nonce", "AskUserQuestion", linkedForm(false).toString(), ""), "linked-mac-ticket", 2))
+        override fun macPending() = if (waitingQuestion in LINKED_MODES) {
+            if (LinkedFixture.macDone) emptyList() else listOf(MacPending("macbook-pro/t1703ae4f", "Skills cleanup", MacApproval("linked-mac-request", "linked-mac-nonce", "AskUserQuestion",
+                (if (waitingQuestion == "meaning") meaningMacForm else linkedForm(false)).toString(), ""), "linked-mac-ticket", 2))
         } else if (waitingQuestion == null || waitingQuestion == "builder" || questionDone) emptyList() else listOf(MacPending("fixture", "Fake agent", MacApproval("question-fixture", "fixture-nonce", if (waitingQuestion == "codex") "Question" else "AskUserQuestion", questionJson.toString(), ""), "fixture-ticket", 1))
         override fun answerMacQuestions(ticket: String, answers: org.json.JSONObject, done: (MacApprovalOutcome) -> Unit) {
-            if (waitingQuestion == "linked" || waitingQuestion == "alike") {
+            if (waitingQuestion in LINKED_MODES) {
                 android.util.Log.i("SomaWalk", "fixture mac answered $answers"); LinkedFixture.macDone = true; return done(MacApprovalOutcome.Decided)
             }
             android.util.Log.i("SomaWalk", "waiting question answer $ticket: $answers")
@@ -201,7 +212,7 @@ Open the preview to try the layout. We can keep talking while you look at it.
         override fun build(prompt: String, images: List<String>, way: BuildWay, builder: BuilderId?) {}
         override fun askFront(prompt: String, chat: String) {}
         override fun startMacChat(prompt: String, chat: String, images: List<java.io.File>) { answerMode(prompt, chat) }
-        override fun sayToMac(prompt: String, thread: String, name: String, chat: String, images: List<java.io.File>) {}
+        override fun sayToMac(prompt: String, thread: String, name: String, chat: String, images: List<java.io.File>) { android.util.Log.i("SomaWalk", "fixture said to $thread: ${prompt.take(60)}") }
         private var answerCount = 0
         override fun submitArtifactReply(source: ArtifactReplySource, request: ArtifactReplyRequest, done: (ArtifactReplyResult) -> Unit) {
             answerCount++
@@ -250,6 +261,8 @@ Open the preview to try the layout. We can keep talking while you look at it.
     }
 
 /** The linked-questions fixture's state, for the life of the process (a relaunch onto another tab keeps it). */
+private val LINKED_MODES = setOf("linked", "alike", "meaning")
+
 private object LinkedFixture {
     val began = System.currentTimeMillis()
     var phoneDone by androidx.compose.runtime.mutableStateOf(false)

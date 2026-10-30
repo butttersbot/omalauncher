@@ -108,11 +108,83 @@ internal fun ChatHost.sendWaitingAnswers(key: String, answers: JSONObject, done:
         done(failure)
         if (failure != null || me == null || !vouched || dev.omalauncher.assist.questionAnswersSkipped(answers)) return@deliverWaitingAnswers
         dev.omalauncher.assist.GivenAnswers.add(dev.omalauncher.assist.GivenAnswer(me, answers, System.currentTimeMillis()))
-        for (other in dev.omalauncher.assist.linkedQuestions(me, waiting)) {
+        val words = givenWords(answers)
+        // Linked by the agents (a link key): no model needed.
+        val linked = dev.omalauncher.assist.linkedQuestions(me, waiting)
+        for (other in linked) {
             val mapped = dev.omalauncher.assist.mapQuestionAnswers(me.input, answers, other.input, me.where) ?: continue
-            deliverWaitingAnswers(other.key, mapped, vouched, me.where) {}
+            carryAnswer(other, mapped, me.where, words, vouched)
+        }
+        // By meaning (Boss, 2026-10-29 22:2x): the other waiting questions elsewhere, asked of the fast model once, off the
+        // main thread. Same decision and a clear pick of that card's own option: answered as his. Anything less: offered.
+        val rest = waiting.filter { o -> o.key != me.key && o.thread != me.thread && linked.none { it.key == o.key } && !CarriedAnswers.has(o.key) }
+        if (rest.isNotEmpty()) kotlin.concurrent.thread(name = "soma-same-question", isDaemon = true) {
+            val said = runCatching { askSameQuestion(dev.omalauncher.assist.sameQuestionPrompt(me, answers, rest)) }.getOrNull() ?: return@thread
+            for (verdict in dev.omalauncher.assist.sameQuestionVerdicts(said, rest, answers, me.where)) {
+                val target = rest.firstOrNull { it.key == verdict.key } ?: continue
+                if (verdict.sure && verdict.picks != null) carryAnswer(target, verdict.picks, me.where, words, vouched)
+                else if (verdict.same) SameSuggestions.offer(target.key, me.where, words, verdict.picks)
+            }
         }
     }
+}
+
+private fun givenWords(answers: JSONObject): String = answers.keys().asSequence().joinToString(" · ") { k ->
+    answers.opt(k).let { v -> if (v is JSONArray) (0 until v.length()).joinToString(", ") { v.optString(it) } else v.toString() }
+}
+
+/** His answer carried to [target] (once only), signed as his, "answered in [from]: [words]"; kept for [ undo ]. */
+private fun ChatHost.carryAnswer(target: dev.omalauncher.assist.QuestionMember, answers: JSONObject, from: String, words: String, vouched: Boolean) {
+    if (!CarriedAnswers.claim(target.key)) return
+    deliverWaitingAnswers(target.key, answers, vouched, "$from: $words") { failure ->
+        if (failure == null) CarriedAnswers.add(CarriedAnswer(target, macPendingApproval(target.key), from, words, System.currentTimeMillis()))
+        else CarriedAnswers.release(target.key)
+    }
+}
+
+private fun ChatHost.macPendingApproval(ticket: String): String? = macPending().firstOrNull { it.ticket == ticket }?.request?.approval
+
+/** An answer Soma carried over for him: shown in the thread it went to, with [ undo ]. */
+data class CarriedAnswer(val target: dev.omalauncher.assist.QuestionMember, val approval: String?, val from: String, val words: String, val at: Long)
+
+/** The answers carried this run, newest last; each target answered so at most once. */
+object CarriedAnswers {
+    val list = androidx.compose.runtime.mutableStateListOf<CarriedAnswer>()
+    private val claimed = mutableSetOf<String>()
+    @Synchronized fun claim(key: String) = claimed.add(key)
+    @Synchronized fun release(key: String) { claimed.remove(key) }
+    @Synchronized fun has(key: String) = key in claimed
+    fun add(carried: CarriedAnswer) { list.add(carried); while (list.size > 20) list.removeAt(0) }
+    fun clear() { list.clear(); synchronized(this) { claimed.clear() } }
+}
+
+/** The questions the model thought were his, but not surely or not with a clear pick: offered, never sent. */
+object SameSuggestions {
+    data class Offer(val from: String, val words: String, val picks: JSONObject?)
+    private val offers = mutableMapOf<String, Offer>()
+    @Synchronized fun offer(key: String, from: String, words: String, picks: JSONObject?) { offers[key] = Offer(from, words, picks) }
+    @Synchronized fun get(key: String): Offer? = offers[key]
+    @Synchronized fun clear() = offers.clear()
+}
+
+/**
+ * [ undo ] on an answer Soma carried over: that thread is told, in his words, that it wasn't his answer there and to ask
+ * again. A follow-up to the thread, as if he had typed it there (his tap, his receipt); the answer itself has gone.
+ */
+internal fun ChatHost.undoCarried(carried: CarriedAnswer) {
+    val text = "Undo: the answer \"${carried.words}\" to your question was carried over automatically from ${carried.from}, where I " +
+        "answered what looked like the same question. It is not my answer here: ask me again if you still need it."
+    val vouched = BossTouch.mayVouch()
+    val thread = carried.target.thread
+    if (thread.startsWith("phone:")) {
+        val builder = dev.omalauncher.assist.BuilderId.entries.firstOrNull { it.letter == thread.removePrefix("phone:") } ?: return
+        build(text, emptyList(), BuildWay.FollowUp, builder)
+        bossSaid(BossWords.chat("phone", text, vouched))
+    } else {
+        sayToMac(text, thread, carried.target.where, "")
+        bossSaid(BossWords.chat("mac:$thread", text, vouched))
+    }
+    CarriedAnswers.list.remove(carried)
 }
 
 /** What a waiting form shows of the same question elsewhere: waiting there too, or answered there already. */
@@ -124,9 +196,13 @@ internal fun ChatHost.questionHint(key: String): QuestionHint? {
     val me = waiting.firstOrNull { it.key == key } ?: return null
     val linked = dev.omalauncher.assist.linkedQuestions(me, waiting).map { it.key }.toSet()
     val alike = dev.omalauncher.assist.similarElsewhere(me, waiting).filter { it.key !in linked }.map { it.where }.distinct()
-    val given = dev.omalauncher.assist.GivenAnswers.alike(me)
-    val mapped = given?.let { dev.omalauncher.assist.mapQuestionAnswers(it.member.input, it.answers, me.input, it.member.where) }
-    val answeredWhere = given?.member?.where.orEmpty()
+    // The model's offer (same decision, not sure enough to send) before the word-alike one.
+    val offer = SameSuggestions.get(key)
+    val given = if (offer != null) null else dev.omalauncher.assist.GivenAnswers.alike(me)
+    val mapped = offer?.picks ?: given?.let { dev.omalauncher.assist.mapQuestionAnswers(it.member.input, it.answers, me.input, it.member.where) }
+    val answeredWhere = offer?.from ?: given?.member?.where.orEmpty()
+    if (offer != null) return QuestionHint(alike, answeredWhere, offer.words,
+        mapped?.let { answers -> { deliverWaitingAnswers(key, answers, BossTouch.mayVouch(), "$answeredWhere: ${offer.words}") {} } })
     if (alike.isEmpty() && mapped == null && linked.isEmpty()) return null
     return QuestionHint(
         pendingIn = (alike + waiting.filter { it.key in linked }.map { it.where + " (linked)" }).distinct(),

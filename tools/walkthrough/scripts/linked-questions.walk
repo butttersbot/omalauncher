@@ -45,6 +45,27 @@ log fixture mac answered
 wait 1500
 absent Questions waiting
 shot alike-question-answered-cover
+# 3. By meaning (Boss, 2026-10-29 22:2x): the MacBook asks the same thing in its own words and options, no link. The
+# fast model (the fixture's verdict: what Haiku said of tonight's pair) finds it; it is answered with ITS option, as his,
+# and the Oma tab says so with [ undo ], which tells that thread in his words.
+shell am force-stop dev.omalauncher.artifactpreview
+shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es waitingQuestion meaning --ez touchVouches true
+clearlog
+expect Questions waiting
+tap answer questions
+tap Restore them
+log fixture phone answered
+log fixture same-question asked
+log Put them back from the backup
+shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es waitingQuestion meaning --es startTab oma --ez touchVouches true
+wait 1500
+absent Questions waiting
+expect answered in Phone A: Restore them
+expect undo
+shot meaning-question-carried-cover
+tap undo
+log fixture said to macbook-pro/t1703ae4f: Undo: the answer
+absent answered in Phone A
 fold unfolded
 shell am force-stop dev.omalauncher.artifactpreview
 shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es waitingQuestion linked --ez touchVouches true
@@ -52,4 +73,4 @@ clearlog
 expect Same question waiting in Skills cleanup (linked)
 shot linked-question-card-unfolded
 [phone] After the bundle: Phone A asks a harmless AskUserQuestion with metadata {"source": "link:THREAD"} naming a Mac thread that waits on the same harmless question. Boss answers on the phone: both threads continue, the Mac one's tool result has his choice, both receipts (oma receipt) are his, the second "answered in Phone A". Same from the Soma desktop app.
-[phone] Two alike questions with no link: answering one leaves the other waiting with "You answered this in …" and [ answer here too ]; nothing is sent there until he taps it. A question whose answer can't be carried (text not allowed there) stays waiting.
+[phone] Two questions on the same decision in different words, no link: answering one answers the other with its own option within seconds (the real fast model), marked "answered in …" with [ undo ]; undo tells that thread. Two only-alike or unsure ones: answering one leaves the other waiting with "You answered this in …" and [ answer here too ]; nothing is sent there until he taps it. A question whose answer can't be carried (text not allowed there) stays waiting.
