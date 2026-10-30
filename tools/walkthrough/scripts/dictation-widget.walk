@@ -12,7 +12,8 @@ expect MG1
 expect Press to record
 nolog fixture dictation open
 shot dictation-over-art-cover
-tap Press to record
+# Below the rail, on the clear picture: the whole panel takes the tap, not only the words.
+tap 0.2 0.3
 log fixture dictation open
 expect Listening
 expect turn the lights down

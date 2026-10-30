@@ -45,9 +45,12 @@ private val FIXTURE = """
       meta { owl: 11 }
       over: "art:f4618f2aa61acfb0"
       onTap: dictation("open")
-      Column {
-        Text { text: "MG1" }
-        Text { text: "Press to record" }
+      padding: 4
+      // A thin rail along the top, as Boss asked (2026-10-30); the rest of the picture is clear, and still takes the tap.
+      Row {
+        gap: 6
+        Text { text: "MG1"; style: small }
+        Text { text: "Press to record"; style: small }
       }
     }
 """.trimIndent()
