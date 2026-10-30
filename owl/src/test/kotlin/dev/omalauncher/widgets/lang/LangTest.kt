@@ -870,6 +870,13 @@ class LangTest {
         assertTrue(compileError("app {\n meta { owl: 8 }\n icon: \"<svg>${"x".repeat(17000)}</svg>\"\n Text { text: 1 } }").contains("over 16 KB"))
     }
 
+    @Test fun dictationIsOwl11AndOnlyItsWords() {
+        val p = Compiler.compile("widget {\n meta { owl: 11 }\n source d = android.dictation\n Button { text: d.state; onTap: dictation(\"toggle\") } }")
+        assertEquals(listOf("android.dictation"), p.globals.map { (it as Global.Source).kind })
+        assertTrue(compileError("widget {\n meta { owl: 11 }\n Text { text: 1; onTap: dictation(\"loud\") } }").contains("dictation takes"))
+        assertTrue(compileError("widget {\n meta { owl: 10 }\n source d = android.dictation\n Text { text: d.state } }").contains("11"))
+    }
+
     @Test fun androidNotificationsAndVolume() {
         val p = Compiler.compile("widget {\n meta { owl: 4 }\n source n = android.notifications\n source v = android.volume\n Text { text: n.count; onTap: volume(\"up\") } }")
         assertEquals(listOf("android.notifications", "android.volume"), p.globals.map { (it as Global.Source).kind })

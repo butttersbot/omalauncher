@@ -1,14 +1,13 @@
 package dev.omalauncher.assist
 
-import android.content.Context
-import dev.omalauncher.openHttp
 import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
 
 /*
- * Dictation relay (Boss, 2026-10-30; ClaudeSync projects/tailshare/docs/dictation-relay.md): what the lock button's
- * listening screen heard can be typed at the cursor on another device instead of going to the agent. The hearing is
- * unchanged, only where the words go. The target is remembered until he changes it. Nothing here ever falls back to
- * the agent: an offline, locked or failed device is said so, and the caller keeps his words.
+ * Dictation relay (Boss, 2026-10-30; ClaudeSync projects/tailshare/docs/dictation-relay.md): words he spoke, typed at
+ * the cursor on another device, from the home widget (android.dictation, widgets/runtime/Dictation.kt). Nothing here
+ * ever falls back to an agent: an offline, locked or failed device is said so, and the caller keeps his words.
  */
 
 /** Where the listening screen's words go. [base] is the device's receiver, null for the phone's agent. */
@@ -24,18 +23,8 @@ object RelayTargets {
     /** The short list, the agent first. */
     val all = listOf(Agent, Mg1)
 
-    private const val PREFS = "dictation-relay"
-    private const val TARGET = "target"
-
     /** The target saved as [id]; the agent for none, or for one no longer on the list. */
     fun named(id: String?): RelayTarget = all.firstOrNull { it.id == id } ?: Agent
-
-    fun current(context: Context): RelayTarget =
-        named(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(TARGET, null))
-
-    fun pick(context: Context, target: RelayTarget) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(TARGET, target.id).apply()
-    }
 }
 
 /** How a relay ended. Only [Typed] means the words have left his hands; on the rest he keeps them. */
@@ -100,8 +89,10 @@ fun relayText(
     if (text.isBlank()) return RelayOutcome.NoText
     if (text.length > RELAY_MAX_CHARS) return RelayOutcome.TooLong
     var sent = false
-    val c = runCatching { openHttp("$base/v1/type", connectTimeout, readTimeout) }.getOrElse { return RelayOutcome.Offline }
+    val c = runCatching { URL("$base/v1/type").openConnection() as HttpURLConnection }.getOrElse { return RelayOutcome.Offline }
     return try {
+        c.connectTimeout = connectTimeout
+        c.readTimeout = readTimeout
         c.requestMethod = "POST"
         c.doOutput = true
         c.setRequestProperty("Content-Type", "application/json")

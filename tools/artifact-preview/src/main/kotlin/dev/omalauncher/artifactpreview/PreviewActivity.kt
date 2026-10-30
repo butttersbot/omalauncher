@@ -48,7 +48,9 @@ class PreviewActivity : ComponentActivity() {
         setContent {
             Box(Modifier.fillMaxSize()) {
                 Box(Modifier.fillMaxHeight().then(if (narrow) Modifier.width(400.dp) else Modifier.fillMaxWidth())) {
-                    if (intent.getBooleanExtra("connections", false)) {
+                    if (intent.getStringExtra("dictationWidget") != null) {
+                        DictationPreview(intent.getStringExtra("dictationWidget")!!)
+                    } else if (intent.getBooleanExtra("connections", false)) {
                         ConnectionsPreview()
                     } else if (intent.getBooleanExtra("phoneRunner", false)) {
                         val pairing = remember { object : dev.omalauncher.ui.PhoneRunnerPairing {

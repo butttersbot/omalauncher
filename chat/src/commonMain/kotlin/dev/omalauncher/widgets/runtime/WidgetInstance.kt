@@ -409,6 +409,8 @@ class WidgetInstance(
         // An agent or an app opening on its own, from a timer or a fetched value, over whatever the user is doing: like
         // sound(...), a trigger does it only while the app or screen is open.
         if ((name == "ask" || name == "open") && inTrigger && !foreground()) return report("$name(...) in a trigger works only while the app or screen is open")
+        // The microphone opens, and words go to another device, only from his tap: never from a timer or a fetched value.
+        if (name == "dictation" && inTrigger) return report("dictation(...) works only from a tap")
         // Only this widget refreshes afterwards; the others keep their own intervals.
         services.act(name, args) { refresh() }
     }

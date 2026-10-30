@@ -1,0 +1,65 @@
+# Dictation widget (Boss, 2026-10-30): tap to record, tap to stop, the words show, Send types them on MG1. The real owl
+# source and action and the real Dictation states, in a plain fixture widget; the emulator has no microphone, so a
+# fictional one hears the words, and a fictional MG1 answers. Nothing reaches a device. Phone C's widget has its own look.
+# 1. Typed.
+fold folded
+rotate portrait
+shell am force-stop dev.omalauncher.artifactpreview
+clearlog
+shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es dictationWidget typed
+expect state idle
+tap Record
+expect state listening
+expect turn the lights down
+expect Stop
+nolog fixture relay
+shot dictation-listening-cover
+tap Stop
+expect state heard
+expect turn the lights down
+nolog fixture relay
+shot dictation-heard-cover
+tap Send
+log fixture relay: turn the lights down
+expect state typed
+expect Typed into Brave on MG1
+absent turn the lights down
+shot dictation-typed-cover
+# 2. MG1 locked: said so, and the words stay.
+shell am force-stop dev.omalauncher.artifactpreview
+clearlog
+shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es dictationWidget locked
+tap Record
+tap Stop
+tap Send
+log fixture relay: turn the lights down
+expect state failed
+expect MG1 is locked. Not typed.
+expect turn the lights down
+shot dictation-locked-cover
+# Clear drops them.
+tap Clear
+expect state idle
+absent turn the lights down
+# 3. MG1 offline, unfolded.
+fold open
+shell am force-stop dev.omalauncher.artifactpreview
+clearlog
+shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es dictationWidget offline
+tap Record
+tap Stop
+tap Send
+expect MG1 is offline. Not typed.
+expect turn the lights down
+shot dictation-offline-unfolded
+# 4. No microphone: says so, sends nothing.
+fold folded
+shell am force-stop dev.omalauncher.artifactpreview
+clearlog
+shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es dictationWidget nomic
+tap Record
+expect Allow the microphone for Soma
+nolog fixture relay
+[phone] After the bundle, with Boss expecting it and MG1 on a text field: on Page 2's dictation widget, tap the big button, say something: the words show as he speaks and the ring lights. Tap to stop: the ring goes out and the words wait. Tap Send: they appear at MG1's cursor, without Enter, and the widget says "Typed into <app> on MG1".
+[phone] With MG1 locked, then with its receiver off: Send says so and the words stay; Send again once it is back types them once. Nothing reaches an agent.
+[phone] While recording: swipe to a far page, or lock the phone. The microphone stops and the words wait. Back on the page they are there.

@@ -24,7 +24,7 @@ class Compiler private constructor(
          * instead of failing on what they don't know. Bump it with every
          * addition a widget could depend on: nodes, properties, builtins.
          */
-        const val LEVEL = 10
+        const val LEVEL = 11
         private const val MAX_ASSET_BYTES = 2 shl 20
 
         /**
