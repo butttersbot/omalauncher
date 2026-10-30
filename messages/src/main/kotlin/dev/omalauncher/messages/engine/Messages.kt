@@ -150,12 +150,15 @@ object Messages {
      */
     val quoting = ConcurrentHashMap<String, String>()
 
+    @Synchronized
+    private fun accepted(id: String, clientId: String) = publish(real.accepted(id, clientId))
+
     private fun publish(next: ConversationBook) {
         real = next
         if (!samples.value) _book.value = next
         val f = file ?: return
-        val text = next.toJson()
         io.execute {
+            val text = next.toJson()
             runCatching {
                 val tmp = File(f.parentFile, f.name + ".tmp")
                 tmp.writeText(text)
@@ -201,6 +204,7 @@ object Messages {
         id: String,
         text: String,
         quote: String? = null,
+        hiddenLinks: Set<String> = emptySet(),
     ): Sent {
         if (samples.value) {
             _book.value = _book.value.sent(id, text, System.currentTimeMillis(), quote)
@@ -210,9 +214,9 @@ object Messages {
             // A new try: the last one's error is old news.
             clearNotice(id)
             val clientId = java.util.UUID.randomUUID().toString()
-            publish(real.waiting(id, clientId, text, System.currentTimeMillis(), quote))
+            publish(real.waiting(id, clientId, text, System.currentTimeMillis(), quote, Parts.links(text).mapNotNull { MacLink.previews.value[Parts.openable(it)]?.takeUnless { r -> r.url in hiddenLinks } }, hiddenLinks))
             val replyTo = quoting.remove(id)?.takeIf { quote != null }?.removeSuffix("#a")
-            MacLink.send(id, text, replyTo, clientId) { why ->
+            MacLink.send(id, text, replyTo, clientId, onAccepted = { accepted(id, clientId) }) { why ->
                 failed(id, clientId)
                 warn(id, "Not sent: $why")
             }
@@ -311,7 +315,7 @@ object Messages {
             val type = context.contentResolver.getType(uri) ?: "image/jpeg"
             val waiting = real.waiting(id, clientId, summaries.getOrElse(i) { "1 Photo" }, now + i, if (i == 0) quote else null)
             publish(waiting.withFiles(id, "c:$clientId", listOf("local:$uri|$type")))
-            MacLink.sendFile(context, id, uri, clientId) { why ->
+            MacLink.sendFile(context, id, uri, clientId, onAccepted = { accepted(id, clientId) }) { why ->
                 failed(id, clientId)
                 warn(id, "Photo not sent: $why")
             }
@@ -319,7 +323,7 @@ object Messages {
         if (text.isNotBlank()) {
             val clientId = java.util.UUID.randomUUID().toString()
             publish(real.waiting(id, clientId, text, now + photos.size))
-            MacLink.send(id, text, null, clientId) { why ->
+            MacLink.send(id, text, null, clientId, onAccepted = { accepted(id, clientId) }) { why ->
                 failed(id, clientId)
                 warn(id, "Not sent: $why")
             }
@@ -364,7 +368,7 @@ object Messages {
             val waiting = real.waiting(id, clientId, VOICE, System.currentTimeMillis(), quote)
             publish(waiting.withFiles(id, "c:$clientId", listOf("local:${ogg.path}|$VOICE_MIME")))
         }
-        MacLink.sendVoice(id, caf, clientId) { why ->
+        MacLink.sendVoice(id, caf, clientId, onAccepted = { accepted(id, clientId) }) { why ->
             failed(id, clientId)
             warn(id, "Voice message not sent: $why")
         }

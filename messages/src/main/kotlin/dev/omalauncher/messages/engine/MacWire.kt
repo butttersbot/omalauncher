@@ -35,6 +35,9 @@ object MacWire {
         val system: Boolean,
         /** Tapbacks: each a kind, "me:" before the owner's own. */
         val tapbacks: List<String> = emptyList(),
+        val delivery: Delivery? = null,
+        val failed: Boolean = false,
+        val richLinks: List<RichLink> = emptyList(),
     )
 
     class Chat(
@@ -76,6 +79,9 @@ object MacWire {
             clientId = o.str("clientId"),
             unsent = o.optBoolean("unsent"),
             system = o.optBoolean("system"),
+            delivery = if (!o.optBoolean("fromMe")) null else when { o.optBoolean("read") -> Delivery.Read; o.optBoolean("delivered") -> Delivery.Delivered; else -> Delivery.Sent },
+            failed = o.optBoolean("failed"),
+            richLinks = RichLink.read(o.optJSONArray("richLinks")),
             tapbacks =
                 (o.optJSONArray("tapbacks") ?: JSONArray()).let { t ->
                     (0 until t.length()).mapNotNull { t.optJSONObject(it) }.map { (if (it.optBoolean("fromMe")) "me:" else "") + it.optString("kind") }.filter { !it.endsWith(":") && it.isNotEmpty() }
@@ -181,7 +187,7 @@ object MacWire {
         return parts.mapIndexed { i, p ->
             var q = if (i == 0 && quote != null) p.copy(quote = quote) else p
             if (i == parts.lastIndex && m.tapbacks.isNotEmpty()) q = q.copy(tapbacks = m.tapbacks)
-            q
+            q.copy(delivery = m.delivery, failed = m.failed, richLinks = if (p.id == m.id) m.richLinks else emptyList())
         }
     }
 

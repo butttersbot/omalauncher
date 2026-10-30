@@ -330,16 +330,46 @@ fun Thread(
     var stuck by remember(c.id) { mutableStateOf(false) }
     var noOpenBubbles by remember(c.id) { mutableStateOf(false) }
     var held by remember(c.id) { mutableStateOf<Message?>(null) }
+    val pulse = remember(c.id) { dev.omalauncher.messages.engine.TypingPulse() }
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(c.id, lifecycle) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_PAUSE) pulse.stop()?.let { MacLink.typing(c.id, it) }
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer); pulse.stop()?.let { MacLink.typing(c.id, it) } }
+    }
+    LaunchedEffect(c.id) {
+        snapshotFlow { draft.text }.drop(1).collectLatest { text ->
+            if (Messages.linked && Alerts.front) pulse.changed(text, System.currentTimeMillis())?.let { MacLink.typing(c.id, it) }
+            delay(5_000)
+            pulse.stop()?.let { MacLink.typing(c.id, it) }
+        }
+    }
     // Where the owner left it: that place, or the latest.
     val left = remember(c.id) { Desk[c.id] }
     val size = c.messages.size
-    val list = rememberLazyListState(if (left.hasPlace) left.index.coerceIn(0, maxOf(0, size - 1)) else maxOf(0, size - 1), if (left.hasPlace) left.offset else 0)
+    val list = rememberLazyListState(if (left.hasPlace) left.indexIn(c.messages) else maxOf(0, size - 1), if (left.hasPlace) left.offset else 0)
     // Whether the owner is following the latest: decided when a scroll ends, not by the list's size, so a composer
     // that grows (a quote, photos, the keyboard) keeps the latest in view instead of leaving it behind.
     var latest by remember(c.id) { mutableStateOf(!left.hasPlace) }
     val currentSize by rememberUpdatedState(size)
+    val currentMessages by rememberUpdatedState(c.messages)
+    val previews by MacLink.previews.collectAsState()
+    val typing by MacLink.typing.collectAsState()
+    LaunchedEffect(c.id) { while (true) { MacLink.expireTyping(); delay(500) } }
+    // Only a reader's drag changes follow intent. IME resize and programmatic scrolls can end with
+    // canScrollForward temporarily true while layout settles; they must not turn following off.
+    var readerScrolling by remember(c.id) { mutableStateOf(false) }
+    LaunchedEffect(list) {
+        list.interactionSource.interactions.collect { interaction ->
+            if (interaction is androidx.compose.foundation.interaction.DragInteraction.Start) readerScrolling = true
+        }
+    }
     LaunchedEffect(c.id) {
-        snapshotFlow { list.isScrollInProgress }.drop(1).collect { scrolling -> if (!scrolling) latest = !list.canScrollForward }
+        snapshotFlow { list.isScrollInProgress }.drop(1).collect { scrolling ->
+            if (!scrolling && readerScrolling) { latest = !list.canScrollForward; readerScrolling = false }
+        }
     }
     LaunchedEffect(c.id) {
         snapshotFlow { list.layoutInfo.viewportSize }.drop(1).collect { if (latest && currentSize > 0) list.scrollToItem(currentSize - 1) }
@@ -349,16 +379,12 @@ fun Thread(
     // The oldest and newest times shown, to tell earlier history loaded at the top from new messages at the bottom by
     // when they were sent, not by how many more there are: a page of history counted as new ("↓ 36 new", the 0.7.7
     // walk), and a message replaced by the Mac's copy of it isn't one more.
-    var oldest by remember(c.id) { mutableStateOf(c.messages.firstOrNull()?.time ?: 0L) }
     var newest by remember(c.id) { mutableStateOf(c.messages.lastOrNull()?.time ?: 0L) }
     LaunchedEffect(size) {
-        val before = oldest
         val after = newest
-        oldest = c.messages.firstOrNull()?.time ?: 0L
         newest = c.messages.lastOrNull()?.time ?: 0L
         // Earlier history arrived above: the same messages stay in view where the owner is reading.
-        val prepended = if (before > 0) c.messages.count { it.time < before } else 0
-        if (prepended > 0) list.scrollToItem(list.firstVisibleItemIndex + prepended, list.firstVisibleItemScrollOffset)
+        // LazyColumn stable keys preserve the visible message during prepends. Do not also shift its index.
         // The first messages into an empty conversation: shown from the latest, nothing counted.
         if (after == 0L) {
             if (latest && size > 0) list.scrollToItem(size - 1)
@@ -379,7 +405,7 @@ fun Thread(
     // The draft, the quote and the place are kept as they change, and once more on leaving, so a closed app loses none.
     fun keep() {
         val place = if (latest) -1 to 0 else list.firstVisibleItemIndex to list.firstVisibleItemScrollOffset
-        Desk.update(c.id) { it.copy(draft = draft.text, quote = pending.quotes[c.id], index = place.first, offset = place.second, count = if (place.first >= 0) currentSize else 0) }
+        Desk.update(c.id) { it.copy(draft = draft.text, quote = pending.quotes[c.id], index = place.first, offset = place.second, count = if (place.first >= 0) currentSize else 0, anchor = if (place.first >= 0) currentMessages.getOrNull(place.first)?.renderKey else null) }
     }
     LaunchedEffect(c.id) {
         snapshotFlow { Triple(draft.text, pending.quotes[c.id], latest to (list.firstVisibleItemIndex to list.firstVisibleItemScrollOffset)) }
@@ -437,7 +463,7 @@ fun Thread(
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = pillRoom),
                 verticalArrangement = Arrangement.Bottom,
             ) {
-                itemsIndexed(c.messages) { i, m ->
+                itemsIndexed(c.messages, key = { _, m -> m.renderKey }) { i, m ->
                     val prev = c.messages.getOrNull(i - 1)
                     val next = c.messages.getOrNull(i + 1)
                     val first = prev == null || prev.sender != m.sender
@@ -458,6 +484,7 @@ fun Thread(
                             m,
                             tail = tail && j == parts.lastIndex && !bare,
                             bare = bare,
+                            flush = part is Part.Link && m.richLinks.any { it.url == Parts.openable(part.url) && it.state != "unavailable" && it.url !in m.hiddenLinks },
                             onReply = {
                                 pending.quotes[c.id] = quoteOf(m)
                                 m.id?.let { Messages.quoting[c.id] = it }
@@ -468,7 +495,7 @@ fun Thread(
                             modifier = Modifier.padding(top = if (first && j == 0) 8.dp else 2.dp, bottom = if (bare) 2.dp else 0.dp),
                         ) { ink ->
                             if (j == 0) m.quote?.let { QuoteInBalloon(it, ink) }
-                            PartContent(part, ink, m.files, onHold = { held = m })
+                            PartContent(part, ink, m.files, onHold = { held = m }, richLink = (part as? Part.Link)?.let { p -> m.richLinks.filter { it.url !in m.hiddenLinks }.firstOrNull { it.url == Parts.openable(p.url) } })
                         }
                     }
                     if (m.tapbacks.isNotEmpty()) Tapbacks(m)
@@ -480,6 +507,12 @@ fun Thread(
                             Modifier.fillMaxWidth().clickable(enabled = again) { Messages.retry(context, c.id, m) }.padding(top = 4.dp, end = 6.dp),
                             style = Pack.mono(Pack.size.small, Pack.accent).copy(textAlign = androidx.compose.ui.text.style.TextAlign.End),
                         )
+                    }
+                    if (m.fromMe && !m.failed && i == c.messages.indexOfLast { it.fromMe }) {
+                        m.delivery?.let { status ->
+                            BasicText(Pack.caption(status.label), Modifier.fillMaxWidth().heightIn(min = 16.dp).padding(top = 3.dp, end = 6.dp),
+                                style = Pack.mono(Pack.size.small, Pack.muted).copy(textAlign = androidx.compose.ui.text.style.TextAlign.End))
+                        }
                     }
                     // Once under a run of handed-off messages, not under each.
                     if (m.handedOff && next?.handedOff != true) {
@@ -540,6 +573,9 @@ fun Thread(
                 )
             }
         }
+        val names = typing.names(c.id, System.currentTimeMillis())
+        if (names.isNotEmpty()) BasicText(names.joinToString(", ") + if (names.size == 1) " is typing…" else " are typing…",
+            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp), style = Pack.body(Pack.size.body, Pack.muted))
         val photos = pending.photos[c.id].orEmpty()
         val notice by Messages.notice.collectAsState()
         // Said a few seconds, in this conversation only; the message that didn't go keeps its own "Not sent" line.
@@ -572,6 +608,7 @@ fun Thread(
         val quote = pending.quotes[c.id]
         // The first address in the words gets a preview tile, unless its tile was closed.
         val link = Parts.links(draft.text).firstOrNull { it !in pending.unlinked[c.id].orEmpty() }
+        LaunchedEffect(link) { delay(300); link?.let { MacLink.preview(Parts.openable(it)) } }
         SomaComposer(
             draft,
             // Voice messages go through the Mac only: OpenBubbles' share sheet can't send one as a voice message.
@@ -587,12 +624,13 @@ fun Thread(
             },
             onSend = { text ->
                 if (photos.isEmpty()) {
-                    if (Messages.send(context, c.id, text, quote) == Sent.NoReplyPath) {
+                    if (Messages.send(context, c.id, text, quote, pending.unlinked[c.id].orEmpty().map(Parts::openable).toSet()) == Sent.NoReplyPath) {
                         // Nothing went out: the words go back in the field, and the quote stays.
                         draft.text = text
                         stuck = true
                     } else {
                         pending.quotes.remove(c.id)
+                        pending.unlinked.remove(c.id)
                     }
                 } else if (Messages.linked && !Messages.samples.value) {
                     // Through the Mac, photos and words go out together, from here.
@@ -644,6 +682,7 @@ fun Thread(
                             link,
                             onDropPhoto = { uri -> pending.photos[c.id] = photos - uri },
                             onDropLink = { url -> pending.unlinked[c.id] = pending.unlinked[c.id].orEmpty() + url },
+                            metadata = link?.let { previews[Parts.openable(it)] },
                         )
                     }
                 },
@@ -742,10 +781,11 @@ private fun PartContent(
     ink: Color,
     files: List<String> = emptyList(),
     onHold: () -> Unit = {},
+    richLink: dev.omalauncher.messages.engine.RichLink? = null,
 ) {
     when (part) {
         is Part.Words -> BasicText(part.text, style = Pack.body(Pack.size.item, ink))
-        is Part.Link -> Card(part.host, part.path.ifEmpty { null }, "↗", ink)
+        is Part.Link -> if (richLink != null && richLink.state != "unavailable") RichLinkCard(richLink, ink) else Card(part.host, part.path.ifEmpty { null }, "↗", ink)
         is Part.Website -> Card(part.host.ifEmpty { "Website" }, part.title, "↗", ink)
         is Part.Attachment ->
             // From the Mac, pictures show as themselves; anything else, by its card.
@@ -1118,6 +1158,7 @@ private fun FieldTiles(
     link: String?,
     onDropPhoto: (Uri) -> Unit,
     onDropLink: (String) -> Unit,
+    metadata: dev.omalauncher.messages.engine.RichLink? = null,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         if (photos.isNotEmpty()) {
@@ -1127,9 +1168,9 @@ private fun FieldTiles(
             BasicText(if (Messages.linked) "Photos go out with the words" else "Photos open in OpenBubbles' chat, ready to send", Modifier.padding(start = 4.dp), style = Pack.body(Pack.size.small, Pack.muted))
         }
         if (link != null) {
-            Tile("Remove link preview", { onDropLink(link) }, wide = true) {
+            Tile("Remove link preview", { onDropLink(link) }, wide = true, tall = metadata?.imageAttachmentId != null) {
                 Box(Modifier.fillMaxSize().background(Pack.surface).padding(horizontal = 10.dp), contentAlignment = Alignment.CenterStart) {
-                    Card(Parts.host(link), Parts.path(link).ifEmpty { null }, "↗", Pack.foreground)
+                    if (metadata != null && metadata.state != "unavailable") RichLinkCard(metadata, Pack.foreground, compact = true) else Card(Parts.host(link), Parts.path(link).ifEmpty { null }, "↗", Pack.foreground)
                 }
             }
         }
@@ -1142,11 +1183,12 @@ private fun Tile(
     dropLabel: String,
     onDrop: () -> Unit,
     wide: Boolean = false,
+    tall: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val shape = composerShape(12.dp)
     Box(
-        (if (wide) Modifier.fillMaxWidth().height(60.dp) else Modifier.size(72.dp))
+        (if (wide) Modifier.fillMaxWidth().height(if (tall) 122.dp else 60.dp) else Modifier.size(72.dp))
             .clip(shape)
             .border(if (inked) 2.dp else 1.dp, Pack.border, shape),
     ) {
@@ -1293,6 +1335,7 @@ private fun Balloon(
     m: Message,
     tail: Boolean,
     bare: Boolean = false,
+    flush: Boolean = false,
     onReply: () -> Unit,
     onHold: () -> Unit,
     onTap: (() -> Unit)?,
@@ -1366,7 +1409,7 @@ private fun Balloon(
                             Modifier.clip(shape)
                                 .background(fill, shape)
                                 .then(if (!m.fromMe && inked) Modifier.border(2.dp, line, shape) else Modifier)
-                                .padding(horizontal = 13.dp, vertical = 8.dp)
+                                .padding(horizontal = if (flush) 0.dp else 13.dp, vertical = if (flush) 0.dp else 8.dp)
                         },
                     ),
             ) {

@@ -69,6 +69,52 @@ object MacLink {
 
     /** What the link is doing, for the screens: empty when all is well. */
     val trouble = MutableStateFlow("")
+    val typing = MutableStateFlow(TypingState())
+    private val presence = Executors.newSingleThreadExecutor()
+    val previews = MutableStateFlow<Map<String, RichLink>>(emptyMap())
+    private val previewIO = Executors.newFixedThreadPool(2)
+    private val previewAt = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private val previewRequests = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    @Volatile private var richLinksSupported = false
+
+    fun preview(url: String) {
+        val cached = previews.value[url]
+        val ttl = if (cached?.state == "ready") 86_400_000L else 300_000L
+        if (!richLinksSupported || (cached != null && System.currentTimeMillis() - (previewAt[url] ?: 0L) < ttl) || previewRequests.size >= 4 || !previewRequests.add(url)) return
+        val at = address ?: run { previewRequests.remove(url); return }
+        previewIO.execute {
+            try {
+                val data = post(at, "/v1/link-previews", JSONObject().put("url", url), timeout = 10_000)
+                val item = data.optJSONObject("preview")?.let { RichLink.read(it) }
+                if (item != null && address == at) synchronized(this) {
+                    previewAt[url] = System.currentTimeMillis()
+                    previews.value = previews.value.entries.toList().takeLast(127).associate { it.toPair() } + (url to item)
+                    previewAt.keys.retainAll(previews.value.keys)
+                }
+            } catch (_: Exception) { /* Plain URL remains usable; no send waits on metadata. */ }
+            finally { previewRequests.remove(url) }
+        }
+    }
+    @Volatile private var ownHandles: Set<String> = emptySet()
+    private fun normalized(handle: String) = handle.removePrefix("tel:").removePrefix("mailto:").lowercase()
+
+    @Synchronized fun expireTyping(now: Long = System.currentTimeMillis()) { typing.value = typing.value.expire(now) }
+    @Synchronized private fun takeTyping(o: JSONObject) {
+        val sender = o.optString("sender").takeUnless { o.isNull("sender") }.orEmpty()
+        if (normalized(sender) in ownHandles) return
+        val chat = o.optString("chatId").takeIf { it.isNotEmpty() } ?: return
+        typing.value = typing.value.event(chat, sender, o.optString("senderName").takeUnless { o.isNull("senderName") || it.isBlank() } ?: sender.ifEmpty { "Someone" }, o.optBoolean("on"), System.currentTimeMillis())
+    }
+    fun typing(chat: String, on: Boolean) {
+        val at = address ?: return
+        presence.execute { runCatching {
+            val c = open(at, "/v1/chats/${path(chat)}/typing", "POST", timeout = 3_000)
+            try { c.doOutput = true; c.setRequestProperty("Content-Type", "application/json")
+                c.outputStream.use { it.write(JSONObject().put("on", on).toString().toByteArray()) }
+                if (c.responseCode in 200..299) c.inputStream.close()
+            } finally { c.disconnect() }
+        } }
+    }
 
     private val io = Executors.newFixedThreadPool(2)
 
@@ -85,6 +131,7 @@ object MacLink {
         to: MacAddress,
     ) {
         app = context.applicationContext
+        if (address != to) { previews.value = emptyMap(); previewAt.clear(); richLinksSupported = false; ownHandles = emptySet(); typing.value = TypingState() }
         address = to
         if (running) return
         running = true
@@ -108,6 +155,7 @@ object MacLink {
                 wait = 2_000L
             } catch (e: Exception) {
                 Log.w(TAG, "mac link", e)
+                typing.value = TypingState()
                 trouble.value = "Can't reach your Mac (${at.host}). Trying again…"
             }
             Thread.sleep(wait)
@@ -123,7 +171,7 @@ object MacLink {
     ): HttpURLConnection =
         (URL(at.base + path).openConnection() as HttpURLConnection).apply {
             requestMethod = method
-            connectTimeout = 10_000
+            connectTimeout = minOf(10_000, timeout)
             readTimeout = timeout
             setRequestProperty("Authorization", "Bearer " + at.token)
             setRequestProperty("Accept", "application/json")
@@ -147,8 +195,9 @@ object MacLink {
         at: MacAddress,
         path: String,
         body: JSONObject = JSONObject(),
+        timeout: Int = 60_000,
     ): JSONObject {
-        val c = open(at, path, "POST", timeout = 60_000)
+        val c = open(at, path, "POST", timeout = timeout)
         try {
             c.doOutput = true
             c.setRequestProperty("Content-Type", "application/json")
@@ -182,13 +231,14 @@ object MacLink {
 
     private fun nameOf(handle: String): String? = app?.let { Names.of(it, handle) }
 
-    private fun messagesOf(m: MacWire.Msg): List<Message> {
+    private fun messagesOf(m: MacWire.Msg, page: List<MacWire.Msg> = emptyList()): List<Message> {
         val book = Messages.book.value[m.chatId]
         return MacWire.toMessages(
             m,
             nameOf = ::nameOf,
             quoteOf = { id ->
-                book?.messages?.lastOrNull { it.id == id || it.id == "$id#a" }?.let { q -> (if (q.fromMe) "You" else q.sender) + ": " + q.text.take(90) }
+                page.firstOrNull { it.id == id }?.let { q -> (if (q.fromMe) "You" else q.senderName ?: q.sender.orEmpty()) + ": " + q.text.take(90) }
+                    ?: book?.messages?.lastOrNull { it.id == id || it.id == "$id#a" }?.let { q -> (if (q.fromMe) "You" else q.sender) + ": " + q.text.take(90) }
             },
         )
     }
@@ -199,6 +249,12 @@ object MacLink {
 
     /** The chats, and the latest messages of the first few. */
     private fun sync(at: MacAddress) {
+        runCatching {
+            val health = JSONObject(get(at, "/v1/health"))
+            richLinksSupported = health.optJSONObject("capabilities")?.optBoolean("richLinks") == true
+            val handles = health.optJSONObject("account")?.optJSONArray("handles")
+            ownHandles = if (handles == null) emptySet() else (0 until handles.length()).map { normalized(handles.optString(it)) }.toSet()
+        }
         val chats = MacWire.chats(get(at, "/v1/chats?limit=50"))
         chats.forEach(::take)
         chats.take(PRIMED).forEach { c -> history(at, c.id) }
@@ -211,7 +267,7 @@ object MacLink {
     ) {
         val ms = MacWire.messages(get(at, "/v1/chats/${path(id)}/messages?limit=50"))
         // Oldest first, so a reply finds the message it quotes.
-        ms.forEach { Messages.fromMac(id, null, null, messagesOf(it), unread = null, counting = false) }
+        Messages.fromMac(id, null, null, ms.flatMap { messagesOf(it, ms) }, unread = null, counting = false)
     }
 
     /** A page of [chat]'s history before [before]; [done] says whether there was any it didn't have. */
@@ -226,8 +282,8 @@ object MacLink {
                 runCatching {
                     val had = Messages.book.value[chat]?.messages?.size ?: 0
                     // Oldest first, as history is, so a reply finds the message it quotes. A failed fetch counts as more to come.
-                    MacWire.messages(get(at, "/v1/chats/${path(chat)}/messages?limit=50&before=$before"))
-                        .forEach { Messages.fromMac(chat, null, null, messagesOf(it), unread = null, counting = false) }
+                    val page = MacWire.messages(get(at, "/v1/chats/${path(chat)}/messages?limit=50&before=$before"))
+                    Messages.fromMac(chat, null, null, page.flatMap { messagesOf(it, page) }, unread = null, counting = false)
                     (Messages.book.value[chat]?.messages?.size ?: 0) > had
                 }.onFailure { Log.w(TAG, "earlier", it) }.getOrDefault(true)
             done(more)
@@ -259,8 +315,10 @@ object MacLink {
         e: MacWire.Event,
     ) {
         when (e.type) {
+            "typing" -> takeTyping(JSONObject(e.data))
             "message.new", "message.updated" -> {
                 val m = MacWire.msg(JSONObject(e.data))
+                if (!m.fromMe) { synchronized(this) { typing.value = typing.value.copy(people = typing.value.people.filterNot { it.chat == m.chatId && (m.sender == null || normalized(it.sender) == normalized(m.sender)) }) } }
                 val known = Messages.book.value[m.chatId] != null
                 if (m.unsent) {
                     Messages.removed(m.chatId, listOf(m.id))
@@ -289,6 +347,7 @@ object MacLink {
         text: String,
         replyTo: String?,
         clientId: String,
+        onAccepted: () -> Unit = {},
         onFail: (String) -> Unit,
     ) {
         val at = address ?: return onFail("Not linked to a Mac.")
@@ -297,6 +356,7 @@ object MacLink {
                 val body = JSONObject().put("text", text).put("clientId", clientId)
                 replyTo?.let { body.put("replyTo", it) }
                 post(at, "/v1/chats/${path(chat)}/messages", body)
+                onAccepted()
             }.onFailure {
                 Log.w(TAG, "sending", it)
                 onFail(reason(at, it))
@@ -310,6 +370,7 @@ object MacLink {
         chat: String,
         photo: Uri,
         clientId: String,
+        onAccepted: () -> Unit = {},
         onFail: (String) -> Unit,
     ) {
         val at = address ?: return onFail("Not linked to a Mac.")
@@ -332,6 +393,7 @@ object MacLink {
                     }
                     if (c.responseCode !in 200..299) throw IllegalStateException(error(c))
                     answer(c)
+                    onAccepted()
                 } finally {
                     c.disconnect()
                 }
@@ -351,6 +413,7 @@ object MacLink {
         chat: String,
         caf: java.io.File,
         clientId: String,
+        onAccepted: () -> Unit = {},
         onFail: (String) -> Unit,
     ) {
         val at = address ?: return onFail("Not linked to a Mac.")
@@ -371,6 +434,7 @@ object MacLink {
                     }
                     if (c.responseCode !in 200..299) throw IllegalStateException(error(c))
                     answer(c)
+                    onAccepted()
                 } finally {
                     c.disconnect()
                 }

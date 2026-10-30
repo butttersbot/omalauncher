@@ -423,7 +423,10 @@ private fun SharedCard(
             .padding(horizontal = 12.dp, vertical = 10.dp),
     ) {
         when (val p = s.part) {
-            is Part.Link -> Card(p.host, p.path.ifEmpty { null }, "↗", Pack.foreground)
+            is Part.Link -> {
+                val metadata = s.richLinks.firstOrNull { it.url == Parts.openable(p.url) }
+                if (metadata != null && metadata.state != "unavailable") RichLinkCard(metadata, Pack.foreground) else Card(p.host, p.path.ifEmpty { null }, "↗", Pack.foreground)
+            }
             is Part.Website -> Card(p.host.ifEmpty { "Website" }, p.title, "↗", Pack.foreground)
             is Part.Attachment -> Card(p.summary, if (!Messages.linked) "Open in OpenBubbles" else if (p.kind == "Video") "Tap to play" else if (p.kind == "Photo" || p.kind == "GIF") "Tap to view" else null, if (p.kind == "Video") "▶" else "▣", Pack.foreground)
             is Part.Words -> {}

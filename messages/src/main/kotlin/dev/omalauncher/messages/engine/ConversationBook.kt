@@ -27,8 +27,14 @@ data class Message(
     val tapbacks: List<String> = emptyList(),
     /** The phone's id for one sent from here, as the Mac echoes it back: matches the waiting "c:" message. Not kept. */
     val clientId: String? = null,
+    /** Stable across a local send becoming its server echo and later updates. */
+    val uiKey: String? = null,
+    val delivery: Delivery? = null,
+    val richLinks: List<RichLink> = emptyList(),
+    val hiddenLinks: Set<String> = emptySet(),
 ) {
     val fromMe get() = sender.isEmpty()
+    val renderKey get() = uiKey ?: id ?: "legacy:$time:$sender:$text"
 }
 
 /** A conversation: what OpenBubbles has shown of it since Soma Messages started listening. */
@@ -160,7 +166,7 @@ class ConversationBook(
         for (m in incoming) {
             val at = messages.indexOfFirst { it.id == m.id }
             if (at >= 0) {
-                messages[at] = m.copy(quote = m.quote ?: messages[at].quote)
+                messages[at] = m.copy(quote = m.quote ?: messages[at].quote, uiKey = messages[at].uiKey, hiddenLinks = messages[at].hiddenLinks, delivery = messages[at].delivery?.keeping(m.delivery) ?: m.delivery, richLinks = m.richLinks.ifEmpty { messages[at].richLinks.filter { it.url in Parts.links(m.text).map(Parts::openable) } })
                 continue
             }
             // The Mac's copy of one sent from here: by the client id it echoes, else by the same words close in time.
@@ -174,7 +180,7 @@ class ConversationBook(
                     -1
                 }
             if (echo >= 0) {
-                messages[echo] = m.copy(quote = m.quote ?: messages[echo].quote)
+                messages[echo] = m.copy(quote = m.quote ?: messages[echo].quote, uiKey = messages[echo].renderKey, hiddenLinks = messages[echo].hiddenLinks, delivery = m.delivery ?: messages[echo].delivery, richLinks = m.richLinks.ifEmpty { messages[echo].richLinks.filter { it.url in Parts.links(m.text).map(Parts::openable) } })
                 continue
             }
             messages += m
@@ -216,12 +222,21 @@ class ConversationBook(
         text: String,
         time: Long,
         quote: String? = null,
+        richLinks: List<RichLink> = emptyList(),
+        hiddenLinks: Set<String> = emptySet(),
     ): ConversationBook {
         val old = byId[id] ?: return this
-        return ConversationBook(byId + (id to old.copy(messages = old.messages + Message(text, time, "", sentHere = true, quote = quote, id = "c:$clientId"))))
+        return ConversationBook(byId + (id to old.copy(messages = old.messages + Message(text, time, "", sentHere = true, quote = quote, id = "c:$clientId", delivery = Delivery.Sending, richLinks = richLinks, hiddenLinks = hiddenLinks))))
     }
 
     /** Message [messageId] in [id] stands for [files] (a photo picked here, until the Mac shows it back). */
+    fun accepted(id: String, clientId: String): ConversationBook {
+        val old = byId[id] ?: return this
+        return ConversationBook(byId + (id to old.copy(messages = old.messages.map { m ->
+            if (m.renderKey == "c:$clientId" && m.delivery == Delivery.Sending) m.copy(delivery = Delivery.Sent) else m
+        })))
+    }
+
     fun withFiles(
         id: String,
         messageId: String,
@@ -278,6 +293,10 @@ class ConversationBook(
                                 JSONArray(
                                     c.messages.map { m ->
                                         JSONObject().put("text", m.text).put("time", m.time).put("sender", m.sender).put("here", m.sentHere).apply {
+                                            m.uiKey?.let { put("uiKey", it) }
+                                            m.delivery?.let { put("delivery", it.name) }
+                                            if (m.hiddenLinks.isNotEmpty()) put("hiddenLinks", JSONArray(m.hiddenLinks.toList()))
+                                            if (m.richLinks.isNotEmpty()) put("richLinks", JSONArray(m.richLinks.map { it.json() }))
                                             m.quote?.let { put("quote", it) }
                                             if (m.handedOff) put("off", true)
                                             m.id?.let { put("id", it) }
@@ -330,6 +349,10 @@ class ConversationBook(
                                 m.optBoolean("failed"),
                                 m.optJSONArray("files")?.let { f -> (0 until f.length()).map { f.getString(it) } }.orEmpty(),
                                 m.optJSONArray("tapbacks")?.let { f -> (0 until f.length()).map { f.getString(it) } }.orEmpty(),
+                                uiKey = m.optString("uiKey").ifEmpty { null },
+                                delivery = runCatching { Delivery.valueOf(m.optString("delivery")) }.getOrNull(),
+                                richLinks = RichLink.read(m.optJSONArray("richLinks")),
+                                hiddenLinks = m.optJSONArray("hiddenLinks")?.let { a -> (0 until a.length()).map { a.optString(it) }.toSet() }.orEmpty(),
                             )
                         }
                     val id = c.getString("id")

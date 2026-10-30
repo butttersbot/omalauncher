@@ -96,6 +96,7 @@ data class Shared(
     val time: Long,
     /** The Mac's attachments it stands for, "id|mime" ([Message.files]), to open them from the table. */
     val files: List<String> = emptyList(),
+    val richLinks: List<RichLink> = emptyList(),
 ) {
     /** The same thing shared twice in a chat shows once: links by address, others by message. */
     val key get() = conversation + "|" + ((part as? Part.Link)?.url?.let(Parts::openable) ?: "$time/$part")
@@ -106,7 +107,7 @@ fun shared(vararg conversations: Conversation): List<Shared> =
     conversations
         .flatMap { c ->
             c.messages.flatMap { m ->
-                Parts.of(m.text).filter { it !is Part.Words }.map { Shared(it, c.id, c.title, if (m.fromMe) "You" else m.sender.ifEmpty { c.title }, m.time, if (it is Part.Attachment) m.files else emptyList()) }
+                Parts.of(m.text).filter { it !is Part.Words }.map { Shared(it, c.id, c.title, if (m.fromMe) "You" else m.sender.ifEmpty { c.title }, m.time, if (it is Part.Attachment) m.files else emptyList(), m.richLinks.filter { r -> r.url !in m.hiddenLinks }) }
             }
         }.sortedByDescending { it.time }
         .distinctBy { it.key }
