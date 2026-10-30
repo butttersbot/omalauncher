@@ -46,11 +46,16 @@ fold_bars() {
 case "${1:-}" in
   start)
     if A get-state >/dev/null 2>&1; then echo "already running"; exit 0; fi
-    extra=(); [ "${2:-}" = --headless ] && extra=(-no-window)
+    extra=(); [ "${2:-}" = --headless ] && extra=(-no-window -no-audio)
+    # In a session of its own, tied to nothing that started it: from a non-tty nohup dies ("can't detach from console",
+    # so every build after a reboot said "Walks: not run"), and an emulator left in an agent's session ends with that
+    # session's task (2026-10-30). It runs until oma-emu stop or a reboot.
     # -writable-system keeps the Fold-match overlays in /product/overlay (tools/fold-development/fold8-overlay).
-    nohup "$ANDROID_HOME/emulator/emulator" -avd "$AVD" -port "$PORT" -writable-system -no-snapshot-save -no-boot-anim ${extra[@]+"${extra[@]}"} \
-      > "$HOME/.android/avd/$AVD-emulator.log" 2>&1 &
-    emu=$!
+    emu=$(python3 -I -c '
+import subprocess, sys
+log = open(sys.argv[1], "wb")
+print(subprocess.Popen(sys.argv[2:], stdin=subprocess.DEVNULL, stdout=log, stderr=log, start_new_session=True).pid)
+' "$HOME/.android/avd/$AVD-emulator.log" "$ANDROID_HOME/emulator/emulator" -avd "$AVD" -port "$PORT" -writable-system -no-snapshot-save -no-boot-anim ${extra[@]+"${extra[@]}"})
     # Never wait on an emulator that has died (no such AVD, 2026-10-26 on the MacBook): that held the walks lock forever.
     for i in $(seq 1 150); do
       [ "$(A shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ] && break
