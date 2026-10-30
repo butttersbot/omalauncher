@@ -26,7 +26,8 @@ MAX_PAYLOAD = 2048
 MAX_KEYS = 8
 KEEP_RECORDS = 200
 LAUNCHCTL = '/bin/launchctl'
-PRIVILEGED_HELPER = pathlib.Path('/var/run/soma-control/broker.sock')  # the root control broker (install-control-broker.sh, Boss, by hand)
+PRIVILEGED_HELPER = pathlib.Path('/Library/PrivilegedHelperTools/soma-service-helper')  # install-service-helper.sh, Boss, by hand
+SUDO = '/usr/bin/sudo'
 
 
 def now_ms():
@@ -516,12 +517,29 @@ class LiveBackend:
         if r.returncode != 0:
             raise RuntimeError(f'launchctl kickstart exited {r.returncode}: {stderr_tail(r.stderr, 300)}')
 
-    def privileged(self, service, proof):
-        # The independent root broker is not approved or installed in this checkout.
-        raise Blocked('owner_verified_control_broker_unavailable')
+    def privileged(self, service, proof, run=subprocess.run):
+        # The helper checks the owner's signature itself and takes the proof on stdin only, so it's in no argv or log.
+        if not helper_installed():
+            raise Blocked('privileged_helper_missing')
+        r = run([SUDO, '-n', str(PRIVILEGED_HELPER)], input=json.dumps(proof), capture_output=True, text=True, timeout=30, check=False)
+        if r.returncode == 0:
+            return
+        if r.returncode == 65:
+            raise Blocked('privileged_helper_refused:' + stderr_tail(r.stderr, 80).removeprefix('refused: ').strip())
+        if 'password' in r.stderr:  # sudo's own refusal: its rule isn't there, and nothing ran
+            raise Blocked('privileged_helper_missing')
+        raise RuntimeError('the root helper exited %d: %s' % (r.returncode, stderr_tail(r.stderr, 200)))
 
     def exit_for_relaunch(self):
         os._exit(75)
+
+
+def helper_installed(lstat=os.lstat):
+    """The helper is there and only root could have put it there. Whether sudo lets this user run it shows when it is asked."""
+    with contextlib.suppress(OSError):
+        info = lstat(PRIVILEGED_HELPER)
+        return stat.S_ISREG(info.st_mode) and info.st_uid == 0 and not info.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
+    return False
 
 
 class MockBackend:
@@ -1240,7 +1258,7 @@ class Controller:
             blocked = None
             if not installed(service):
                 blocked = 'not_installed'
-            elif mode == 'privileged':
+            elif mode == 'privileged' and not helper_installed():
                 blocked = 'owner_verified_control_broker_unavailable'
             elif not verifiable(service):
                 blocked = 'incomplete_capability_proof' if MISSING_EVIDENCE.get(service) else 'no_capability_probe'

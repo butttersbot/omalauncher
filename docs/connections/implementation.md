@@ -197,3 +197,6 @@ Local full runner suite at 6f784cbd stopped before the service HTTP cases: test-
 
 ### Tonight’s bundle freeze (Phone A 20261029-005717)
 Connections is frozen for the combined launcher bundle. Privileged helper execution and installation remain disabled in code. No root broker is imported/deployed; owner credential verification is deferred, and absent live provider/Canvas proof must remain UNVERIFIED. Do not request credential-reading permissions for tonight. The desktop addable-module expectation now includes Connections, matching the shared ModuleKind catalog. Full app/chat/desktop suites are required for this checkpoint; subsequent enhancements belong to the next build. No install from builder B.
+
+### Root helper (2026-10-30)
+Fixes the blocker above: `install-service-helper.sh` installs the owner-verifying `soma-service-helper` behind a sudo rule that allows it with no arguments, and `LiveBackend.privileged` calls it with the owner's proof on stdin. The helper checks the signature, host, expiry and one use itself, so the sudo rule gives the runner's user nothing without the owner's signature. Boss installs it, with his password; no agent does. The same script installs the owner's public key, which every Restore on a Mac needs (`trust` alone on a Mac with no system services).
