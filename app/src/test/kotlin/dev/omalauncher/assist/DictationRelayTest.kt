@@ -65,6 +65,13 @@ class DictationRelayTest {
         assertTrue(relayText(base, "x".repeat(RELAY_MAX_CHARS)) is RelayOutcome.Typed)
     }
 
+    /** Reaching it must not depend on a name resolving: from this phone's Linux, "omarchy-mg1" didn't (2026-10-30). */
+    @Test fun aDeviceIsReachedByAddressNotByName() {
+        for (target in RelayTargets.all.filter { it.base != null }) {
+            assertTrue(target.base, Regex("""http://\d+\.\d+\.\d+\.\d+:\d+""").matches(target.base!!))
+        }
+    }
+
     @Test fun theAgentIsFirstAndTheDefault() {
         assertEquals(RelayTargets.Agent, RelayTargets.all.first())
         assertEquals(RelayTargets.Agent, RelayTargets.named(null))

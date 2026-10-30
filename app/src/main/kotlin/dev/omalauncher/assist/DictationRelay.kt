@@ -16,7 +16,10 @@ data class RelayTarget(val id: String, val label: String, val base: String?)
 
 object RelayTargets {
     val Agent = RelayTarget("agent", "Phone agent", null)
-    val Mg1 = RelayTarget("mg1", "MG1", "http://omarchy-mg1:8481")
+
+    // Its Tailscale address, as mac-runner-mg1.json has it: the receiver listens only there, and the name
+    // doesn't resolve everywhere on this phone (Linux's DNS doesn't know it, 2026-10-30).
+    val Mg1 = RelayTarget("mg1", "MG1", "http://100.77.138.16:8481")
 
     /** The short list, the agent first. */
     val all = listOf(Agent, Mg1)
