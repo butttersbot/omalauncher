@@ -1,0 +1,142 @@
+#!/usr/bin/env python3
+"""oma-offer: put a build in Soma's update pill on this phone (cards soma-chat/Updates; Boss, 2026-10-29).
+
+    oma-offer APK --walks DIR [--notes "plain words" ...] [--commit COMMIT] [--design REPORT.json]
+    oma-offer --list
+
+Offered only when all of it holds, and refused otherwise (nothing is written):
+  - the APK is Soma (dev.omalauncher.boss), Hunch, Soma Notes or Soma Messages, signed with this phone's working key;
+  - its walks PASSed: DIR (or a .zip) holds the walk folders' results.json (or verdicts.txt); one FAIL refuses it;
+  - the design gate shows no unwaived drift (design_gate.py gate: the report beside the walks, or the lane's in ~/Inbox).
+UNAPPROVED and UNCHECKED cards don't refuse it: the sheet says so in its design line.
+Nothing is installed here. Soma itself waits for Boss's tap; the other apps update by themselves once they're closed.
+"""
+import hashlib, json, pathlib, re, shutil, subprocess, sys, tempfile, time, zipfile
+
+TOOLS = pathlib.Path('/opt/android-sdk/build-tools/36.0.0')
+CFG = pathlib.Path('/root/.config/oma-development')
+OFFERS = pathlib.Path('/root/.cache/oma-update/offers')
+REPO = pathlib.Path('/root/Projects/omalauncher')
+NAMES = {'dev.omalauncher.boss': 'Soma', 'dev.omalauncher.hunch': 'Hunch', 'dev.omalauncher.notes': 'Soma Notes',
+         'dev.omalauncher.messages': 'Soma Messages'}
+
+
+def walk_verdicts(root):
+    """{walk: (passed, failed)} for each walk folder under ROOT, from results.json, else verdicts.txt."""
+    root = pathlib.Path(root)
+    out = {}
+    for results in sorted(root.rglob('results.json')):
+        try:
+            data = json.loads(results.read_text())
+        except (OSError, ValueError):
+            continue
+        steps = data['steps'] if isinstance(data, dict) else data
+        status = [str(s.get('result') or s.get('status') or '') for s in steps if isinstance(s, dict)]
+        out[results.parent.name] = (status.count('PASS'), status.count('FAIL'))
+    for v in root.rglob('verdicts.txt'):
+        for line in v.read_text().splitlines():
+            parts = line.split()
+            if len(parts) >= 2 and parts[0] not in out:
+                out[parts[0]] = (1, 0) if parts[1] == 'PASS' else (0, 1)
+    return out
+
+
+def phone_steps(root):
+    """The [phone] steps the walks left for after the install: what Soma lists once it has updated."""
+    steps = []
+    for results in sorted(pathlib.Path(root).rglob('results.json')):
+        try:
+            data = json.loads(results.read_text())
+        except (OSError, ValueError):
+            continue
+        for s in (data['steps'] if isinstance(data, dict) else data):
+            if isinstance(s, dict) and str(s.get('result') or s.get('status')) == 'after promotion':
+                steps.append(str(s.get('text') or '').removeprefix('[phone]').strip()[:400])
+    return [s for s in steps if s]
+
+
+def design_line(report):
+    """The sheet's design line from a design report: counts only; drift is never offered at all."""
+    if not report:
+        return {'checked': False, 'match': 0, 'unapproved': 0, 'unchecked': 0}
+    cards = report.get('cards', [])
+    unappr = sum(1 for c in cards if c.get('result') == 'no-approved' and not c.get('waived'))
+    unchecked = sum(1 for c in cards if c.get('result') == 'error')
+    match = len(cards) - unappr - unchecked
+    return {'checked': bool(cards), 'match': match, 'unapproved': unappr, 'unchecked': unchecked}
+
+
+def refuse_reason(package, cert, expected, verdicts, gate_code):
+    if package not in NAMES:
+        return f'{package} is not Soma, Hunch, Soma Notes or Soma Messages.'
+    if cert != expected:
+        return 'not signed with this phone\'s working key.'
+    if not verdicts:
+        return 'no walk results with it: an update is offered only after its walks PASS.'
+    failed = sorted(w for w, (p, f) in verdicts.items() if f or not p)
+    if failed:
+        return 'walks did not all PASS: ' + ', '.join(failed) + '.'
+    if gate_code == 3:
+        return 'DESIGN FAIL: walked cards differ from Approved (above). Build them as Approved, or Boss waives it.'
+    return None
+
+
+def main(argv):
+    if argv[:1] == ['--list']:
+        for f in sorted(OFFERS.glob('*.json')):
+            o = json.loads(f.read_text())
+            print(f"{o['name']} {o.get('versionName')} ({o['versionCode']}), walks {o['walks']['passed']}/{o['walks']['total']}")
+        return 0
+    if not argv or argv[0].startswith('-') or '--walks' not in argv:
+        sys.exit(__doc__)
+    apk = pathlib.Path(argv[0]).resolve()
+    walks = pathlib.Path(argv[argv.index('--walks') + 1]).resolve()
+    notes = [argv[i + 1] for i, a in enumerate(argv) if a == '--notes' and i + 1 < len(argv)]
+    commit = argv[argv.index('--commit') + 1] if '--commit' in argv else ''
+    design_path = argv[argv.index('--design') + 1] if '--design' in argv else None
+    tmp = None
+    if walks.suffix == '.zip':
+        tmp = tempfile.mkdtemp()
+        with zipfile.ZipFile(walks) as z:
+            z.extractall(tmp)
+        walks = pathlib.Path(tmp)
+    badging = subprocess.run([str(TOOLS / 'aapt2'), 'dump', 'badging', str(apk)], capture_output=True, text=True).stdout
+    m = re.search(r"package: name='([^']+)' versionCode='(\d+)' versionName='([^']*)'", badging)
+    if not m:
+        sys.exit('Not offered: Android can\'t read that APK.')
+    package, code, name = m.group(1), int(m.group(2)), m.group(3)
+    certs = subprocess.run([str(TOOLS / 'apksigner'), 'verify', '--print-certs', str(apk)], capture_output=True, text=True).stdout
+    c = re.search(r'Signer #1 certificate SHA-256 digest: ([0-9a-f]+)', certs)
+    verdicts = walk_verdicts(walks)
+    report_file = design_path or next((str(p) for p in walks.rglob('design-report.json')), None)
+    if not report_file and package == 'dev.omalauncher.boss' and commit:
+        found = sorted(pathlib.Path('/root/Inbox').glob(f'design-{commit[:9]}-{code}*.json'), key=lambda p: p.stat().st_mtime)
+        report_file = str(found[-1]) if found else None
+    gate = REPO / 'tools/walkthrough/design_gate.py'
+    gate_code = subprocess.run([sys.executable, '-I', str(gate), 'gate', report_file] + (['--build', commit] if commit else [])).returncode \
+        if report_file and gate.is_file() else 0
+    why = refuse_reason(package, c.group(1) if c else None, (CFG / 'working-cert.sha256').read_text().strip(), verdicts, gate_code)
+    if why:
+        sys.exit('Not offered: ' + why)
+    report = json.loads(pathlib.Path(report_file).read_text()) if report_file else None
+    OFFERS.mkdir(parents=True, exist_ok=True)
+    for old in OFFERS.glob(package + '-*.apk'):
+        old.unlink()
+    target = OFFERS / f'{package}-{code}.apk'
+    shutil.copyfile(apk, target)
+    offer = {'package': package, 'name': NAMES[package], 'versionCode': code, 'versionName': name, 'commit': commit,
+             'built': time.strftime('%b %-d, %H:%M'), 'notes': notes,
+             'walks': {'passed': len(verdicts), 'total': len(verdicts)}, 'design': design_line(report),
+             'phoneSteps': phone_steps(walks), 'apk': target.name,
+             'sha256': hashlib.sha256(target.read_bytes()).hexdigest()}
+    (OFFERS / (package + '.json.tmp')).write_text(json.dumps(offer, indent=1))
+    (OFFERS / (package + '.json.tmp')).rename(OFFERS / (package + '.json'))
+    if tmp:
+        shutil.rmtree(tmp, ignore_errors=True)
+    how = 'waits for Boss\'s tap on the pill' if package == 'dev.omalauncher.boss' else 'updates by itself once it is closed'
+    print(f"Offered {NAMES[package]} {name} ({code}): walks {len(verdicts)}/{len(verdicts)} pass; {how}.")
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv[1:]))

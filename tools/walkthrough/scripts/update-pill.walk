@@ -1,0 +1,85 @@
+# Update pill on the phone, built to the approved cards soma-chat/Updates (Boss approved all six, 2026-10-29).
+# canvas-app: soma-chat
+# Isolated fictional offers in the preview app (UpdatesPreview): nothing installs, a tap only moves the fixture on.
+# Look at each shot against its card: red pill before [ artifacts · N ]; the sheet's Soma panel with its checks line
+# (green signed/walks, accent design line), the app that couldn't update by itself, the "Updated by themselves"
+# history; on the cover everything that needs a tap on the first screen. The states card is a catalog of four states:
+# the four state shots are looked at against it by eye (one real screen shows one state at a time).
+fold folded
+shell am force-stop dev.omalauncher.artifactpreview
+shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es updates offer
+expect Updates · 2
+expect artifacts
+shot update-pill-cover card=soma-update-pill-cover
+tap Updates · 2
+expect What changed
+expect update and restart Soma
+expect taken and signed for this phone
+expect not approved yet
+expect didn’t update by itself: Android asked for a confirmation
+expect update Soma Messages
+absent update Hunch
+shot update-sheet-cover card=soma-update-sheet-cover
+scrollto Updated by themselves
+expect Hunch 0.7.2 → 0.7.3
+expect Soma updates only when you tap
+clearlog
+tap update Soma Messages
+log fixture update tap dev.omalauncher.messages
+absent update Soma Messages
+clearlog
+tap update and restart Soma
+log fixture update tap dev.omalauncher.boss
+expect Waits for Phone B
+shot update-state-waiting-cover
+tap cancel
+log fixture update cancel
+expect update and restart Soma
+key BACK
+absent What changed
+expect Update Soma · 176
+shell am force-stop dev.omalauncher.artifactpreview
+shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es updates updating
+tap updating
+expect Android restarts Soma
+expect check the signature and version
+shot update-state-updating-cover
+key BACK
+shell am force-stop dev.omalauncher.artifactpreview
+shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es updates updated
+tap updated
+expect Soma 176 is running. 6 phone checks wait for us
+shot update-state-updated-cover
+tap later
+absent What changed
+absent updated
+shell am force-stop dev.omalauncher.artifactpreview
+shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es updates failed
+tap didn't update
+expect Kept 175: Android refused the package
+expect try again
+expect copy details for an agent
+shot update-state-failed-cover
+key BACK
+fold unfolded
+shell am force-stop dev.omalauncher.artifactpreview
+shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es updates offer
+expect Updates · 2
+shot update-pill-unfolded card=soma-update-pill-unfolded
+tap Updates · 2
+expect What changed
+expect update and restart Soma
+expect update Soma Messages
+expect Updated by themselves
+shot update-sheet-unfolded card=soma-update-sheet-unfolded
+key BACK
+shell am force-stop dev.omalauncher.artifactpreview
+shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es updates waiting
+tap waiting
+expect Waits for Phone B
+shot update-state-waiting-unfolded
+key BACK
+[phone] After the next bundle is installed: an offer written by oma-offer for a real Hunch, Soma Notes or Soma Messages build updates by itself only while that app is closed (open it first: nothing happens until it is closed), lands in "Updated by themselves", and the app opens at the new version.
+[phone] Say whether the silent PackageInstaller session still brings Play Protect's "install without scanning" prompt; if it does, the app must wait in the pill with that reason, never install behind it. Nothing in Soma touches Play Protect.
+[phone] Soma's own offer: with an agent mid-turn, [ update and restart Soma ] shows Waiting with that agent's name; once idle it updates in place (Linux, logins, settings kept) and reopens on "Soma N is running" with the phone-check count; ~/.cache/oma-update/updated.json lists them.
+[phone] A failed install (e.g. an APK not signed with this phone's key) keeps the old version and shows Didn't update with the reason and [ try again ].

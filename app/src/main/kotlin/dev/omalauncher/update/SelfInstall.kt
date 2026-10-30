@@ -26,8 +26,11 @@ import java.security.MessageDigest
  */
 object SelfInstall {
     const val ACTION = "dev.omalauncher.update.INSTALLED"
-    /** The other Soma apps, signed with Oma's own key: Soma Messages, and Soma Notes (Boss, 2026-10-24). */
-    private val SOMA_APPS = setOf("dev.omalauncher.messages", "dev.omalauncher.notes")
+    /** The other Soma apps, signed with Oma's own key: Soma Messages, Soma Notes (Boss, 2026-10-24) and Hunch (2026-10-29). */
+    private val SOMA_APPS = setOf("dev.omalauncher.messages", "dev.omalauncher.notes", "dev.omalauncher.hunch")
+    private const val EXTRA_AUTO = "dev.omalauncher.update.AUTO"
+    /** Told each session's outcome (the update pill, [PhoneUpdater]): package, installed / needs-confirmation / failed, message. */
+    @Volatile var listener: ((String, String, String?) -> Unit)? = null
 
     fun stateFile(context: Context) = File(context.filesDir, "arch/root/.cache/oma-update/state.json")
 
@@ -57,11 +60,14 @@ object SelfInstall {
     fun install(
         context: Context,
         apk: File,
+        /** By itself, from the update pill's background path: Android's confirmation is never shown, and nothing is opened. */
+        auto: Boolean = false,
     ): JSONObject {
         val pm = context.packageManager
         val fail = { why: String -> JSONObject().put("ok", false).put("error", why) }
         if (!apk.isFile) return fail("No APK at that path.")
         if (!pm.canRequestPackageInstalls()) {
+            if (auto) return fail("Soma may not install apps yet (Android's “Allow from this source” is off)")
             // His to allow, once: Android's own page for it is opened, nothing is switched here.
             runCatching {
                 context.startActivity(
@@ -90,7 +96,7 @@ object SelfInstall {
             installer.openSession(id).use { session ->
                 session.openWrite("base.apk", 0, apk.length()).use { out -> apk.inputStream().use { it.copyTo(out) }; session.fsync(out) }
                 write(context, JSONObject().put("package", pkg).put("version", version(archive)).put("status", "committed").put("session", id))
-                val done = Intent(context, SelfInstallReceiver::class.java).setAction(ACTION)
+                val done = Intent(context, SelfInstallReceiver::class.java).setAction(ACTION).putExtra(EXTRA_AUTO, auto).putExtra(PackageInstaller.EXTRA_PACKAGE_NAME, pkg)
                 val pending = PendingIntent.getBroadcast(context, id, done, PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0))
                 session.commit(pending.intentSender)
             }
@@ -117,15 +123,28 @@ object SelfInstall {
     ) {
         val s = state(context) ?: JSONObject()
         when (val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)) {
-            PackageInstaller.STATUS_PENDING_USER_ACTION -> {
+            PackageInstaller.STATUS_PENDING_USER_ACTION -> if (intent.getBooleanExtra(EXTRA_AUTO, false)) {
+                // A background update never puts Android's question in front of him: it waits in the pill instead.
+                val id = intent.getIntExtra(PackageInstaller.EXTRA_SESSION_ID, -1)
+                if (id >= 0) runCatching { context.packageManager.packageInstaller.abandonSession(id) }
+                write(context, s.put("status", "failed").put("message", "Android asked for a confirmation"))
+                listener?.invoke(intent.getStringExtra(PackageInstaller.EXTRA_PACKAGE_NAME).orEmpty(), "needs-confirmation", null)
+            } else {
                 // The first time (Oma did not install what is there), Android asks Boss himself.
                 @Suppress("DEPRECATION")
                 val ask = if (Build.VERSION.SDK_INT >= 33) intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java) else intent.getParcelableExtra(Intent.EXTRA_INTENT)
                 ask?.let { runCatching { context.startActivity(it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } }
                 write(context, s.put("status", "confirming"))
             }
-            PackageInstaller.STATUS_SUCCESS -> write(context, s.put("status", "installed"))
-            else -> write(context, s.put("status", "failed").put("code", status).put("message", intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)))
+            PackageInstaller.STATUS_SUCCESS -> {
+                write(context, s.put("status", "installed"))
+                listener?.invoke(intent.getStringExtra(PackageInstaller.EXTRA_PACKAGE_NAME).orEmpty(), "installed", null)
+            }
+            else -> {
+                val message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
+                write(context, s.put("status", "failed").put("code", status).put("message", message))
+                listener?.invoke(intent.getStringExtra(PackageInstaller.EXTRA_PACKAGE_NAME).orEmpty(), "failed", message)
+            }
         }
     }
 }

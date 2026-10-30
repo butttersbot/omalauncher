@@ -58,7 +58,11 @@ class PreviewActivity : ComponentActivity() {
                     val host = remember { PreviewHost(this@PreviewActivity, empty, intent.getStringExtra("mail"), intent.getBooleanExtra("questions", false), intent.getStringExtra("waitingQuestion"), intent.getBooleanExtra("rankedSessions", false)) }
                     // --ez newChat true: opens on a new chat, with its pick rows (computer, agent, model, mode; slice 6).
                     val start = remember { if (intent.getBooleanExtra("newChat", false)) dev.omalauncher.oma.newChatTab(host) else if (intent.getStringExtra("waitingQuestion") == "builder") PHONE_THREAD else if (empty) PHONE_THREAD_B else OMA_TAB }
-                    OmaChatScreen(host, null, {}, start, {})
+                    // --es updates offer|waiting|updating|updated|failed: the update pill, fictional offers only (UpdatesPreview).
+                    val updates = remember { intent.getStringExtra("updates")?.let(::updatesFixture) }
+                    if (updates != null) androidx.compose.runtime.CompositionLocalProvider(dev.omalauncher.oma.LocalTopBarExtra provides { dev.omalauncher.updates.PhoneUpdatePill(updates) }) {
+                        OmaChatScreen(host, null, {}, start, {})
+                    } else OmaChatScreen(host, null, {}, start, {})
                     }
                 }
             }
