@@ -64,42 +64,47 @@ class LinkedQuestionDeliveryTest : ChatScreenTestBase() {
         }
     }
 
-    /** By meaning: tonight's pair, worded apart, with no link. The model says same + clear pick: answered as his, once; undo tells the thread. */
-    @Test fun sameDecisionInOtherWordsIsAnsweredWithItsOwnOptionAndCanBeUndone() {
-        val mbQuestion = "Syncthing removed 3 skills here. Put them back, or were they meant to be gone?"
+    /**
+     * By meaning, a Mac thread's question: its runner decides (POST /questions/match; Soma's own model isn't asked) and
+     * Soma delivers only deliver:true, as his, once; undo tells the thread.
+     */
+    @Test fun aMacThreadsSameQuestionIsMatchedByItsRunnerAndDeliveredOnceWithUndo() {
+        val mbQuestion = "The Mac Pro's skills folder has 3 skills deleted, so joining it removed them here too. Were they removed on purpose?"
         val mbForm = JSONObject().put("questions", JSONArray().put(JSONObject().put("question", mbQuestion)
-            .put("options", JSONArray().put(JSONObject().put("label", "Put them back")).put(JSONObject().put("label", "Meant to be gone")))))
+            .put("options", JSONArray().put(JSONObject().put("label", "Restore them (Recommended)")).put(JSONObject().put("label", "Keep them deleted")).put(JSONObject().put("label", "Leave it paused")))))
         val said = mutableListOf<String>()
+        var modelAsked = 0
         val host = object : Host(link = null) {
             init { macPendingList = listOf(MacPending("macbook-pro/t1703ae4f", "MacBook builds", MacApproval("mb-req", "mb-nonce", "AskUserQuestion", mbForm.toString(), ""), "ticket-mb", 0)) }
-            override fun askSameQuestion(prompt: String): String {
-                assertTrue(prompt.contains(mbQuestion))
-                return JSONObject().put("is_error", false).put("result", """{"verdicts":[{"key":"ticket-mb","same":"yes","mapping":"clear","picks":["Put them back"]}]}""").toString()
+            override fun askSameQuestion(prompt: String): String? { modelAsked++; return null }
+            override fun matchMacQuestions(onThread: String, card: JSONObject, answers: JSONObject, where: String, answeredThread: String?, answeredApproval: String?): JSONArray {
+                assertEquals("macbook-pro/t1703ae4f", onThread); assertEquals("Phone A", where); assertNull("his was on the phone", answeredApproval)
+                assertEquals("Yes, keep them deleted", answers.getString(asked))
+                return JSONArray().put(JSONObject().put("thread", "t1703ae4f").put("approval", "mb-req").put("nonce", "mb-nonce").put("match", "meaning")
+                    .put("deliver", true).put("answers", JSONObject().put(mbQuestion, "Keep them deleted")))
             }
             override fun sayToMac(prompt: String, thread: String, name: String, chat: String, images: List<java.io.File>) { said += "$thread|$prompt" }
         }
         BossTouch.touched(physical = true)
-        host.sendWaitingAnswers("nonce-a", JSONObject().put(asked, "Restore them")) {}
+        host.sendWaitingAnswers("nonce-a", JSONObject().put(asked, "Yes, keep them deleted")) {}
         val until = System.currentTimeMillis() + 5_000
         while (host.toMac.isEmpty() && System.currentTimeMillis() < until) Thread.sleep(20)
-        assertEquals("Put them back", host.toMac.single().getString(mbQuestion))
-        assertTrue(host.receipts.last().question.endsWith("(answered in Phone A: Restore them)"))
+        assertEquals("Keep them deleted", host.toMac.single().getString(mbQuestion))
+        assertEquals("no phone builder waits, so Soma's own model isn't asked", 0, modelAsked)
+        assertTrue(host.receipts.last().question.endsWith("(answered in Phone A: Yes, keep them deleted)"))
         val carried = CarriedAnswers.list.single()
-        assertEquals("Phone A", carried.from)
-        // Once only: answering again elsewhere doesn't carry to it a second time.
-        assertFalse(CarriedAnswers.claim("ticket-mb"))
+        assertFalse("once only", CarriedAnswers.claim("ticket-mb"))
         BossTouch.touched(physical = true)
         host.undoCarried(carried)
-        assertTrue(said.single().startsWith("macbook-pro/t1703ae4f|Undo: the answer \"Restore them\""))
+        assertTrue(said.single().startsWith("macbook-pro/t1703ae4f|Undo: the answer \"Yes, keep them deleted\""))
         assertTrue(CarriedAnswers.list.isEmpty())
     }
 
-    @Test fun anUnsureMatchIsOfferedNotSent() {
+    @Test fun aRunnersHintIsOfferedNotSent() {
         val host = object : Host(link = null) {
-            override fun askSameQuestion(prompt: String) =
-                JSONObject().put("is_error", false).put("result", """{"verdicts":[{"key":"ticket-mb","same":"unsure","mapping":"clear","picks":["Leave deleted"]}]}""").toString()
+            override fun matchMacQuestions(onThread: String, card: JSONObject, answers: JSONObject, where: String, answeredThread: String?, answeredApproval: String?) =
+                JSONArray().put(JSONObject().put("approval", "mb-req").put("match", "hint").put("deliver", false).put("answers", JSONObject().put(asked, "Leave deleted")))
         }
-        // Different thread names so the word-alike hint can't be what shows.
         BossTouch.touched(physical = true)
         host.sendWaitingAnswers("nonce-a", JSONObject().put(asked, "Leave deleted")) {}
         val until = System.currentTimeMillis() + 5_000
@@ -110,5 +115,20 @@ class LinkedQuestionDeliveryTest : ChatScreenTestBase() {
         BossTouch.touched(physical = true)
         hint.answerThereToo!!()
         assertEquals("Leave deleted", host.toMac.single().getString(asked))
+    }
+
+    /** By meaning, a phone builder's question: Soma's own check decides (no runner holds it). He answers the MacBook's card. */
+    @Test fun aPhoneBuildersSameQuestionIsMatchedBySomasOwnCheck() {
+        val host = object : Host(link = null) {
+            override fun matchMacQuestions(onThread: String, card: JSONObject, answers: JSONObject, where: String, answeredThread: String?, answeredApproval: String?): JSONArray? = error("no Mac question waits besides his own")
+            override fun askSameQuestion(prompt: String) =
+                JSONObject().put("is_error", false).put("result", """{"verdicts":[{"key":"nonce-a","same":"yes","mapping":"clear","picks":["Leave deleted"]}]}""").toString()
+        }
+        BossTouch.touched(physical = true)
+        host.sendWaitingAnswers("ticket-mb", JSONObject().put(asked, "Leave deleted")) {}
+        val until = System.currentTimeMillis() + 5_000
+        while (host.toPhone.isEmpty() && System.currentTimeMillis() < until) Thread.sleep(20)
+        assertEquals("Leave deleted", host.toPhone.single().getString(asked))
+        assertEquals("answered in Skills cleanup: Leave deleted", "answered in " + CarriedAnswers.list.single().from + ": " + CarriedAnswers.list.single().words)
     }
 }
