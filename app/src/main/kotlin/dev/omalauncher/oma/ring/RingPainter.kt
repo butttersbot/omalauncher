@@ -62,6 +62,9 @@ class RingView(context: Context) : View(context) {
     private val timeline = RingTimeline()
     private var unwatch: (() -> Unit)? = null
 
+    /** Its own two colors in place of the look's ring; null, the look's. */
+    var colors: Pair<Int, Int>? = null
+
     init {
         isClickable = false
         isFocusable = false
@@ -83,8 +86,9 @@ class RingView(context: Context) : View(context) {
         val style = ringStyle()
         val now = OmaRing.now()
         val state = ringState(OmaRing.signals, now, doneMillis(style.done))
-        ringFrame(style, timeline.at(state, now), resources.displayMetrics.density)?.let {
-            painter.draw(canvas, width.toFloat(), height.toFloat(), screenCorner(this), it)
+        ringFrame(style, timeline.at(state, now), resources.displayMetrics.density)?.let { frame ->
+            val drawn = colors?.let { frame.copy(color1 = it.first, color2 = it.second) } ?: frame
+            painter.draw(canvas, width.toFloat(), height.toFloat(), screenCorner(this), drawn)
         }
         if (state != RingState.Off) postInvalidateOnAnimation()
     }

@@ -8,9 +8,11 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -19,7 +21,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.unit.dp
 import dev.omalauncher.assist.ListeningAct
 import dev.omalauncher.assist.ListeningEffect
@@ -27,6 +31,8 @@ import dev.omalauncher.assist.ListeningLayer
 import dev.omalauncher.assist.ListeningPhase
 import dev.omalauncher.assist.ListeningRequest
 import dev.omalauncher.assist.RelayOutcome
+import dev.omalauncher.assist.listeningInk
+import dev.omalauncher.ui.Pack
 import dev.omalauncher.linux.ShellResult
 import dev.omalauncher.widgets.lang.Compiler
 import dev.omalauncher.widgets.lang.Null
@@ -39,28 +45,31 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import java.io.File
 
-/** A plain widget over art, on the real `over` and dictation(...), for dictation-widget.walk; its look is Phone C's to give. */
+/** A plain widget over art, on the real `over` and dictation(...), for dictation-widget.walk; the real file is Phone C's. */
 private val FIXTURE = """
     widget "dictation-fixture" {
       meta { owl: 11 }
       over: "art:f4618f2aa61acfb0"
       onTap: dictation("open")
-      padding: 4
-      // A thin rail along the top, as Boss asked (2026-10-30); the rest of the picture is clear, and still takes the tap.
-      Row {
-        gap: 6
-        Text { text: "MG1"; style: small }
-        Text { text: "Press to record"; style: small }
+      padding: 6
+      // A thin rail along the bottom, right-justified, as Boss asked (2026-10-30 03:04); the rest of the picture is clear, and still takes the tap.
+      Column {
+        fill: true
+        Spacer { weight: 1 }
+        Text { text: "MG1 · Press to record"; style: small; align: end; fill: width }
       }
     }
 """.trimIndent()
 
-private const val HEARD = "turn the lights down"
+// The words on the cards, so the design check compares like with like.
+private const val HEARD = "push the meeting to thursday and send the notes after"
+private const val HEARING = "push the meeting to t"
 
 /**
- * --es dictationWidget typed|locked|offline|other: a fictional picture, always moving, with the widget over it; a tap opens
- * the real listening screen and its real decisions, with the words a fictional microphone heard and what a fictional MG1
- * answers. `other` is any widget but his. Nothing reaches a device; the emulator has no microphone.
+ * --es dictationWidget typed|locked|offline|sending|missed|nomic|other: a fictional picture, always moving, with the widget
+ * over it; a tap opens the real listening screen and its real decisions, with the words a fictional microphone heard and what
+ * a fictional MG1 answers (`sending`: not yet; `missed`: nothing was heard; `nomic`: no microphone). `other` is any widget but
+ * his. The ring here is a stand-in: the real one is the host's (RingView), a [phone] step. Nothing reaches a device.
  */
 @Composable
 internal fun DictationPreview(kind: String) {
@@ -78,7 +87,7 @@ internal fun DictationPreview(kind: String) {
                 override fun act(name: String, args: List<Value>, done: () -> Unit) {
                     if (name == "dictation") {
                         Log.i("SomaWalk", "fixture dictation open")
-                        request = ListeningRequest(ListeningPhase.Listening)
+                        request = ListeningRequest(if (kind == "nomic") ListeningPhase.NoMic else ListeningPhase.Listening)
                     }
                     done()
                 }
@@ -97,16 +106,20 @@ internal fun DictationPreview(kind: String) {
         Box(Modifier.size(200.dp, 300.dp).background(moving)) {
             ArtOverlay(inst) { inst.program.onTap?.run(inst.root, emptyList()) }
         }
+        // A stand-in for the host's ring while it listens (Canvas mg1-listening): the look's emphasised ink to its spot.
+        if (request?.phase == ListeningPhase.Listening) {
+            Box(Modifier.fillMaxSize().zIndex(1f).border(2.dp, Brush.linearGradient(listOf(listeningInk("MG1"), Pack.accent)), RoundedCornerShape(42.dp)))
+        }
         val now = request
         ListeningLayer(
-            now?.look(if (now.phase == ListeningPhase.Listening) HEARD else "", "MG1"),
+            now?.look(if (now.phase == ListeningPhase.Listening) HEARING else ""),
             { act ->
                 val step = now?.act(act)
                 when (val effect = step?.effect) {
                     is ListeningEffect.Send -> {
                         Log.i("SomaWalk", "fixture relay: ${effect.text}")
-                        val sending = ListeningRequest(ListeningPhase.Heard, effect.text).sending()
-                        request = sending.relayed(
+                        val sending = ListeningRequest(ListeningPhase.Heard, effect.text).sending("MG1")
+                        request = if (kind == "sending") sending else sending.relayed(
                             when (kind) {
                                 "locked" -> RelayOutcome.Locked
                                 "offline" -> RelayOutcome.Offline
@@ -121,11 +134,12 @@ internal fun DictationPreview(kind: String) {
                 }
             },
             onEdit = { text -> request = request?.edited(text) },
+            device = "MG1",
             onAway = {
                 when {
                     now == null || now.holdsOnAway -> {}
                     // The fictional microphone stops, as a tap on the paper stops the real one.
-                    now.phase == ListeningPhase.Listening -> request = now.spoke(HEARD)
+                    now.phase == ListeningPhase.Listening -> request = now.spoke(if (kind == "missed") "" else HEARD)
                     else -> request = null
                 }
             },

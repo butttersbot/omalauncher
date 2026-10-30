@@ -1,72 +1,130 @@
-# Dictation over art (Boss, 2026-10-30): a widget over an art panel, "MG1 / Press to record"; a tap on the art opens the
-# listening screen for MG1; Send types there, and a failure keeps the words. The real `over`, ArtOverlay, dictation(...),
-# ListeningLayer and ListeningRequest, in a fixture: a fictional picture, a fictional microphone (the emulator has none)
-# and a fictional MG1. Nothing reaches a device. Phone C's widget and overlay look come from their cards.
-# 1. Typed.
+# canvas-app: soma-chat
+# Dictation over art (Boss, 2026-10-30): a thin rail over an art panel, "MG1 · Press to record"; a tap on the art opens the
+# MG1 listening screen (Canvas mg1-*); Send types there, and a failure keeps the words. The real `over`, ArtOverlay,
+# dictation(...), ListeningLayer and ListeningRequest, in a fixture: a fictional picture, microphone and MG1, and a stand-in
+# for the host's ring. Nothing reaches a device. The rail is Phone C's dictation-mg1.owl, card glass-mg1-* (soma-widgets), once written.
+# 1. Over the art; typed.
 fold folded
 rotate portrait
 shell am force-stop dev.omalauncher.artifactpreview
 clearlog
 shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es dictationWidget typed
-expect MG1
-expect Press to record
+expect MG1 · Press to record
 nolog fixture dictation open
 shot dictation-over-art-cover
-# Below the rail, on the clear picture: the whole panel takes the tap, not only the words.
-tap 0.2 0.3
+# Above the rail, on the clear picture: the whole panel takes the tap, not only the words.
+tap 0.2 0.1
 log fixture dictation open
 expect Listening
-expect turn the lights down
+expect MG1
+expect push the meeting to t
 nolog fixture relay
-shot dictation-listening-cover
+shot mg1-listening-cover card=mg1-listening-cover
 tap 0.5 0.3
 expect Send this?
-expect turn the lights down
+expect push the meeting to thursday and send the notes after
 expect MG1
 nolog fixture relay
-shot dictation-heard-cover
+shot mg1-heard-cover card=mg1-heard-cover
 tap Send
-log fixture relay: turn the lights down
+log fixture relay: push the meeting to thursday and send the notes after
 expect Typed into Brave on MG1
-shot dictation-typed-cover
-# 2. MG1 locked: said so, and the words stay, even after a tap on the paper. Cancel still drops them.
+expect push the meeting to thursday and send the notes after
+shot mg1-typed-cover card=mg1-typed-cover
+# 2. On its way: no links, the words stay, a tap on the paper does nothing.
+shell am force-stop dev.omalauncher.artifactpreview
+shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es dictationWidget sending
+tap 0.2 0.1
+tap 0.5 0.3
+tap Send
+expect Typing on MG1
+absent Add more
+tap 0.5 0.3
+expect Typing on MG1
+shot mg1-sending-cover card=mg1-sending-cover
+# 3. MG1 locked: said so, and the words stay, even after a tap on the paper. Cancel still drops them.
 shell am force-stop dev.omalauncher.artifactpreview
 clearlog
 shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es dictationWidget locked
-tap Press to record
+tap 0.2 0.1
 tap 0.5 0.3
 tap Send
-log fixture relay: turn the lights down
+log fixture relay: push the meeting
 expect MG1 is locked. Not typed.
-expect turn the lights down
+expect push the meeting to thursday
 tap 0.5 0.3
 expect MG1 is locked. Not typed.
-expect turn the lights down
-shot dictation-locked-cover
+expect push the meeting to thursday
+shot mg1-failed-cover card=mg1-failed-cover
 tap Cancel
-absent turn the lights down
-# 3. MG1 offline, unfolded.
+absent push the meeting to thursday
+# 4. Nothing heard; no microphone.
+shell am force-stop dev.omalauncher.artifactpreview
+clearlog
+shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es dictationWidget missed
+tap 0.2 0.1
+tap 0.5 0.3
+expect Didn't catch that
+expect Try again
+shot mg1-missed-cover card=mg1-missed-cover
+shell am force-stop dev.omalauncher.artifactpreview
+shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es dictationWidget nomic
+tap 0.2 0.1
+expect Microphone is off
+expect Allow
+shot mg1-nomic-cover card=mg1-nomic-cover
+# 5. Unfolded, every state.
 fold open
 shell am force-stop dev.omalauncher.artifactpreview
 clearlog
+shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es dictationWidget typed
+expect MG1 · Press to record
+tap 0.1 0.1
+expect Listening
+shot mg1-listening-unfolded card=mg1-listening-unfolded
+tap 0.8 0.3
+expect Send this?
+shot mg1-heard-unfolded card=mg1-heard-unfolded
+tap Send
+expect Typed into Brave on MG1
+shot mg1-typed-unfolded card=mg1-typed-unfolded
+shell am force-stop dev.omalauncher.artifactpreview
+shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es dictationWidget sending
+tap 0.1 0.1
+tap 0.8 0.3
+tap Send
+expect Typing on MG1
+shot mg1-sending-unfolded card=mg1-sending-unfolded
+shell am force-stop dev.omalauncher.artifactpreview
 shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es dictationWidget offline
-tap Press to record
-tap 0.5 0.3
+tap 0.1 0.1
+tap 0.8 0.3
 tap Send
 expect MG1 is offline. Not typed.
-expect turn the lights down
-shot dictation-offline-unfolded
+expect push the meeting to thursday
+shot mg1-failed-unfolded card=mg1-failed-unfolded
+shell am force-stop dev.omalauncher.artifactpreview
+shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es dictationWidget missed
+tap 0.1 0.1
+tap 0.8 0.3
+expect Didn't catch that
+shot mg1-missed-unfolded card=mg1-missed-unfolded
+shell am force-stop dev.omalauncher.artifactpreview
+shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es dictationWidget nomic
+tap 0.1 0.1
+expect Microphone is off
+shot mg1-nomic-unfolded card=mg1-nomic-unfolded
 fold folded
-# 4. Any other widget (Boss, 2026-10-30): its tap opens nothing.
+# 6. Any other widget (Boss, 2026-10-30): its tap opens nothing.
 shell am force-stop dev.omalauncher.artifactpreview
 clearlog
 shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es dictationWidget other
-tap Press to record
+tap 0.2 0.1
 log dictation is only for the widget in dictation-mg1.owl
 nolog fixture dictation open
 absent Listening
 shot dictation-refused-cover
-[phone] After the bundle, with Boss expecting it and MG1 on a text field: Page 2's cat keeps moving under "MG1 / Press to record". Tap it: the MG1 overlay comes up and the ring lights. Say something, tap the paper to stop, tap Send: the words appear at MG1's cursor, without Enter, and it says "Typed into <app> on MG1", then lifts.
+[phone] After the bundle, with Boss expecting it and MG1 on a text field: Page 2's cat keeps moving under the rail "MG1 · Press to record", bottom right. Tap anywhere on it: the dark MG1 overlay comes up and the ring runs light to red. Say something, tap the paper to stop, tap Send: "Typing on MG1", the words appear at MG1's cursor without Enter, "Typed into <app> on MG1", then it lifts.
 [phone] With MG1 locked, then with its receiver off: Send says so, the words stay; Send again once it is back types them once. Nothing reaches an agent.
 [phone] The file check on the real engine: a copy of the widget under another file name, over a picture, does nothing when tapped.
-[phone] Hold the lock button: the agent's overlay is exactly as before, its Send goes to the agent. Move the cat to another panel: the words go with it.
+[phone] Hold the lock button: the agent's overlay is exactly as before, in its own color, and its Send goes to the agent. Move the cat to another panel: the rail goes with it.

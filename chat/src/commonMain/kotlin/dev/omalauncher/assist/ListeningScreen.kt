@@ -55,6 +55,7 @@ import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import dev.omalauncher.ui.Motion
 import dev.omalauncher.ui.Pack
+import dev.omalauncher.ui.toColor
 import kotlinx.coroutines.launch
 
 /** Where a request to Oma stands while the listening screen is up. */
@@ -122,8 +123,8 @@ fun listeningLook(
         ListeningPhase.Failed -> ListeningLook("That didn't work", detail, listOf(ListeningAct.Retry, ListeningAct.Cancel), note)
         ListeningPhase.NoMic -> ListeningLook("Microphone is off", "Allow the microphone to talk to Soma", listOf(ListeningAct.Allow, ListeningAct.Cancel))
         ListeningPhase.NeedsOk -> ListeningLook("Needs your OK", detail, listOf(ListeningAct.Review, ListeningAct.Close))
-        ListeningPhase.Sending -> ListeningLook("Sending", heard, emptyList(), note)
-        ListeningPhase.Typed -> ListeningLook(detail, "", emptyList(), note)
+        ListeningPhase.Sending -> ListeningLook(detail, heard, emptyList(), note)
+        ListeningPhase.Typed -> ListeningLook(detail, heard, emptyList(), note)
     }
 
 /**
@@ -149,6 +150,15 @@ private const val WORD_MILLIS = 250
 /** How much of the paper lies over the page while listening. */
 private const val DIM = 0.88f
 
+/** How much of the wash lies over the page when the words are for a device: it is dark, and the page must not fight the words. */
+private const val DEVICE_DIM = 0.94f
+
+/** What lies over the page: the paper, or the look's emphasised fill when the words are for a device (Canvas mg1-*), so he can tell at a glance. */
+fun listeningWash(device: String?): Color = if (device == null) Pack.paper else Pack.look.pack.scrap.alt.fill.toColor()
+
+/** The words' color on [listeningWash]. */
+fun listeningInk(device: String?): Color = if (device == null) Pack.onPage else Pack.look.pack.scrap.alt.ink.toColor()
+
 /** The prototype's phone is 380 units wide closed and 760 open; a wider screen draws its units larger, up to half again. */
 fun prototypeUnit(widthDp: Float, heightDp: Float): Float {
     val across = if (widthDp > heightDp * 1.1f) 760f else 380f
@@ -160,7 +170,8 @@ fun prototypeUnit(widthDp: Float, heightDp: Float): Float {
  * they are heard, and an underlined way out. [look] null is the screen going away; it fades as it came.
  * A tap on the paper is [onAway], [ListeningAct.Cancel] unless the host says otherwise. With [onDim] the host lays the paper itself (a window does,
  * so it reaches under the system bars) and is told how much of it to show. [onEdit] is told the words as he
- * changes them by hand, while they wait for his go.
+ * changes them by hand, while they wait for his go. With [device], the words are for that device: its name stands over
+ * the caption, on the look's emphasised wash (Canvas mg1-*).
  */
 @Composable
 fun ListeningLayer(
@@ -171,20 +182,21 @@ fun ListeningLayer(
     onDim: ((Float) -> Unit)? = null,
     onEdit: (String) -> Unit = {},
     onAway: () -> Unit = { onAct(ListeningAct.Cancel) },
+    device: String? = null,
 ) {
     var last by remember { mutableStateOf(look) }
     if (look != null) last = look
     val shown = look != null
-    val dim by animateFloatAsState(if (shown) DIM else 0f, Motion.timed(LISTENING_DIM_MILLIS), label = "dim")
+    val dim by animateFloatAsState(if (shown) (if (device == null) DIM else DEVICE_DIM) else 0f, Motion.timed(LISTENING_DIM_MILLIS), label = "dim")
     val rise by animateFloatAsState(if (shown) 1f else 0f, Motion.timed(BLOCK_MILLIS), label = "listen")
     if (onDim != null) SideEffect { onDim(dim) }
     val showing = last ?: return
     if (!shown && dim == 0f && rise == 0f) return
-    val ink = Pack.onPage
+    val ink = listeningInk(device)
     BoxWithConstraints(
         modifier
             .fillMaxSize()
-            .then(if (onDim == null) Modifier.background(Pack.paper.copy(alpha = dim)) else Modifier)
+            .then(if (onDim == null) Modifier.background(listeningWash(device).copy(alpha = dim)) else Modifier)
             .then(
                 // Gone, it takes no touch: what is underneath is back in reach while the paper is still lifting.
                 if (shown) Modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClickLabel = if (showing.acts == listOf(ListeningAct.Cancel)) "Stop" else "Cancel") { onAway() } else Modifier,
@@ -212,6 +224,9 @@ fun ListeningLayer(
                     style = Pack.mono((10 * u).sp, ink.copy(alpha = ink.alpha * 0.8f)).copy(fontWeight = FontWeight.Medium, lineHeight = (14 * u).sp),
                 )
             }
+            if (device != null) {
+                BasicText(device, Modifier.padding(bottom = (10 * u).dp), style = Pack.display((26 * u).sp, Pack.accent))
+            }
             BasicText(
                 showing.caption.uppercase(),
                 style = Pack.mono((10 * u).sp, ink.copy(alpha = ink.alpha * 0.8f)).copy(fontWeight = FontWeight.Medium, letterSpacing = 0.12.em, lineHeight = (10 * u).sp),
@@ -221,7 +236,8 @@ fun ListeningLayer(
             } else {
                 Said(showing.words, ink, u, Modifier.padding(top = (10 * u).dp))
             }
-            Row(horizontalArrangement = Arrangement.spacedBy((22 * u).dp)) {
+            // For a device the row keeps its height with no links in it, so the words don't jump as they go.
+            Row(if (device != null) Modifier.heightIn(min = (36 * u).dp) else Modifier, horizontalArrangement = Arrangement.spacedBy((22 * u).dp)) {
                 for (act in showing.acts) {
                     BasicText(
                         act.label,

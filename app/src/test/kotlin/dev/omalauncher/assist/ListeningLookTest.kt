@@ -72,13 +72,15 @@ class ListeningRelayTest {
     }
 
     @Test fun typedSaysWhereAndFailureKeepsTheWordsToSendAgain() {
-        val sending = heard.sending()
+        val sending = heard.sending("MG1")
+        assertEquals("Typing on MG1", sending.look().caption)
+        assertEquals("turn the lights down", sending.look().words)
         assertEquals(ListeningPhase.Sending, sending.phase)
         assertEquals(emptyList<ListeningAct>(), sending.look().acts)
         assertEquals(true, sending.holdsOnAway)
         val typed = sending.relayed(RelayOutcome.Typed("Brave"), "MG1")
         assertEquals("Typed into Brave on MG1", typed.look().caption)
-        assertEquals("", typed.look().words)
+        assertEquals("turn the lights down", typed.look().words)
         val locked = sending.relayed(RelayOutcome.Locked, "MG1")
         assertEquals("MG1 is locked. Not typed.", locked.look().caption)
         assertEquals("turn the lights down", locked.look().words)
@@ -88,6 +90,6 @@ class ListeningRelayTest {
 
     @Test fun onlyWordsOnTheirWayCanBeRelayed() {
         assertEquals(heard, heard.relayed(RelayOutcome.Offline, "MG1"))
-        assertEquals(ListeningPhase.Listening, ListeningRequest(ListeningPhase.Listening).sending().phase)
+        assertEquals(ListeningPhase.Listening, ListeningRequest(ListeningPhase.Listening).sending("MG1").phase)
     }
 }

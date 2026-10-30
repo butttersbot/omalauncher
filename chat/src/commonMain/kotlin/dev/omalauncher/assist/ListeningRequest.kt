@@ -60,13 +60,13 @@ data class ListeningRequest(
         }
 
     /** The waiting words go to a device instead of the agent. */
-    fun sending(): ListeningRequest = if (phase == ListeningPhase.Heard) ListeningRequest(ListeningPhase.Sending, heard) else this
+    fun sending(label: String): ListeningRequest = if (phase == ListeningPhase.Heard) ListeningRequest(ListeningPhase.Sending, heard, "Typing on $label") else this
 
     /** How the device called [label] took them: a failure says so and keeps his words, to send again or take elsewhere himself. */
     fun relayed(outcome: RelayOutcome, label: String): ListeningRequest {
         if (phase != ListeningPhase.Sending) return this
         val said = relayWords(outcome, label)
-        return if (outcome is RelayOutcome.Typed) ListeningRequest(ListeningPhase.Typed, detail = said) else ListeningRequest(ListeningPhase.Heard, heard, said)
+        return if (outcome is RelayOutcome.Typed) ListeningRequest(ListeningPhase.Typed, heard, said) else ListeningRequest(ListeningPhase.Heard, heard, said)
     }
 
     /** A tap on the paper changes nothing: words on their way can't be called back, and those a device refused are kept. */

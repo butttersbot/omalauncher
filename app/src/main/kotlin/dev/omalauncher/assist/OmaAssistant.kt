@@ -179,7 +179,14 @@ class RelayPromptActivity : AssistantPromptActivity() {
     override fun onCreate(state: Bundle?) {
         // As the assistant does when it is held: the words go to Whisper on the Mac if it answers.
         dev.omalauncher.voice.WhisperMac.check(this)
+        // The ring over other apps and the sheep make way for this screen's own ring, as for the assistant's.
+        OmaRing.assistant(true)
         super.onCreate(state)
+    }
+
+    override fun onDestroy() {
+        OmaRing.assistant(false)
+        super.onDestroy()
     }
 }
 
@@ -214,18 +221,19 @@ class ListeningHost(
     var onScreenLetGo: (() -> Unit)? = null
 
     init {
+        // Canvas mg1-listening: for a device the ring runs from the emphasised ink to the look's spot.
+        if (relay != null) ring.colors = listeningInk(relay.label).toArgb() to Pack.accent.toArgb()
         compose.attach(this)
         addView(ComposeView(owner).apply {
             setContent {
                 val look = request?.let {
                     val claude = (owner.applicationContext as App).runtime.agents.default?.bin == "claude"
-                    // The device's name in the small line over the caption, until the approved card says how it looks.
-                    it.look(speech.text, relay?.label ?: screenChipText(chipState, keptInConversation = claude))
+                    it.look(speech.text, if (relay != null) "" else screenChipText(chipState, keptInConversation = claude))
                 }
                 // The recognizer can fail without a word: that is a problem to show, not a silence.
                 val failed = speech.error
                 LaunchedEffect(failed) { if (failed != null) spoke("") }
-                ListeningLayer(look, ::act, onNote = { showScreen(ScreenContext.None, null); onScreenLetGo?.invoke() }, onDim = { paper.color = Pack.paper.copy(alpha = it).toArgb() }, onEdit = { text -> request = request?.edited(text) }, onAway = ::away)
+                ListeningLayer(look, ::act, onNote = { showScreen(ScreenContext.None, null); onScreenLetGo?.invoke() }, onDim = { paper.color = listeningWash(relay?.label).copy(alpha = it).toArgb() }, onEdit = { text -> request = request?.edited(text) }, onAway = ::away, device = relay?.label)
             }
         }, LayoutParams(-1, -1))
     }
@@ -299,7 +307,7 @@ class ListeningHost(
 
     /** Types the words on [target]; nothing here ever hands them to the agent. A failure keeps them on the screen. */
     private fun type(target: RelayTarget, text: String) {
-        val sending = ListeningRequest(ListeningPhase.Heard, text).sending()
+        val sending = ListeningRequest(ListeningPhase.Heard, text).sending(target.label)
         show(sending)
         val mine = ++turn
         kotlin.concurrent.thread(name = "oma-dictation-relay", isDaemon = true) {
