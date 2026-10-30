@@ -123,12 +123,15 @@ internal fun ChatHost.sendWaitingAnswers(key: String, answers: JSONObject, done:
         val mac = macPending().associateBy { it.ticket }
         val mine = mac[me.key]
         kotlin.concurrent.thread(name = "soma-same-question", isDaemon = true) {
-            // Each runner once, for the questions waiting on it.
+            // Each runner once, for the questions waiting on it. A runner without /questions/match (before release
+            // 0bca3783 reaches it: 404), slow or out of reach leaves its questions to Soma's own check below, never unhandled.
+            val unmatched = mutableListOf<dev.omalauncher.assist.QuestionMember>()
             for ((_, onRunner) in rest.filter { it.key in mac }.groupBy { dev.omalauncher.assist.macMachineOf(it.thread) }) {
                 val sameRunner = mine != null && dev.omalauncher.assist.macMachineOf(mine.threadId) == dev.omalauncher.assist.macMachineOf(onRunner.first().thread)
                 val matches = runCatching {
                     matchMacQuestions(onRunner.first().thread, me.input, answers, me.where, mine?.threadId?.takeIf { sameRunner }, mine?.request?.approval?.takeIf { sameRunner })
-                }.getOrNull() ?: continue
+                }.getOrNull()
+                if (matches == null) { unmatched += onRunner; continue }
                 for (i in 0 until matches.length()) {
                     val m = matches.optJSONObject(i) ?: continue
                     val target = onRunner.firstOrNull { mac[it.key]?.request?.approval == m.optString("approval") } ?: continue
@@ -137,8 +140,8 @@ internal fun ChatHost.sendWaitingAnswers(key: String, answers: JSONObject, done:
                     else SameSuggestions.offer(target.key, me.where, words, picks)
                 }
             }
-            // The phone builders' questions: Soma's own check (no runner holds them).
-            val phone = rest.filter { it.key !in mac }
+            // The phone builders' questions (no runner holds them), and any a runner couldn't match: Soma's own check.
+            val phone = rest.filter { it.key !in mac } + unmatched
             if (phone.isEmpty()) return@thread
             val said = runCatching { askSameQuestion(dev.omalauncher.assist.sameQuestionPrompt(me, answers, phone)) }.getOrNull() ?: return@thread
             for (verdict in dev.omalauncher.assist.sameQuestionVerdicts(said, phone, answers, me.where)) {

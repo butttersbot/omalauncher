@@ -131,4 +131,25 @@ class LinkedQuestionDeliveryTest : ChatScreenTestBase() {
         assertEquals("Leave deleted", host.toPhone.single().getString(asked))
         assertEquals("answered in Skills cleanup: Leave deleted", "answered in " + CarriedAnswers.list.single().from + ": " + CarriedAnswers.list.single().words)
     }
+
+    /**
+     * A runner without /questions/match (404 until release 0bca3783 reaches it), slow or unreachable: its questions go to
+     * Soma's own check instead, with the same rules (clear same + valid pick delivered, else offered). Never left unhandled.
+     */
+    @Test fun aRunnerWithoutMatchFallsBackToSomasOwnCheck() {
+        var runnerAsked = 0
+        val host = object : Host(link = null) {
+            override fun matchMacQuestions(onThread: String, card: JSONObject, answers: JSONObject, where: String, answeredThread: String?, answeredApproval: String?): JSONArray? { runnerAsked++; return null }
+            override fun askSameQuestion(prompt: String): String {
+                assertTrue("the Mac's card goes to Soma's own check", prompt.contains("ticket-mb"))
+                return JSONObject().put("is_error", false).put("result", """{"verdicts":[{"key":"ticket-mb","same":"yes","mapping":"clear","picks":["Leave deleted"]}]}""").toString()
+            }
+        }
+        BossTouch.touched(physical = true)
+        host.sendWaitingAnswers("nonce-a", JSONObject().put(asked, "Leave deleted")) {}
+        val until = System.currentTimeMillis() + 5_000
+        while (host.toMac.isEmpty() && System.currentTimeMillis() < until) Thread.sleep(20)
+        assertEquals(1, runnerAsked)
+        assertEquals("Leave deleted", host.toMac.single().getString(asked))
+    }
 }

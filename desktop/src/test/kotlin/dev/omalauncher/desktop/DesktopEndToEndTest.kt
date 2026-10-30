@@ -724,6 +724,8 @@ class DesktopEndToEndTest {
             waitFor("Phone C's questions show") { onAllNodes(hasText("[ answer questions ]")).fetchSemanticsNodes().isNotEmpty() }
             onAllNodes(hasText("[ answer questions ]")).onFirst().performClick(); settle()
             onAllNodes(hasText("[ skip ]")).onFirst().performClick(); settle()
+            // The card's skip asks first (Boss, 2026-10-29): Skip this question? [ skip it ] [ keep it ]. The form's own skip doesn't.
+            if (onAllNodes(hasText("[ skip it ]")).fetchSemanticsNodes().isNotEmpty()) { onAllNodes(hasText("[ skip it ]")).onFirst().performClick(); settle() }
             waitFor("the skip reached the Fold") { posts("/threads/builder-c/approvals/tk-c1").isNotEmpty() }
             val skipped = posts("/threads/builder-c/approvals/tk-c1").single().body!!
             assertEquals("allow", skipped.getString("decision"))
