@@ -282,8 +282,10 @@ class ServeTest {
         val token = ThreadTokens.PREFIX + "a".repeat(48)
         assertEquals(200, call("POST", "/tokens", foldKey, JSONObject().put("digest", keyDigest(token)).put("thread", "t7").put("screens", JSONArray(listOf("car")))).first)
         // The thread's environment, as the runner gives it: the token, the service, its screens; never a device key.
+        // The helper runs on this computer's python3: Homebrew's on the Macs, the system's on Linux (as DesktopEndToEndTest finds it).
+        val python = listOf("/opt/homebrew/bin/python3", "/usr/local/bin/python3", "/usr/bin/python3").first { File(it).canExecute() }
         fun soma(vararg words: String): Pair<Int, String> {
-            val p = ProcessBuilder(listOf("/opt/homebrew/bin/python3", helper.path) + words).apply {
+            val p = ProcessBuilder(listOf(python, helper.path) + words).apply {
                 environment().clear()
                 environment().putAll(mapOf("PATH" to "/usr/bin:/bin", "HOME" to home.path, "SOMA_CANVAS_TOKEN" to token, "SOMA_SERVICE" to base, "SOMA_CANVAS_SCREENS" to "car"))
             }.redirectErrorStream(true).start()
