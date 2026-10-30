@@ -460,7 +460,11 @@ class MacRunnerClient(private val config: MacRunnerConfig?, private val machine:
 
     /** [MacRequests.matchQuestions]: the runner's verdicts; a model call is in it, so it is given a minute. */
     fun matchQuestions(card: JSONObject, answers: JSONObject, where: String, candidates: org.json.JSONArray): MacAnswer<org.json.JSONArray> =
-        macAnswer(send(MacRequests.matchQuestions(card, answers, where, candidates), readMs = 60_000)) { json -> json.optJSONArray("matches") }
+        // Only a runner that says it judged the candidates ("candidates": true) is taken at its word; an older one answers
+        // about its own questions only, which would leave his candidates unhandled, so that counts as no answer.
+        macAnswer(send(MacRequests.matchQuestions(card, answers, where, candidates), readMs = 60_000)) { json ->
+            if (json.optBoolean("candidates")) json.optJSONArray("matches") ?: org.json.JSONArray() else null
+        }
 
     fun clearCommands(threadId: String): MacAnswer<Boolean> = macAnswer(send(MacRequests.clearCommands(own(threadId)))) { json ->
         (json.opt("cleared") as? Boolean)?.takeIf { it }

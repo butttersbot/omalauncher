@@ -54,4 +54,15 @@ class QuestionLinksTest {
         assertNull("a day later it is forgotten", GivenAnswers.alike(alike, now = 1_000 + 25 * 60 * 60 * 1000L))
         GivenAnswers.clear()
     }
+
+    /** The Mac Pro is asked once, with every waiting question as a candidate (Boss, 2026-10-29). */
+    @Test fun theMacProRequestCarriesHisCardHisAnswerAndEveryCandidate() {
+        val candidates = org.json.JSONArray().put(JSONObject().put("target_id", "ticket-mb").put("thread_name", "MacBook builds").put("card", macbook.input))
+        val req = MacRequests.matchQuestions(phoneA.input, JSONObject().put("q", "Leave deleted"), "Phone A", candidates)
+        assertEquals("POST", req.method); assertEquals("/questions/match", req.path)
+        val body = JSONObject(req.body!!)
+        assertEquals("t1703ae4f", questionLink(body.getJSONObject("card")))
+        assertEquals("Phone A", body.getString("where"))
+        assertEquals("ticket-mb", body.getJSONArray("candidates").getJSONObject(0).getString("target_id"))
+    }
 }
