@@ -19,10 +19,11 @@ Only exact Codex command scopes the owner explicitly saved may reuse that decisi
   GET  /threads[?all=1]                  every thread: id, name, summary, status, last_worked, tail, pending, bot; internal ones
                                          (made by agents for tests, proofs and helpers) only with all=1
   POST /threads/ID/internal  {internal}  marks a thread internal (hidden from the list) or not; nothing is deleted
-  POST /questions/match {card, answers, where, thread?, approval?}
+  POST /questions/match {card, answers, where, thread?, approval?, local?, candidates?: [{target_id, thread_name, card}]}
                                          which questions waiting here are the same decision Boss just answered: by link, the
                                          same card, or meaning (one quick model call); [{thread, approval, nonce, match:
-                                         link|exact|meaning|hint, deliver, answers (in that card's own labels), why}]
+                                         link|exact|meaning|hint, deliver, answers (in that card's own labels), why}], and the
+                                         same verdict per candidate sent from elsewhere (keyed by target_id), all in one call
   GET  /questions                        every question waiting on this runner, across threads: {thread, approval, nonce, link,
                                          fingerprint, title, card, same_pending}, so Soma finds one question asked in several threads
   GET  /bots/ID                          one bot this machine hosts: its settings, instructions and notes (read only)
@@ -4339,28 +4340,46 @@ def mapped_answers(entry, given):
         return None
 
 
-def match_questions(card, answers, where, skip):
-    """Every question waiting here that is the same decision as [card] (his [answers]), and whether to deliver."""
+def match_questions(card, answers, where, skip, local=True, candidates=None):
+    """The questions that are the same decision as [card] (his [answers]), and whether to deliver: this runner's own
+    waiting ones ([local]), and [candidates] sent from elsewhere (Boss, 2026-10-29: the Mac Pro decides for every
+    thread, phone builders and other runners included; Soma gathers them). One model call covers them all.
+    Returns (own matches, candidate verdicts)."""
     asked = card_of((card or {}).get('questions') if isinstance(card, dict) else card)
     if not asked or not isinstance(answers, dict):
         raise ValueError('card {questions: [...]} and his answers are needed')
+    if isinstance(card, dict) and card.get('codex_request') == 'questions':  # a Codex form's answers come keyed by id
+        answers = {q.get('question'): answers.get(q.get('id'), answers.get(q.get('question'))) for q in card['questions'] if isinstance(q, dict)}
+    if candidates is not None and (not isinstance(candidates, list) or len(candidates) > 100):
+        raise ValueError('candidates is a list (at most 100) of {target_id, thread_name, card}')
     link, fingerprint = card_link(card if isinstance(card, dict) else {}, asked), card_fingerprint(asked)
-    found, ask_model = [], []
+    rows = []
     with changed:
-        for thread in threads.values():
-            for key, entry in thread.pending.items():
-                theirs = question_card(entry)
-                if not theirs or (thread.meta['id'], key) in skip:
-                    continue
-                row = {'id': '%s/%s' % (thread.meta['id'], key), 'thread': thread.meta['id'], 'thread_name': thread.meta.get('name', ''),
-                       'approval': key, 'nonce': entry['nonce'], 'card': theirs, 'entry': entry}
-                their_link = card_link(entry.get('input') or {}, theirs)
-                row['match'] = 'link' if link and their_link == link else 'exact' if card_fingerprint(theirs) == fingerprint else None
-                # The same card, or a linked one offering the very same labels: his answer maps onto it as it is.
-                direct = {q['question']: answers.get(a['question']) for q, a in zip(theirs, asked)} if row['match'] and len(theirs) == len(asked) else None
-                row['answers'] = mapped_answers(entry, direct) if direct else None
-                (found if row['answers'] else ask_model).append(row)
-    ask_model = ask_model[:MATCH_MOST]
+        if local:
+            for thread in threads.values():
+                for key, entry in thread.pending.items():
+                    if question_card(entry) and (thread.meta['id'], key) not in skip:
+                        rows.append({'own': True, 'thread': thread.meta['id'], 'thread_name': thread.meta.get('name', ''),
+                                     'approval': key, 'nonce': entry['nonce'], 'entry': entry})
+    for given in candidates or []:
+        if not isinstance(given, dict) or not isinstance(given.get('target_id'), str) or not isinstance(given.get('card'), dict):
+            raise ValueError('each candidate is {target_id, thread_name, card}')
+        info = given['card']
+        entry = {'tool': 'Question' if info.get('codex_request') == 'questions' else 'AskUserQuestion', 'input': info}
+        rows.append({'own': False, 'target_id': given['target_id'][:200], 'thread_name': str(given.get('thread_name') or '')[:120], 'entry': entry})
+    found, ask_model = [], []
+    for index, row in enumerate(rows):
+        theirs = question_card(row['entry'])
+        if not theirs:
+            continue
+        row['id'], row['card'] = 'q%d' % index, theirs
+        their_link = card_link(row['entry'].get('input') or {}, theirs)
+        row['match'] = 'link' if link and their_link == link else 'exact' if card_fingerprint(theirs) == fingerprint else None
+        # The same card, or a linked one offering the very same labels: his answer maps onto it as it is.
+        direct = {q['question']: answers.get(a['question']) for q, a in zip(theirs, asked)} if row['match'] and len(theirs) == len(asked) else None
+        row['answers'] = mapped_answers(row['entry'], direct) if direct else None
+        (found if row['answers'] else ask_model).append(row)
+    ask_model = ask_model[:MATCH_MOST * 3]
     if ask_model:
         try:
             judged = {m.get('id'): m for m in (ask_matcher(match_prompt(asked, answers, where, ask_model)).get('matches') or []) if isinstance(m, dict)}
@@ -4380,9 +4399,10 @@ def match_questions(card, answers, where, skip):
             elif same == 'unsure' or (row['match'] == 'exact'):
                 row['match'], row['answers'], row['why'] = 'hint', None, m.get('why', '')[:200]
                 found.append(row)
-    return [{key: row[key] for key in ('thread', 'thread_name', 'approval', 'nonce', 'match')} |
-            {'deliver': bool(row.get('answers')), **({'answers': row['answers']} if row.get('answers') else {}), 'why': row.get('why', '')}
-            for row in found]
+    verdict = lambda row: {'match': row['match'], 'deliver': bool(row.get('answers')), **({'answers': row['answers']} if row.get('answers') else {}), 'why': row.get('why', '')}
+    own = [{key: row[key] for key in ('thread', 'thread_name', 'approval', 'nonce')} | verdict(row) for row in found if row['own']]
+    others = [{'target_id': row['target_id'], 'thread_name': row['thread_name']} | verdict(row) for row in found if not row['own']]
+    return own, others
 
 
 def question_answers(entry, supplied):
@@ -4740,7 +4760,9 @@ class Runner(BaseHTTPRequestHandler):
             # Which questions waiting here are the same decision as the one Boss just answered (match_questions).
             skip = {(str(body.get('thread')), str(body.get('approval')))} if body.get('thread') else set()
             try:
-                return self.answer(200, {'ok': True, 'matches': match_questions(body.get('card'), body.get('answers'), str(body.get('where') or 'another thread')[:120], skip)})
+                own, others = match_questions(body.get('card'), body.get('answers'), str(body.get('where') or 'another thread')[:120], skip,
+                                              local=body.get('local', True) is not False, candidates=body.get('candidates'))
+                return self.answer(200, {'ok': True, 'matches': own, **({'candidates': others} if body.get('candidates') is not None else {})})
             except ValueError as problem:
                 return self.answer(400, {'ok': False, 'error': str(problem)})
         if parts == ['threads']:
