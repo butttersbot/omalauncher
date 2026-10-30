@@ -14,12 +14,23 @@ Checks, inside the page at each size:
   overlap    two pieces of text drawn over each other
   look       made for another look than the active one, or not from the template
 And on the file: references to the network (http/https in src, href, url(), @import): mockups are offline.
+  FONT FALLBACK   a character none of the page's fonts draws, so a device font would: checked against the theme's
+                  fonts in Soma Canvas's store (the faces the page carries, by file hash, and what each covers).
+                  Emoji and CJK the page uses but doesn't carry: build.py --inline FILE adds just those faces.
 
 On the phone it uses the hidden display (oma-phone --display bg) and Brave; the artifact panel's WebView differs a
 little (no network, no storage), so treat this as the minimum, not the final word.
 Exit 0: looked, no errors (warnings may remain). Exit 1: errors, fix before sending. Exit 2: couldn't look.
 """
 import argparse, hashlib, http.server, json, os, re, shutil, socket, subprocess, sys, tempfile, threading, time
+# somafonts.py sits beside this in tools/design-system (and beside the installed copy in ~/.local/bin).
+for _d in (os.path.dirname(os.path.realpath(__file__)), "/root/Projects/omalauncher/tools/design-system"):
+    if os.path.isfile(os.path.join(_d, "somafonts.py")):
+        sys.path.insert(0, _d); break
+try:
+    import somafonts
+except ImportError:
+    somafonts = None
 
 SIZES = {"cover": (475, 751), "unfolded": (932, 704), "side": (466, 704)}
 CACHE = os.path.expanduser("~/.cache/soma-look")
@@ -117,6 +128,34 @@ def static_checks(html):
     return errs[:10]
 
 
+def font_checks(html, active=None):
+    """FONT FALLBACK: (errors, warnings). The theme is the page's soma-fonts/soma-pack meta, else the active look."""
+    if somafonts is None:
+        return [], ["fonts: somafonts.py not found beside soma-look, so FONT FALLBACK wasn't checked"]
+    m = re.search(r'<meta name="soma-(?:fonts|pack)" content="([\w-]+)', html)
+    theme = m.group(1) if m else active
+    if not theme:
+        return [], ["fonts: no theme (no soma-fonts meta, no active look), so FONT FALLBACK wasn't checked"]
+    manifest, _ = somafonts.fetch(theme)
+    if not manifest:
+        return [], [f"fonts: no font store for '{theme}' (Canvas out of reach, nothing cached), so FONT FALLBACK wasn't checked"]
+    missing, could = somafonts.fallback(html, manifest)
+    if not missing:
+        return [], []
+    chars = " ".join(f"{c} {u}" for c, u in missing[:24]) + (f" (+{len(missing) - 24} more)" if len(missing) > 24 else "")
+    theme_faces = sorted({f["family"] for f in could if f.get("bundle")})
+    extra = sorted({f["family"] for f in could if not f.get("bundle")})
+    if theme_faces:
+        fix = (f"; the page doesn't carry the theme's own fonts from the store ({', '.join(theme_faces)}): rebuild "
+               "(tools/design-system/build.py) and recopy soma.css from design/soma/template.html"
+               + (f", then build.py --inline FILE for {', '.join(extra)}" if extra else ""))
+    elif extra:
+        fix = f"; the store has them in {', '.join(extra)}: run tools/design-system/build.py --inline FILE"
+    else:
+        fix = "; no font in the store draws them: change the text or ask for the font"
+    return [f"FONT FALLBACK: {len(missing)} character(s) no font in this page draws (a device font would): {chars}{fix}"], []
+
+
 def crop(png, out):
     """The harness draws the page in a frame inside an 8 px magenta margin: find the frame by where the magenta stops."""
     from PIL import Image
@@ -159,6 +198,9 @@ def main():
         warnings.append(f"look: made for the '{m.group(1)}' look but '{active}' is active; rebuild (tools/design-system/build.py) and recopy soma.css")
     elif not m:
         warnings.append("look: no <meta name=\"soma-pack\">; start from design/soma/template.html so it follows the active look")
+
+    fe, fw = font_checks(data.decode("utf-8", "replace"), active)
+    errors += fe; warnings += fw
 
     # Approve-from-artifact is parked (Boss, 2026-10-26: mockup decisions are a question block, apart from Canvas
     # approvals), so a declared card that doesn't match only warns.

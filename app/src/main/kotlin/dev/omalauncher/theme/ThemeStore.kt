@@ -2,10 +2,6 @@ package dev.omalauncher.theme
 
 import dev.omalauncher.theme.pack.FONT_WEIGHTS
 import dev.omalauncher.theme.pack.fontHasVariations
-import androidx.compose.ui.text.font.FontVariation
-import androidx.compose.ui.text.font.FontStyle
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.font.Font
 import android.app.WallpaperManager
 import android.content.ComponentName
 import android.content.Context
@@ -99,7 +95,7 @@ sealed interface ThemeDownload {
  */
 class ThemeStore(
     private val context: Context,
-    proot: Proot,
+    private val proot: Proot,
     /** Whether Linux is installed; without it, nothing is written into the guest. */
     private val isLinux: () -> Boolean,
     /** Called when the guest configs depending on the theme changed; see [managed]. */
@@ -220,13 +216,14 @@ class ThemeStore(
         // Fonts and wallpapers arrive after the first frame; until then each font is its system family and the page its paper color.
         scope.launch(Dispatchers.IO) {
             val type = load.pack.type
-            val fonts =
+            fun fonts() =
                 listOf(type.display, type.body, type.hand, type.mono)
                     .map { it.file }
                     .filter { it.isNotEmpty() }
                     .distinct()
                     .mapNotNull { path -> packFont(source, pick.id, path)?.let { path to it } }
                     .toMap()
+            val fonts = fonts()
             val page = load.pack.page
             val wallpapers = PackWallpapers(packImage(source, page.wallpaperCover), packImage(source, page.wallpaperInner))
             withContext(Dispatchers.Main) {
@@ -238,7 +235,45 @@ class ThemeStore(
                     LookWidgets.refresh(context)
                 }
             }
+            // Emoji and CJK from Soma Canvas, once per device (Boss, 2026-10-29): then the voices again, with them behind.
+            if (fetchStoreFonts()) {
+                val again = fonts()
+                withContext(Dispatchers.Main) {
+                    if (ActivePack.pick === pick) {
+                        ActivePack.fonts = again
+                        LookWidgets.refresh(context)
+                    }
+                }
+            }
         }
+    }
+
+    private val storePins by lazy { runCatching { StoreFonts.pins(context.assets.open(StoreFonts.PINS).bufferedReader().use { it.readText() }) }.getOrNull() }
+    private val storeDir get() = File(context.filesDir, StoreFonts.DIR)
+    private val storeFetch = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /** Fetches the pinned emoji/CJK faces this device doesn't keep, once per process; whether any arrived. */
+    private fun fetchStoreFonts(): Boolean {
+        val fetched = storePins?.second.orEmpty()
+        if (fetched.all { StoreFonts.cached(storeDir, it) != null } || !storeFetch.compareAndSet(false, true)) return false
+        val origin = canvasOrigin() ?: return false
+        return StoreFonts.fetchMissing(storeDir, origin, fetched).isNotEmpty()
+    }
+
+    /** Soma Canvas's address, as the agents' CLI has it (~/.config/soma-canvas/env in Linux). */
+    private fun canvasOrigin(): String? = runCatching {
+        val value = File(proot.home, ".config/soma-canvas/env").readLines().firstOrNull { it.trim().removePrefix("export ").startsWith("CANVAS_URL=") }
+            ?.trim()?.removePrefix("export ")?.substringAfter('=')?.trim()?.trim { it.code == 34 || it.code == 39 }
+        dev.omalauncher.oma.CanvasReceipt.origin(value)
+    }.getOrNull()
+
+    /** What every voice falls back to, in the store's order: the bundled symbols font, then the emoji and CJK kept here. */
+    private fun storeFallbacks(): List<android.graphics.fonts.FontFamily> {
+        val (bundled, fetched) = storePins ?: return emptyList()
+        fun family(font: () -> android.graphics.fonts.Font) =
+            runCatching { android.graphics.fonts.FontFamily.Builder(font()).build() }.onFailure { Log.w(TAG, "store font", it) }.getOrNull()
+        return bundled.mapNotNull { pin -> pin.asset?.let { asset -> family { android.graphics.fonts.Font.Builder(context.assets, asset).build() } } } +
+            fetched.mapNotNull { pin -> StoreFonts.cached(storeDir, pin)?.let { file -> family { android.graphics.fonts.Font.Builder(file).build() } } }
     }
 
     /** A pack's font file as a font family, read no further than a font's size limit; null if it can't be used. */
@@ -253,11 +288,14 @@ class ThemeStore(
             val file = File(File(context.cacheDir, "pack-fonts/$id").apply { mkdirs() }, path.replace('/', '_'))
             file.writeBytes(bytes)
             // A variable font gives every weight its own drawing; a single face is what it is, and Android thickens it for bold.
-            if (fontHasVariations(bytes)) {
-                FontFamily(FONT_WEIGHTS.map { w -> Font(file, FontWeight(w), FontStyle.Normal, FontVariation.Settings(FontVariation.weight(w))) })
+            val own = if (fontHasVariations(bytes)) {
+                val fonts = FONT_WEIGHTS.map { w -> android.graphics.fonts.Font.Builder(file).setWeight(w).setFontVariationSettings("'wght' $w").build() }
+                android.graphics.fonts.FontFamily.Builder(fonts.first()).apply { fonts.drop(1).forEach(::addFont) }.build()
             } else {
-                FontFamily(Typeface.createFromFile(file))
+                android.graphics.fonts.FontFamily.Builder(android.graphics.fonts.Font.Builder(file).build()).build()
             }
+            // Then the store's fonts, as every voice's stack ends (symbols, emoji, CJK); past them, the device's own.
+            FontFamily(Typeface.CustomFallbackBuilder(own).apply { storeFallbacks().forEach { addCustomFallback(it) } }.build())
         }.onFailure { Log.w(TAG, "pack $id font $path", it) }.getOrNull()
 
     /** A pack's wallpaper, read no further than an image's size limit and decoded no larger than the screen needs. */
