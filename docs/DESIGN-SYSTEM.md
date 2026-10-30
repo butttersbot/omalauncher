@@ -60,8 +60,11 @@ Manga, after features/manga-look/manga-mockup.html: every home page is a manga p
 | Mono | JetBrainsMono |
 | Hand | PatrickHand-Regular |
 
-Card line 1.15 px, corner 0 px, shadow `none`. The faces are embedded in `soma.css` as data URLs
-(Latin only), so a mockup is one offline file; a look that uses system fonts embeds none.
+Card line 1.15 px, corner 0 px, shadow `none`. The faces are embedded in `soma.css` as data URLs,
+whole, from Soma Canvas's font store (manga@78066b7fd6d7), so a mockup is one offline file. Each voice's stack is the theme's
+face, then Noto Sans Symbols 2, then Noto Color Emoji and Noto Sans CJK JP, and no generic family: emoji and CJK are
+inlined only into a page that has such characters (`build.py --inline FILE`), and `soma-look` flags FONT FALLBACK for
+any character none of the page's fonts draws.
 
 ## Artifact question replies
 

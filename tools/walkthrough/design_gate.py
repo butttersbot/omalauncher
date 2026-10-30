@@ -135,6 +135,15 @@ def summary(report):
         lines.append(f"DESIGN UNCHECKED: {', '.join(c['card'] for c in unchecked)} could not be checked against Approved; "
                      "this build is not done on design until they are")
         lines += [f"  {c['card']}: {c.get('error', 'error')}" for c in unchecked]
+    # Characters a device font drew because no font in the theme's store set has them (Canvas's check, fontFallback).
+    # Never drift and never blocking; printed so it gets fixed (Boss, 2026-10-29: one font store, same on every device).
+    fell = [c for c in cards if c.get("fontFallback")]
+    if fell:
+        lines.append(f"FONT FALLBACK: {', '.join(c['card'] for c in fell)} draw characters in a device font "
+                     "(not in the theme's fonts on Canvas):")
+        for c in fell:
+            lines += [f"  {c['card']}: {f.get('chars', '?')} in {f.get('font', '?')}" + (f" ({f['where']})" if f.get("where") else "")
+                      for f in c["fontFallback"][:6]]
     if cards and not (drift or unappr or unchecked):
         lines.append(f"Design: all {len(cards)} walked cards match Approved (or Boss waived them).")
     for c in cards:

@@ -123,6 +123,18 @@ class Gate(unittest.TestCase):
         (inbox / "design-abc123456-176 (2).json").write_text("{}")
         self.assertTrue(gate.inbox_report("abc123456789", "176", str(inbox)).endswith("(2).json"))
 
+    def test_font_fallback_from_the_check_is_printed_never_blocking(self):
+        self.answer("conn-tile", result="match", waived=False, differences=[],
+                    fontFallback=[{"font": "Roboto", "chars": "✓△", "where": "status row"}])
+        self.answer("conn-footer", result="match", waived=False, differences=[], fontFallback=[])
+        r = gate.run(str(self.wdir), "176", "abc123456")
+        self.assertEqual("match", r["result"])
+        text = gate.summary(r)
+        self.assertIn("FONT FALLBACK: conn-tile draw characters in a device font", text)
+        self.assertIn("conn-tile: ✓△ in Roboto (status row)", text)
+        self.assertNotIn("conn-footer:", text)
+        self.assertEqual(0, gate.gate(str(self.wdir / "design-report.json"), "abc123456"))
+
     def test_canvas_app_comes_from_the_script_or_the_walk_name(self):
         s = self.t / "c.walk"; s.write_text("# canvas-app: soma-messages\nlaunch x\n")
         self.assertEqual("soma-messages", gate.canvas_app("chat", {"script": str(s)}))

@@ -162,6 +162,7 @@ walk_report() {
   grep -q '^DESIGN FAIL' "$wdir/design.txt" 2>/dev/null && design=", DESIGN FAIL"
   grep -q '^DESIGN UNCHECKED' "$wdir/design.txt" 2>/dev/null && design="$design, DESIGN UNCHECKED"
   grep -q '^DESIGN UNAPPROVED' "$wdir/design.txt" 2>/dev/null && design="$design, DESIGN UNAPPROVED"
+  grep -q '^FONT FALLBACK' "$wdir/design.txt" 2>/dev/null && design="$design, FONT FALLBACK"
   # Carded walks ran but the gate itself left no report: that is unchecked too, never silence.
   if ls "$wdir"/*/canvas.json >/dev/null 2>&1 && [ ! -s "$wdir/design-report.json" ]; then
     echo "DESIGN UNCHECKED: the design gate left no report (see design.txt)" >>"$wdir/report.txt"
