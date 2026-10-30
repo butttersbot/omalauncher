@@ -8,7 +8,18 @@ expect answer questions
 expect skip
 nolog waiting question answer
 shot question-card-cover-skip
+# The card's skip asks first (Boss, 2026-10-29): keep it leaves the question waiting.
 tap skip
+expect Skip this question?
+shot question-card-cover-skip-confirm
+tap keep it
+absent Skip this question?
+expect Questions waiting
+expect answer questions
+nolog Boss skipped this question
+tap skip
+expect Skip this question?
+tap skip it
 absent Questions waiting
 expect skipped
 log Boss skipped this question
