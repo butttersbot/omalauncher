@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Owner-approved service restart (soma_services): every execution is mocked; launchctl, sudo and the process are
 never touched. Owner keys are generated in memory per test; the trust file lives in a temporary directory."""
+import datetime
 import base64, hashlib, importlib.util, json, os, pathlib, stat, sys, tempfile, threading, time, unittest, urllib.error, urllib.parse
 
 from cryptography.hazmat.primitives import hashes, serialization
@@ -667,10 +668,10 @@ class Probes(unittest.TestCase):
             S.IMESSAGE_TOKEN = saved
 
     def test_open_health_routes_and_process_only_services(self):
-        replies = {'/healthz': {'ok': True, 'uptime': 5}, '/health': {'ok': True, 'model': 'm', 'dim': 768, 'status': 'ok'}}
+        replies = {'/healthz': {'ok': True, 'uptime': 5}, '/health': {'ok': True, 'model': 'm', 'dim': 768, 'status': 'ok'}, '/text': {'vectors': [[0.1] * 768]}}
         fetch = lambda url, **k: (200, replies[urllib.parse.urlsplit(url).path])
-        for service in ('embeddings', 'whisper'):
-            self.assertEqual([c['result'] for c in S._probe(service, fetch=fetch, run=self.run)], ['pass'], service)
+        self.assertEqual([(c['check'], c['result']) for c in S._probe('embeddings', fetch=fetch, run=self.run)], [('embed_model', 'pass'), ('embed_inference', 'pass')])
+        self.assertEqual([c['result'] for c in S._probe('whisper', fetch=fetch, run=self.run)], ['pass'])
         # Canvas: its health passes; with no agent token configured its board load stays unverified, never Ready.
         self.assertEqual([(c['check'], c['result']) for c in S._probe('canvas', fetch=fetch, run=self.run)],
                          [('canvas_health', 'pass'), ('canvas_boards', 'unverified')])
@@ -722,9 +723,19 @@ class MissingEvidence(Base):
 
     def test_the_probe_appends_them_so_a_passing_identity_is_not_ready(self):
         up = lambda service: {'loaded': True, 'state': 'running', 'pid': 9, 'last_exit': 0}
-        checks = S.capability_probe('tailshare-receive', state=up)
-        self.assertEqual([c['result'] for c in checks], ['pass', 'unverified'])
-        self.assertEqual(checks[-1]['code'], 'evidence_missing')
+        saved, S.RECEIVE_INBOX = S.RECEIVE_INBOX, self.dir / 'no-inbox'
+        self.addCleanup(lambda: setattr(S, 'RECEIVE_INBOX', saved))
+        checks = S.capability_probe('tailshare-receive', state=up, run=lambda argv, **k: Fake(returncode=0, stdout='', stderr=''))
+        self.assertEqual([(c['check'], c['result']) for c in checks], [('launchd_running', 'pass'), ('receive_freshness', 'unverified')])
+        self.assertEqual(checks[-1]['code'], 'not_waiting')
+        # A service with no real evidence for its entry still carries the placeholder.
+        S.MISSING_EVIDENCE = {**self.saved_missing, 'whisper': [('whisper_extra', 'something not probed')]}
+        got = S.capability_probe('whisper', fetch=lambda url, **k: (200, {'status': 'ok'}), run=lambda argv, **k: Fake(returncode=0, stdout='{}', stderr=''))
+        self.assertEqual(got[-1]['code'], 'evidence_missing')
+
+    def test_real_evidence_does_not_unlock_a_restart(self):
+        for service in ('soma', 'tailshare-serve', 'tailshare-receive', 'embeddings', 'imessage-transport'):
+            self.assertFalse(S.verifiable(service), service)
 
     def test_a_service_not_installed_here_is_refused_and_listed_separately(self):
         S.installed = lambda service: service != 'herd'
@@ -847,7 +858,7 @@ class RunnerCapabilities(unittest.TestCase):
                                   ('/usr/bin/git', '-C', str(mirror), 'rev-parse', '--short', 'HEAD'): (0, head + '\n', ''),
                                   ('/usr/bin/git', '-C', str(mirror), 'rev-parse', '--short', '--verify'): (0, phone + '\n', '')})
         got = S.source_mirror(run=git('fold-sync', 'abc1234', 'abc1234'), mirror=mirror, status_file=status)
-        self.assertEqual((got['code'], got['result']), ('no_sync_agent', 'unverified'))  # e.g. the MacBook
+        self.assertEqual((got['code'], got['result']), ('no_sync_agent', 'not_installed'))  # e.g. the MacBook: an absence, not an Unknown
         status.write_text('Mac Fold source synced: abc1234')
         got = S.source_mirror(run=git('fold-sync', 'abc1234', 'abc1234'), mirror=mirror, status_file=status)
         self.assertEqual((got['code'], got['result']), ('synced', 'pass'))
@@ -859,6 +870,145 @@ class RunnerCapabilities(unittest.TestCase):
         got = S.source_mirror(run=git('soma-mesh', 'abc1234', 'def5678'), mirror=mirror, status_file=status)
         self.assertEqual((got['code'], got['result'], got['fields']['branch']), ('mirror_sync_paused', 'fail', 'soma-mesh'))
         self.assertIn('owner decides', got['fields']['next'])
+
+    def transcript(self, path, *records):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(''.join(json.dumps(r) + '\n' for r in records))
+
+    def at(self, ms):
+        return datetime.datetime.fromtimestamp(ms / 1000, datetime.timezone.utc).isoformat().replace('+00:00', 'Z')
+
+    def test_a_sign_in_is_proven_by_the_providers_own_recent_answer_and_nothing_of_it_leaves(self):
+        claude = self.home / '.claude/projects/p/s.jsonl'
+        answer = lambda ms: {'type': 'assistant', 'timestamp': self.at(ms), 'message': {'model': 'claude-x', 'content': [{'type': 'text', 'text': 'PRIVATE words'}]}}
+        refused = lambda ms: {'type': 'assistant', 'timestamp': self.at(ms), 'error': 'authentication_failed', 'isApiErrorMessage': True, 'message': {'model': '<synthetic>', 'content': []}}
+        self.transcript(claude, answer(self.now - 60_000))
+        got = self.providers()['claude']
+        self.assertEqual((got['code'], got['result'], got['fields']['last_answer_at']), ('answered_recently', 'pass', self.now - 60_000))
+        self.assertNotIn('PRIVATE', json.dumps(got))
+        # An old answer is not proof; it says how old and stays Unknown.
+        self.transcript(claude, answer(self.now - S.RECENT_PROOF_MS - 1))
+        got = self.providers()['claude']
+        self.assertEqual((got['code'], got['result'], got['fields']['last_answer_at']), ('keychain_not_read', 'unverified', self.now - S.RECENT_PROOF_MS - 1))
+        # A refused turn newer than the answer takes the proof away; other model errors say nothing about the sign-in.
+        self.transcript(claude, answer(self.now - 60_000), refused(self.now - 30_000))
+        self.assertEqual(self.providers()['claude']['code'], 'last_turn_refused')
+        self.assertEqual(self.providers()['claude']['result'], 'unverified')
+        self.transcript(claude, refused(self.now - 60_000), answer(self.now - 30_000))
+        self.assertEqual(self.providers()['claude']['result'], 'pass')
+        self.transcript(claude, {'type': 'assistant', 'timestamp': self.at(self.now - 1000), 'isApiErrorMessage': True, 'message': {'model': '<synthetic>'}})
+        self.assertEqual(self.providers()['claude']['code'], 'keychain_not_read')
+        # Codex: the rollout's assistant message, only.
+        rollout = self.home / '.codex/sessions/2026/10/30/rollout-x.jsonl'
+        self.codex(tokens={'access_token': jwt(self.now // 1000 + 3600), 'refresh_token': 'rt-SECRET'})
+        self.transcript(rollout, {'timestamp': self.at(self.now - 60_000), 'type': 'response_item', 'payload': {'type': 'message', 'role': 'user', 'content': 'PRIVATE'}})
+        self.assertEqual(self.providers()['codex']['code'], 'local_valid_remote_unverified')
+        self.transcript(rollout, {'timestamp': self.at(self.now - 60_000), 'type': 'response_item', 'payload': {'type': 'message', 'role': 'assistant', 'content': 'PRIVATE'}})
+        got = self.providers()['codex']
+        self.assertEqual((got['code'], got['result']), ('answered_recently', 'pass'))
+        self.assertNotIn('PRIVATE', json.dumps(got))
+        self.assertNotIn('SECRET', json.dumps(got))
+
+    def test_past_traffic_is_the_evidence_and_nothing_is_sent(self):
+        saved = S.SOMA_SYNCED, S.TAILSHARE_MAIL, S.RECEIVE_INBOX
+        self.addCleanup(lambda: (setattr(S, 'SOMA_SYNCED', saved[0]), setattr(S, 'TAILSHARE_MAIL', saved[1]), setattr(S, 'RECEIVE_INBOX', saved[2])))
+        S.SOMA_SYNCED, S.TAILSHARE_MAIL, S.RECEIVE_INBOX = self.home / 'synced.json', self.home / 'mail', self.home / 'Inbox'
+        self.assertEqual(S.soma_sync(self.now)['code'], 'no_sync_record')
+        S.SOMA_SYNCED.write_text('{}')
+        os.utime(S.SOMA_SYNCED, (self.now / 1000 - 60, self.now / 1000 - 60))
+        got = S.soma_sync(self.now)
+        self.assertEqual((got['code'], got['result'], got['fields']['last_synced_at']), ('synced_recently', 'pass', self.now - 60_000))
+        os.utime(S.SOMA_SYNCED, (self.now / 1000 - 3600, self.now / 1000 - 3600))
+        self.assertEqual((S.soma_sync(self.now)['code'], S.soma_sync(self.now)['result']), ('no_recent_sync', 'unverified'))
+        # Delivery: the newest kept message, read or not; a quiet stretch is Unknown, never a failure.
+        self.assertEqual(S.tailshare_delivery(self.now)['code'], 'no_delivery_record')
+        (S.TAILSHARE_MAIL / 'read').mkdir(parents=True)
+        (S.TAILSHARE_MAIL / 'read/msg-1.json').write_text('{"text": "PRIVATE"}')
+        os.utime(S.TAILSHARE_MAIL / 'read/msg-1.json', (self.now / 1000 - 3600, self.now / 1000 - 3600))
+        got = S.tailshare_delivery(self.now)
+        self.assertEqual((got['code'], got['result']), ('delivered_recently', 'pass'))
+        self.assertNotIn('PRIVATE', json.dumps(got))
+        got = S.tailshare_delivery(self.now + 2 * S.RECENT_PROOF_MS)
+        self.assertEqual((got['code'], got['result']), ('no_recent_delivery', 'unverified'))
+        # Receive: its waiter under this worker, and a file lately; a waiter under another process doesn't count.
+        up = lambda service: {'state': 'running', 'pid': 42}
+        ps = lambda out: self.fake_run({('/bin/ps',): (0, out, '')})
+        waiter = ' 42 /Applications/T/Tailscale file get --wait --conflict=rename --verbose /x\n'
+        got = S.receive_freshness(ps(waiter), up, self.now)
+        self.assertEqual((got['code'], got['result'], got['fields']['waiting']), ('waiting_no_recent_file', 'unverified', True))
+        self.assertEqual(S.receive_freshness(ps(waiter.replace('42', '43')), up, self.now)['code'], 'not_waiting')
+        S.RECEIVE_INBOX.mkdir()
+        (S.RECEIVE_INBOX / 'a.txt').write_text('PRIVATE')
+        os.utime(S.RECEIVE_INBOX / 'a.txt', (self.now / 1000 - 3600, self.now / 1000 - 3600))
+        got = S.receive_freshness(ps(waiter), up, self.now)
+        self.assertEqual((got['code'], got['result']), ('received_recently', 'pass'))
+        self.assertEqual(S.receive_freshness(ps(''), up, self.now)['result'], 'unverified')
+
+    def test_the_model_really_answers(self):
+        asked = []
+        def fetch(url, **k):
+            asked.append((urllib.parse.urlsplit(url).path, k.get('body')))
+            return 200, {'vectors': [[0.1] * 256]}
+        got = S.embed_inference(fetch, ('127.0.0.1', 8100), 256)
+        self.assertEqual((got['code'], got['result'], got['fields']['size']), ('model_answered', 'pass', 256))
+        self.assertEqual(asked, [('/text', {'texts': ['soma connections check']})])
+        self.assertEqual(S.embed_inference(fetch, ('127.0.0.1', 8100), 768)['result'], 'fail')
+        self.assertEqual(S.embed_inference(lambda url, **k: (200, {'vectors': []}), ('127.0.0.1', 8100), 256)['result'], 'fail')
+        def down(url, **k):
+            raise urllib.error.HTTPError(url, 500, 'x', {}, None)
+        self.assertEqual(S.embed_inference(down, ('127.0.0.1', 8100), 256)['code'], 'no_model_answer')
+
+    def test_the_transport_is_asked_through_the_apis_health(self):
+        saved_token, saved_endpoint = S.IMESSAGE_TOKEN, S.endpoint
+        self.addCleanup(lambda: (setattr(S, 'IMESSAGE_TOKEN', saved_token), setattr(S, 'endpoint', saved_endpoint)))
+        S.IMESSAGE_TOKEN, S.endpoint = self.home / 'token', lambda service, run=None, load=None: ('127.0.0.1', 8799)
+        self.assertEqual(S.transport_traversal(None, None)['code'], 'no_token')
+        S.IMESSAGE_TOKEN.write_text('im-SECRET')
+        reply = {'sendTransport': 'rustpush', 'sendReady': True, 'readOnly': False, 'sendProblem': None}
+        asked = []
+        def fetch(url, headers=None, **k):
+            asked.append(headers)
+            return 200, reply
+        got = S.transport_traversal(fetch, None)
+        self.assertEqual((got['code'], got['result']), ('transport_answered', 'pass'))
+        self.assertEqual(asked, [{'Authorization': 'Bearer im-SECRET'}])
+        self.assertNotIn('SECRET', json.dumps(got))
+        reply.update(sendReady=False, sendProblem='bridge said no')
+        got = S.transport_traversal(fetch, None)
+        self.assertEqual((got['code'], got['result'], got['fields']['send_problem']), ('transport_not_ready', 'fail', 'bridge said no'))
+        reply.update(readOnly=True)  # sendReady is false by the read-only switch, whatever the transport says
+        self.assertEqual(S.transport_traversal(fetch, None)['code'], 'transport_not_asked')
+        reply.update(readOnly=False, sendTransport='applescript')
+        self.assertEqual(S.transport_traversal(fetch, None)['result'], 'unverified')
+        def no_api(url, **k):
+            raise urllib.error.URLError('refused')
+        got = S.transport_traversal(no_api, None)
+        self.assertEqual((got['code'], got['result']), ('api_unanswered', 'unverified'))
+
+    def test_the_tailscale_cli_is_called_by_its_real_path_with_a_term_and_a_gui_complaint_is_not_an_outage(self):
+        saved, S.TAILSCALE_PATHS = S.TAILSCALE_PATHS, (str(self.home / 'tailscale'),)
+        self.addCleanup(lambda: setattr(S, 'TAILSCALE_PATHS', saved))
+        (self.home / 'real-tailscale').write_text('')
+        os.symlink(self.home / 'real-tailscale', self.home / 'tailscale')
+        seen = []
+        def run(argv, env=None, **k):
+            seen.append((argv[0], env.get('TERM')))
+            return Fake(returncode=0, stdout='{"Self": {}}', stderr='')
+        term = os.environ.pop('TERM', None)
+        self.addCleanup(lambda: term is None or os.environ.__setitem__('TERM', term))
+        self.assertEqual(S.tailscale_status(run), {'Self': {}})
+        self.assertEqual(seen, [(os.path.realpath(self.home / 'real-tailscale'), 'dumb')])
+        gui = lambda argv, **k: Fake(returncode=0, stdout='The Tailscale GUI failed to start: CLIError error 3\n', stderr='')
+        with self.assertRaises(S.Unverified) as caught:
+            S.tailscale_status(gui)
+        self.assertIn('GUI failed', str(caught.exception))
+        endpoint = S.endpoint
+        S.endpoint = lambda service, run=None, load=None: S.tailnet_ip(run)
+        self.addCleanup(lambda: setattr(S, 'endpoint', endpoint))
+        saved_plist, S.plist_path = S.plist_path, lambda service: self.home / 'x.plist'
+        self.addCleanup(lambda: setattr(S, 'plist_path', saved_plist))
+        (check,) = S._probe('herd', fetch=lambda url, **k: (200, {}), run=gui)
+        self.assertEqual((check['code'], check['result']), ('reachable_unverified', 'unverified'))
 
     def test_build_locks_are_read_not_taken(self):
         locks = self.home / 'locks'
@@ -887,6 +1037,15 @@ class CanvasAndHerd(unittest.TestCase):
         (self.dir / 'canvas.plist').write_bytes(plistlib.dumps({'ProgramArguments': ['/bin/zsh', '-lc', 'cd %s && npx tsx src/server/server.ts' % server],
                                                                'EnvironmentVariables': {'PATH': '/usr/bin'}}))
         self.assertEqual(S.canvas_boards(lambda *a, **k: None, ('127.0.0.1', 5860))['code'], 'no_agent_token')
+        # The real plist's command starts with an export, and a board's id can have dashes.
+        real = self.dir / 'real-plist.plist'
+        real.write_bytes(plistlib.dumps({'ProgramArguments': ['/bin/zsh', '-lc', 'export PATH="/x:$PATH"; cd %s && NODE_ENV=production exec npx tsx src/server/server.ts' % server]}))
+        S.plist_path = lambda service: real
+        (server / 'data/agent-token.txt').write_text('canvas-agent-SECRET\n')
+        dashed = S.canvas_boards(lambda url, **k: (200, {'apps': [{'id': 'soma-canvas'}]}) if url.endswith('/api/apps') else (200, {}), ('127.0.0.1', 5861))
+        self.assertEqual((dashed['code'], dashed['result']), ('ok', 'pass'))
+        (server / 'data/agent-token.txt').unlink()
+        S.plist_path = lambda service: self.dir / 'canvas.plist'
         (server / 'data/agent-token.txt').write_text('canvas-agent-SECRET\n')
         asked = []
         def fetch(url, headers=None, **k):

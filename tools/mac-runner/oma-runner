@@ -4569,10 +4569,15 @@ class Runner(BaseHTTPRequestHandler):
         return False
 
     def soma_keys(self):
-        # Soma accepts the same paired-device key, so a device asking about Soma's health proves it with its own key; no
-        # Keychain read. Only a device key is lent, never a thread or agent token, and only to this Mac's own Soma.
+        # Soma admits a key only from its owner's address, and this probe reaches Soma from this Mac: another device's key can
+        # only be refused. So the runner's own key from its private file (no Keychain read), else a key of a device on this
+        # Mac itself. Only a device key is lent, never a thread or agent token, and only to this Mac's own Soma.
+        own = private_text(SOMA_KEY_FILE)
+        if own:
+            return {'soma': (lambda: own)}
         key = getattr(self, 'device_key', None)
-        return {'soma': (lambda: key)} if key and getattr(self, 'device', None) else None
+        here = (self.client_address[0] if self.client_address else '') in ('127.0.0.1', '::1', '::ffff:127.0.0.1')
+        return {'soma': (lambda: key)} if key and here and getattr(self, 'device', None) else None
 
     def parts(self):
         address = urllib.parse.urlsplit(self.path)

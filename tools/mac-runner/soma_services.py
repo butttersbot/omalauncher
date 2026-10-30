@@ -11,7 +11,7 @@ Boss-approved scope (Phone A 20261028-215622, refined 220739; Phone B 20261028-2
 Nothing here enrolls or replaces owner keys, runs a shell, takes a path or command from a request, or restarts a
 service whose restart cannot be verified by that service's own capability check. Times are epoch milliseconds.
 """
-import base64, concurrent.futures, contextlib, fcntl, hashlib, hmac, ipaddress, json, os, pathlib, plistlib, re, secrets, socket, stat, subprocess, sys, tempfile, threading, time
+import base64, concurrent.futures, contextlib, datetime, fcntl, hashlib, hmac, ipaddress, json, os, pathlib, plistlib, re, secrets, socket, stat, subprocess, sys, tempfile, threading, time
 import http.client, urllib.error, urllib.parse, urllib.request
 
 HOME = pathlib.Path.home()
@@ -139,6 +139,13 @@ _HOST = None
 TAILSCALE_PATHS = ('/opt/homebrew/bin/tailscale', '/usr/local/bin/tailscale', '/Applications/Tailscale.app/Contents/MacOS/Tailscale')
 
 
+def _tailscale_json(tailscale, run, timeout):
+    """`tailscale status --json` by its real path and with a TERM: the menu-bar app's CLI, reached through a symlink or
+    with no TERM (a launchd job has none), prints "The Tailscale GUI failed to start" and exits 0."""
+    return run([os.path.realpath(tailscale), 'status', '--json'], capture_output=True, text=True, timeout=timeout, check=False,
+               env={**os.environ, 'TERM': os.environ.get('TERM') or 'dumb'})
+
+
 def host_identity():
     """This runner's fixed identity: the first label of its tailnet DNS name, else the short hostname, lowercase."""
     global _HOST
@@ -149,7 +156,7 @@ def host_identity():
         if not os.path.exists(tailscale):
             continue
         with contextlib.suppress(Exception):
-            out = subprocess.run([tailscale, 'status', '--json'], capture_output=True, text=True, timeout=5, check=False).stdout
+            out = _tailscale_json(tailscale, subprocess.run, 5).stdout
             name = (json.loads(out).get('Self') or {}).get('DNSName', '').split('.')[0]
         if name:
             break
@@ -563,8 +570,10 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 _OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect)
 
 
-def http_json(url, timeout=4, headers=None, limit=262_144):
-    request = urllib.request.Request(url, headers={'Accept': 'application/json', **(headers or {})})
+def http_json(url, timeout=4, headers=None, limit=262_144, body=None):
+    extra = {'Content-Type': 'application/json'} if body is not None else {}
+    request = urllib.request.Request(url, data=None if body is None else json.dumps(body).encode(),
+                                     headers={'Accept': 'application/json', **extra, **(headers or {})})
     try:
         reply_cm = _OPENER.open(request, timeout=timeout)  # noqa: S310 -- fixed local/tailnet URLs only
     except urllib.error.HTTPError as e:
@@ -628,12 +637,75 @@ def _jwt_exp_ms(token):
     return None
 
 
-def _sign_in(provider, configured, access_expires_ms=None, refresh=None, api_key=False, why=None, now=None):
-    """One provider's sign-in, from local files only. Nothing local proves the provider still accepts it, so the best a
-    sign-in can be here is unverified (remote_unverified) -- never Ready. Expired access with a refresh token is not an
-    owner-login problem; no usable credential at all is."""
+RECENT_PROOF_MS = 24 * 3600_000  # a real answer or delivery this recent is proof; older, the reading says how old and stays Unknown
+ANSWER_TAIL = 524_288
+ANSWER_FILES = 5
+
+
+def _stamp_ms(text):
+    with contextlib.suppress(Exception):
+        return int(datetime.datetime.fromisoformat(str(text).replace('Z', '+00:00')).timestamp() * 1000)
+    return None
+
+
+def _claude_turn(record):
+    """A line of a Claude Code transcript: 'answered' for the model's own reply, 'refused' when the sign-in was refused."""
+    if record.get('type') != 'assistant':
+        return None
+    if record.get('error') == 'authentication_failed':
+        return 'refused'
+    model = (record.get('message') or {}).get('model')
+    return 'answered' if model and model != '<synthetic>' and not record.get('isApiErrorMessage') else None
+
+
+def _codex_turn(record):
+    """A line of a Codex rollout, the same way."""
+    payload = record.get('payload') if isinstance(record.get('payload'), dict) else {}
+    if record.get('type') == 'response_item' and payload.get('type') == 'message' and payload.get('role') == 'assistant':
+        return 'answered'
+    if record.get('type') == 'event_msg' and payload.get('type') == 'error' and re.search(r'\b401\b|unauthori[sz]ed|log ?in|sign ?in', str(payload.get('message')), re.I):
+        return 'refused'
+    return None
+
+
+def _last_turns(files, kind):
+    """The newest real answer and the newest refused sign-in in the newest transcripts on this Mac, as times: a provider only
+    answers a sign-in it accepts, so this is its own word, with no token read, no call made and no quota spent. Nothing
+    else of a transcript is kept."""
+    dated = []
+    for path in files:
+        with contextlib.suppress(OSError):
+            dated.append((path.stat().st_mtime, path))
+    found = {'answered': None, 'refused': None}
+    for _, path in sorted(dated, key=lambda x: x[0], reverse=True)[:ANSWER_FILES]:
+        with contextlib.suppress(OSError):
+            with open(path, 'rb') as f:
+                f.seek(max(0, f.seek(0, os.SEEK_END) - ANSWER_TAIL))
+                lines = f.read().split(b'\n')
+            for line in lines:
+                if b'"assistant"' not in line and b'"error"' not in line and b'authentication_failed' not in line:
+                    continue
+                with contextlib.suppress(ValueError, AttributeError):
+                    record = json.loads(line)
+                    turn, at = kind(record), _stamp_ms(record.get('timestamp'))
+                    if turn and at and at > (found[turn] or 0):
+                        found[turn] = at
+    return found
+
+
+def _sign_in(provider, configured, access_expires_ms=None, refresh=None, api_key=False, why=None, now=None, turns=None):
+    """One provider's sign-in. Local files can't prove the provider still accepts it, so they alone are at best unverified
+    (remote_unverified) -- never Ready; its own recent answer on this Mac is the proof that can. Expired access with a
+    refresh token is not an owner-login problem; no usable credential at all is."""
     now = now or now_ms()
     fields = {'provider': provider, 'configured': configured, 'access_expires_at': access_expires_ms, 'refresh_available': refresh}
+    answered, refused = (turns or {}).get('answered'), (turns or {}).get('refused')
+    if answered or refused:
+        fields.update(last_answer_at=answered, last_refused_at=refused)
+    if answered and answered > (refused or 0) and now - answered < RECENT_PROOF_MS:
+        return mkcheck('provider_auth.' + provider, provider, 'answered_recently', 'pass', fields)
+    if refused and refused > (answered or 0):
+        return mkcheck('provider_auth.' + provider, provider, 'last_turn_refused', 'unverified', {**fields, 'next': 'its newest turn on this Mac was refused its sign-in; a new turn that answers clears this'})
     if not configured:
         return mkcheck('provider_auth.' + provider, provider, why or 'not_configured', 'not_installed', fields)
     if why:
@@ -649,33 +721,36 @@ def _sign_in(provider, configured, access_expires_ms=None, refresh=None, api_key
 
 def provider_checks(home=None, platform=None, now=None):
     """Claude Code, Codex and Grok, as this Mac's runner would start them. Files are read into memory only for expiry
-    and refresh availability; no token, account or email leaves this function, and nothing is refreshed or called."""
+    and refresh availability, transcripts only for when the provider last answered; no token, account or email leaves this
+    function, and nothing is refreshed or called."""
     home = pathlib.Path(home or HOME)
     out = []
     # Codex: ~/.codex/auth.json (or CODEX_HOME).
     codex = pathlib.Path(os.environ.get('CODEX_HOME') or home / '.codex') / 'auth.json'
+    codex_turns = _last_turns(codex.parent.glob('sessions/*/*/*/rollout-*.jsonl'), _codex_turn)
+    claude_turns = _last_turns(home.glob('.claude/projects/*/*.jsonl'), _claude_turn)
     try:
         data = json.loads(codex.read_text()[:65_536])
         tokens = data.get('tokens') if isinstance(data.get('tokens'), dict) else {}
         out.append(_sign_in('codex', True, _jwt_exp_ms(str(tokens.get('access_token') or '')), bool(tokens.get('refresh_token')),
-                            api_key=bool(data.get('OPENAI_API_KEY')) and not tokens, now=now))
+                            api_key=bool(data.get('OPENAI_API_KEY')) and not tokens, now=now, turns=codex_turns))
     except FileNotFoundError:
-        out.append(_sign_in('codex', False, now=now))
+        out.append(_sign_in('codex', False, now=now, turns=codex_turns))
     except Exception:  # noqa: BLE001
-        out.append(_sign_in('codex', True, why='credentials_unreadable', now=now))
+        out.append(_sign_in('codex', True, why='credentials_unreadable', now=now, turns=codex_turns))
     # Claude Code: on macOS its sign-in lives in the login Keychain, which is never read here (it could ask the owner).
     claude = home / '.claude/.credentials.json'
     if (platform or sys.platform) == 'darwin':
-        out.append(_sign_in('claude', True, why='keychain_not_read', now=now))
+        out.append(_sign_in('claude', True, why='keychain_not_read', now=now, turns=claude_turns))
     else:
         try:
             oauth = json.loads(claude.read_text()[:65_536]).get('claudeAiOauth') or {}
             expires = oauth.get('expiresAt')
-            out.append(_sign_in('claude', bool(oauth), int(expires) if isinstance(expires, (int, float)) else None, bool(oauth.get('refreshToken')), now=now))
+            out.append(_sign_in('claude', bool(oauth), int(expires) if isinstance(expires, (int, float)) else None, bool(oauth.get('refreshToken')), now=now, turns=claude_turns))
         except FileNotFoundError:
-            out.append(_sign_in('claude', False, now=now))
+            out.append(_sign_in('claude', False, now=now, turns=claude_turns))
         except Exception:  # noqa: BLE001
-            out.append(_sign_in('claude', True, why='credentials_unreadable', now=now))
+            out.append(_sign_in('claude', True, why='credentials_unreadable', now=now, turns=claude_turns))
     # Grok CLI: ~/.grok/auth.json exists or not; its format is not documented, so its validity stays unverified.
     grok = home / '.grok/auth.json'
     out.append(_sign_in('grok', grok.exists(), why='format_undocumented' if grok.exists() else None, now=now))
@@ -770,7 +845,7 @@ def source_mirror(run=subprocess.run, mirror=None, status_file=None):
         status = status_file.read_text()[:200].strip()
         fields.update(sync_status=status[:80], sync_status_since=int(status_file.stat().st_mtime * 1000))
     except OSError:
-        return mkcheck('source_freshness.mirror', 'runner', 'no_sync_agent', 'unverified',
+        return mkcheck('source_freshness.mirror', 'runner', 'no_sync_agent', 'not_installed',
                        {**fields, 'next': 'this Mac has no mirror sync agent; builders bring the mirror up to date before each build'})
     if status.startswith('Paused'):
         return mkcheck('source_freshness.mirror', 'runner', 'mirror_sync_paused', 'fail',
@@ -795,7 +870,7 @@ def canvas_boards(fetch, host_port, load=None):
         else:
             args = [str(a) for a in data.get('ProgramArguments') or []]
             command = args[-1] if args else ''
-            found = re.match(r'\s*cd\s+([^;&|\s]+)\s*&&', command)
+            found = re.search(r'(?:^|[;&|\s])cd\s+([^;&|\s]+)\s*&&', command)
             workdir = data.get('WorkingDirectory') or (found and os.path.expanduser(found.group(1)))
             if workdir:
                 folder = pathlib.Path(workdir) / 'data'
@@ -809,21 +884,112 @@ def canvas_boards(fetch, host_port, load=None):
     if not apps:
         return mkcheck('canvas_boards', 'canvas', 'no_boards', 'unverified', {'boards': 0})
     board = apps[0].get('id') if isinstance(apps[0], dict) else None
-    if not isinstance(board, str) or not re.fullmatch(r'[a-z0-9]{8,40}', board):
+    if not isinstance(board, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,63}', board):
         return mkcheck('canvas_boards', 'canvas', 'board_list_shape', 'unverified', {'boards': len(apps)})
     status, snapshot = fetch('http://%s:%d/api/boards/%s/snapshot' % (*host_port, board), headers={'x-canvas-token': token}, limit=16_000_000)
     return mkcheck('canvas_boards', 'canvas', 'ok' if status == 200 else 'board_load_failed', 'pass' if status == 200 else 'fail',
                    {'boards': len(apps), 'board_loaded': status == 200, 'http_status': status})
 
 
+def embed_inference(fetch, host_port, dim):
+    """The model really answers: one short fixed text in, a vector of the model's size out. Nothing is stored by the server."""
+    try:
+        status, data = fetch('http://%s:%d/text' % host_port, timeout=30, limit=1_048_576, body={'texts': ['soma connections check']})
+    except (urllib.error.URLError, OSError, Unverified) as e:
+        return mkcheck('embed_inference', 'embeddings', 'no_model_answer', 'fail', {}, stderr=str(e))
+    vectors = data.get('vectors')
+    size = len(vectors[0]) if isinstance(vectors, list) and vectors and isinstance(vectors[0], list) else None
+    ok = status == 200 and bool(size) and (not isinstance(dim, int) or size == dim)
+    return mkcheck('embed_inference', 'embeddings', 'model_answered' if ok else 'no_model_answer', 'pass' if ok else 'fail', {'http_status': status, 'size': size})
+
+
+def transport_traversal(fetch, run):
+    """The iMessage API's health asks the transport over its socket when it says sendReady (its send path, op health), and it
+    sends nothing. A read-only API or one not on this transport can't say, and neither can an API that doesn't answer."""
+    token = _read_secret(IMESSAGE_TOKEN)
+    if not token:
+        return mkcheck('transport_traversal', 'imessage-transport', 'no_token', 'unverified', {'missing': 'the iMessage service token file'})
+    try:
+        status, data = fetch('http://%s:%d/v1/health' % endpoint('imessage-api', run), headers={'Authorization': 'Bearer ' + token})
+    except (urllib.error.URLError, OSError, ValueError, RuntimeError, Unverified) as e:
+        return mkcheck('transport_traversal', 'imessage-transport', 'api_unanswered', 'unverified', {'reason': 'the iMessage API, which asks the transport, did not answer'}, stderr=str(e))
+    fields = {'http_status': status, 'send_transport': str(data.get('sendTransport', ''))[:24], 'send_problem': str(data.get('sendProblem') or '')[:120] or None}
+    if status != 200 or data.get('sendTransport') != 'rustpush' or data.get('readOnly') is True:
+        return mkcheck('transport_traversal', 'imessage-transport', 'transport_not_asked', 'unverified', {**fields, 'read_only': data.get('readOnly') is True})
+    ok = data.get('sendReady') is True
+    return mkcheck('transport_traversal', 'imessage-transport', 'transport_answered' if ok else 'transport_not_ready', 'pass' if ok else 'fail', fields)
+
+
+SOMA_SYNCED = HOME / '.config/soma/canvas-synced.json'
+SOMA_SYNC_PROOF_MS = 10 * 60_000  # Soma exchanges every 30 s while it runs
+TAILSHARE_MAIL = HOME / '.local/share/tailshare/mail'
+RECEIVE_INBOX = HOME / 'Inbox'
+
+
+def _newest_file_ms(*folders):
+    newest = None
+    for folder in folders:
+        with contextlib.suppress(OSError):
+            with os.scandir(folder) as entries:
+                for entry in entries:
+                    with contextlib.suppress(OSError):
+                        if entry.is_file() and not entry.name.startswith('.'):
+                            at = int(entry.stat().st_mtime * 1000)
+                            newest = max(newest or 0, at)
+    return newest
+
+
+def soma_sync(now=None):
+    """Soma on this Mac keeps the service's copy only after a round the service answered, so the file's time is its last
+    real exchange. Nothing is sent. A Soma that isn't running here can't say."""
+    now = now or now_ms()
+    try:
+        at = int(SOMA_SYNCED.stat().st_mtime * 1000)
+    except OSError:
+        return mkcheck('soma_sync', 'soma', 'no_sync_record', 'unverified', {'missing': "Soma's sync record on this Mac; it is written when a Soma window here syncs"})
+    fresh = now - at < SOMA_SYNC_PROOF_MS
+    return mkcheck('soma_sync', 'soma', 'synced_recently' if fresh else 'no_recent_sync', 'pass' if fresh else 'unverified', {'last_synced_at': at})
+
+
+def tailshare_delivery(now=None):
+    """A real message this service took in and kept: the newest in its mail folders, read or not. No test message is sent,
+    so a quiet day reads Unknown with its age, never a failure."""
+    now = now or now_ms()
+    at = _newest_file_ms(TAILSHARE_MAIL / 'new', TAILSHARE_MAIL / 'read')
+    if not at:
+        return mkcheck('tailshare_delivery', 'tailshare-serve', 'no_delivery_record', 'unverified', {'missing': 'any message delivered to this Mac'})
+    fresh = now - at < RECENT_PROOF_MS
+    return mkcheck('tailshare_delivery', 'tailshare-serve', 'delivered_recently' if fresh else 'no_recent_delivery', 'pass' if fresh else 'unverified', {'last_delivery_at': at})
+
+
+def receive_freshness(run, state, now=None):
+    """The worker's `tailscale file get --wait` is alive and waiting, and a file really landed in the Inbox lately. Waiting alone
+    doesn't prove a file would arrive, and no test file is sent, so that much reads Unknown with the last arrival's time."""
+    now = now or now_ms()
+    pid = state('tailshare-receive').get('pid')
+    r = _run_quiet(run, ['/bin/ps', '-ax', '-o', 'ppid=,command='], 5)
+    waiting = False
+    for line in (r.stdout.splitlines() if r is not None and r.returncode == 0 else []):
+        parent, _, command = line.strip().partition(' ')
+        waiting = waiting or (bool(pid) and parent == str(pid) and 'file get' in command and '--wait' in command)
+    at = _newest_file_ms(RECEIVE_INBOX)
+    fields = {'waiting': waiting, 'last_received_at': at}
+    if waiting and at and now - at < RECENT_PROOF_MS:
+        return mkcheck('receive_freshness', 'tailshare-receive', 'received_recently', 'pass', fields)
+    return mkcheck('receive_freshness', 'tailshare-receive', 'waiting_no_recent_file' if waiting else 'not_waiting', 'unverified', fields)
+
+
 def tailscale_status(run=subprocess.run):
     """`tailscale status --json`, parsed; only whitelisted fields ever leave the probe (it also names the owner's login)."""
     for tailscale in TAILSCALE_PATHS:
         if os.path.exists(tailscale):
-            r = run([tailscale, 'status', '--json'], capture_output=True, text=True, timeout=8, check=False)
+            r = _tailscale_json(tailscale, run, 8)
             if r.returncode != 0:
                 raise RuntimeError('tailscale status exited %d: %s' % (r.returncode, stderr_tail(r.stderr, 200)))
-            data = json.loads(r.stdout[:4_000_000])
+            try:
+                data = json.loads(r.stdout[:4_000_000])
+            except ValueError:
+                raise Unverified('the tailscale CLI answered without its status (%s)' % stderr_tail(r.stdout or r.stderr, 80)) from None
             if not isinstance(data, dict):
                 raise Unverified('tailscale status is not a JSON object')
             return data
@@ -861,7 +1027,22 @@ def capability_probe(service, fetch=http_json, run=subprocess.run, state=None, k
     A service this host doesn't have gets one neutral not_installed result and is never probed: absence is not an outage."""
     if not installed(service):
         return [mkcheck('installed', service, 'disabled' if service in OPTIONAL else 'not_installed', 'not_installed', {'optional': service in OPTIONAL})]
-    return _probe(service, fetch, run, state, keys) + missing_checks(service)
+    checks = _probe(service, fetch, run, state, keys) + evidence_checks(service, fetch, run, state or launchd_state)
+    return checks + [c for c in missing_checks(service) if c['check'] not in {x['check'] for x in checks}]
+
+
+def evidence_checks(service, fetch, run, state):
+    """Evidence beyond the service's own probe. What reads a past delivery or sync (soma, tailshare) can't vouch for a restart
+    until the next real one happens, which is why those stay in MISSING_EVIDENCE."""
+    if service == 'soma':
+        return [soma_sync()]
+    if service == 'tailshare-serve':
+        return [tailshare_delivery()]
+    if service == 'tailshare-receive':
+        return [receive_freshness(run, state)]
+    if service == 'imessage-transport':
+        return [transport_traversal(fetch, run)]
+    return []
 
 
 def _probe(service, fetch=http_json, run=subprocess.run, state=None, keys=None):
@@ -889,7 +1070,7 @@ def _probe(service, fetch=http_json, run=subprocess.run, state=None, keys=None):
                 return [mkcheck('soma_identity', 'soma', 'soma_url_untrusted', 'unverified', {'reason': 'Soma URL is not this Mac (loopback or its own tailnet address)'})]
             key = (keys.get('soma') or (lambda: None))()
             if not key:
-                return [mkcheck('soma_identity', 'soma', 'no_runner_key', 'unverified', {'missing': "the runner's Soma device key"})]
+                return [mkcheck('soma_identity', 'soma', 'no_runner_key', 'unverified', {'missing': "the runner's Soma device key", 'next': "this runner has no Soma key of its own (`Soma --mint-runner-key`, and a system daemon also needs it in ~/.config/oma-runner/soma-service-key); another device's key is refused from this Mac's address"})]
             status, data = fetch(base + '/health', headers={'Authorization': 'Bearer ' + key})
             return [check('soma_identity', 'wrong_identity', status == 200 and data.get('service') == 'soma-serve' and data.get('ok') is True,
                           {'http_status': status, 'service': str(data.get('service', ''))[:40]})]
@@ -903,10 +1084,12 @@ def _probe(service, fetch=http_json, run=subprocess.run, state=None, keys=None):
             status, data = fetch('http://%s:%d/healthz' % host_port)
             return [check('canvas_health', 'unhealthy', status == 200 and data.get('ok') is True, {'http_status': status}), canvas_boards(fetch, host_port)]
         if service == 'embeddings':
-            status, data = fetch('http://%s:%d/health' % endpoint(service, run))
+            base = endpoint(service, run)
+            status, data = fetch('http://%s:%d/health' % base)
             dim = data.get('dim')
-            return [check('embed_model', 'model_missing', status == 200 and data.get('ok') is True and isinstance(dim, int) and dim > 0,
-                          {'http_status': status, 'dim': dim if isinstance(dim, int) else None, 'model': str(data.get('model', ''))[:80]})]
+            model = check('embed_model', 'model_missing', status == 200 and data.get('ok') is True and isinstance(dim, int) and dim > 0,
+                          {'http_status': status, 'dim': dim if isinstance(dim, int) else None, 'model': str(data.get('model', ''))[:80]})
+            return [model, embed_inference(fetch, base, dim)]
         if service == 'whisper':
             status, data = fetch('http://%s:%d/health' % endpoint(service, run))  # whisper.cpp: 200 {"status":"ok"} once the model is loaded
             return [check('whisper_model', 'model_not_loaded', status == 200 and data.get('status') == 'ok', {'http_status': status})]
@@ -938,7 +1121,7 @@ def _probe(service, fetch=http_json, run=subprocess.run, state=None, keys=None):
             return [check('imessage_health', 'not_ready', status == 200 and data.get('ok') is True and data.get('sendReady') is True,
                           {'http_status': status, **fields})]
         if service == 'imessage-transport':
-            # Its health op is internal to the API process; a running process with its socket is the evidence here.
+            # A running process with its socket; transport_traversal is what crosses that socket.
             sock = TRANSPORT_SOCKET
             is_socket = sock.exists() and stat.S_ISSOCK(os.stat(sock).st_mode)
             return [_running(service, state), check('transport_socket', 'socket_missing', is_socket, {})]
@@ -959,12 +1142,14 @@ def _probe(service, fetch=http_json, run=subprocess.run, state=None, keys=None):
 # End-to-end evidence a service's restart needs beyond what its probe can show today. Each becomes a REQUIRED unverified
 # check in every probe, so identity, health or process evidence alone never reads as Ready or Restored, and a restart is
 # refused before it starts (nothing is restarted that could only be half-verified). Remove an entry only with a real probe.
+# A check of the same name from evidence_checks or the service's probe replaces the placeholder in readings; the entry itself
+# still holds its restart: the first three only read past traffic, and the last two are held until Boss wants them unlocked.
 MISSING_EVIDENCE = {
-    'soma': [('soma_sync', 'a Soma sync cursor or ack; /health shows identity and public-URL liveness only')],
-    'tailshare-serve': [('tailshare_delivery', 'a delivery ack; /v1/hello shows identity only')],
-    'tailshare-receive': [('receive_freshness', 'a worker heartbeat or last-delivery ack; the receive loop has no endpoint')],
-    'embeddings': [('embed_inference', 'a model answer; /health checks the model file exists, not that it loads')],
-    'imessage-transport': [('transport_traversal', 'an API health that crosses the transport socket; process and socket only today')],
+    'soma': [('soma_sync', 'a sync made after the restart; the record only shows the last one')],
+    'tailshare-serve': [('tailshare_delivery', 'a delivery made after the restart; the mail folder only shows the last one')],
+    'tailshare-receive': [('receive_freshness', 'a file received after the restart; the worker has no endpoint and no test file is sent')],
+    'embeddings': [('embed_inference', 'the owner turning on restarts for this service; its model answer is probed but restarts stay held')],
+    'imessage-transport': [('transport_traversal', 'the owner turning on restarts for this service; its traversal is probed but restarts stay held')],
 }
 
 
