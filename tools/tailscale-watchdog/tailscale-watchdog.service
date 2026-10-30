@@ -1,0 +1,9 @@
+[Unit]
+Description=Brings Tailscale back when it reads Stopped
+After=tailscaled.service
+
+[Service]
+Type=oneshot
+User=neetzy
+Environment=HOME=/home/neetzy PATH=/usr/bin:/bin:/home/neetzy/.local/bin
+ExecStart=/home/neetzy/.local/bin/tailscale-watchdog check

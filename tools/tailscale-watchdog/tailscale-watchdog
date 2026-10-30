@@ -1,0 +1,93 @@
+#!/bin/sh
+# tailscale-watchdog: brings Tailscale back when it reads Stopped. Runs every 2 minutes as the device's own user, never as root.
+#   tailscale-watchdog check    one look; what the timer runs
+#   tailscale-watchdog pause    leave it alone (before a `tailscale down` you mean)
+#   tailscale-watchdog resume   go back to watching
+#   tailscale-watchdog status   what it last saw
+# It only ever runs a bare `tailscale up`, with no flags: that is Tailscale's own special case, which sets running and changes
+# no other setting (cmd/tailscale/cli/up.go). No flag may be added, not even a timeout. It runs only on Stopped with a login in
+# place: a device that needs a login is reported, because `up` would start one.
+set -u
+FOLDER=${TAILSCALE_WATCHDOG_HOME:-$HOME/.config/tailscale-watchdog}
+PAUSED=$FOLDER/paused
+SAW=$FOLDER/last-state
+UNSENT=$FOLDER/unsent
+UP_WAIT=${TAILSCALE_WATCHDOG_UP_WAIT:-30}
+
+say() { echo "$(date '+%Y-%m-%d %H:%M:%S') $1"; }
+find_tailscale() {
+    # The app's CLI only works by its real path; a symlink to it crashes.
+    for t in ${TAILSCALE_WATCHDOG_BIN:-} /Applications/Tailscale.app/Contents/MacOS/Tailscale /opt/homebrew/opt/tailscale/bin/tailscale /usr/local/opt/tailscale/bin/tailscale /usr/bin/tailscale; do
+        [ -x "$t" ] && { echo "$t"; return 0; }
+    done
+    return 1
+}
+ts() { TERM=${TERM:-dumb} "$TS" "$@"; }
+# Top-level and Self fields of status --json, by their indents: a peer's fields sit deeper.
+state_of() { printf '%s\n' "$1" | sed -n 's/^  "BackendState": "\([A-Za-z]*\)",*$/\1/p' | head -1; }
+tell() {
+    # Best effort, and the line waits here for a way out: with Tailscale down the mail can't leave.
+    line="$(hostname -s): $1"
+    say "$1"
+    printf '%s\n' "$line" >> "$UNSENT"
+}
+send_unsent() {
+    [ -s "$UNSENT" ] || return 0
+    tmsg=$(command -v tmsg || echo "$HOME/.local/bin/tmsg")
+    [ -x "$tmsg" ] || return 0
+    "$tmsg" send "${TAILSCALE_WATCHDOG_MAIL_TO:-galaxy-z-fold8:A}" "Tailscale: $(cat "$UNSENT")" >/dev/null 2>&1 && : > "$UNSENT"
+}
+remember() {
+    [ "$(cat "$SAW" 2>/dev/null)" = "$1" ] && return 1
+    printf '%s\n' "$1" > "$SAW"
+}
+
+mkdir -p "$FOLDER"
+case "${1:-check}" in
+  pause) : > "$PAUSED"; say "paused: Tailscale is left alone until \`tailscale-watchdog resume\`"; exit 0 ;;
+  resume) rm -f "$PAUSED"; say "watching again"; exit 0 ;;
+  status)
+    [ -e "$PAUSED" ] && echo "paused" || echo "watching"
+    echo "last saw: $(cat "$SAW" 2>/dev/null || echo nothing yet)"
+    exit 0 ;;
+  check) ;;
+  *) echo "usage: tailscale-watchdog check|pause|resume|status" >&2; exit 64 ;;
+esac
+
+[ -e "$PAUSED" ] && exit 0
+TS=$(find_tailscale) || { remember no-cli && tell "no tailscale command found here"; exit 0; }
+status=$(ts status --json 2>/dev/null)
+state=$(state_of "$status")
+case "$state" in
+  Running)
+    remember Running
+    send_unsent ;;
+  Stopped)
+    # With no login behind it, or a key that has run out, `up` wouldn't just start running.
+    if ! printf '%s\n' "$status" | grep -q '^  "HaveNodeKey": true' || printf '%s\n' "$status" | grep -q '^    "Expired": true'; then
+        remember login-needed && tell "stopped, and needs a login first: Boss has to sign in; nothing was run"
+        exit 0
+    fi
+    remember Stopped
+    out=$FOLDER/up.out
+    ts up > "$out" 2>&1 &
+    up=$!
+    ( sleep "$UP_WAIT"; kill "$up" 2>/dev/null ) &
+    timer=$!
+    wait "$up"; code=$?
+    kill "$timer" 2>/dev/null
+    after=$(state_of "$(ts status --json 2>/dev/null)")
+    if [ "$after" = Running ]; then
+        printf 'Running\n' > "$SAW"
+        tell "it had stopped; brought back with a bare tailscale up"
+        send_unsent
+    else
+        tell "it is stopped and tailscale up didn't bring it back (exit $code, now ${after:-no status}): $(head -c 200 "$out" | tr '\n' ' ')"
+    fi ;;
+  NeedsLogin|NeedsMachineAuth)
+    remember "$state" && tell "reads $state: Boss has to sign in; nothing was run" ;;
+  *)
+    # Starting, or no answer from the daemon: launchd or systemd brings that back; nothing here to do.
+    remember "${state:-no-answer}" && say "reads ${state:-no answer}; nothing to do" ;;
+esac
+exit 0
