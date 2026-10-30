@@ -56,7 +56,7 @@ fun titlePrompt(ask: TitleAsk): String =
  * folder so no project's instructions are read, and JSON out so the answer is told from anything else printed.
  */
 fun titleCommand(ask: TitleAsk): String =
-    "mkdir -p /tmp/oma-title && cd /tmp/oma-title && claude -p --model $QUICK_MODEL --output-format json --tools '' -- ${shellQuote(titlePrompt(ask))} < /dev/null"
+    "mkdir -p /tmp/oma-title && cd /tmp/oma-title && claude -p --no-session-persistence --model $QUICK_MODEL --output-format json --tools '' -- ${shellQuote(titlePrompt(ask))} < /dev/null"
 
 /** The title in what the command printed: the `result` of its JSON line; null when it failed or said nothing. */
 fun titleFrom(output: String): String? = output.lineSequence().mapNotNull { line ->
