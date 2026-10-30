@@ -17,3 +17,7 @@ fun questionSkipAnswers(input: String): JSONObject {
 
 fun questionAnswersSkipped(answers: JSONObject?): Boolean = answers != null && answers.length() > 0 &&
     answers.keys().asSequence().all { answers.opt(it) == QUESTION_SKIP_ANSWER }
+
+/** A question form (Claude's AskUserQuestion, Codex's questions) waits in this approval: only his Send or skip ends it. */
+fun questionWaits(tool: String, input: JSONObject): Boolean =
+    (tool == "AskUserQuestion" || input.optString("codex_request") == "questions") && (input.optJSONArray("questions")?.length() ?: 0) > 0

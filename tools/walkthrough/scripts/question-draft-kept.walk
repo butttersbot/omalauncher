@@ -1,0 +1,72 @@
+# A waiting question is never ended by a tap elsewhere (Boss, 2026-10-29: a mis-tap while typing his own answer
+# hit a queued mail's [ send now ], which ended the turn: "the question wasn't answered").
+# Fictional phone-builder question (four choices, Other allowed) with a fictional mail queued behind it; no agent runs.
+# Checks: no [ send now ] while the question waits; what he typed in Other stays through back, leaving the app and a
+# restart; the question still waits; only Send answers it.
+fold folded
+shell am force-stop dev.omalauncher.artifactpreview
+shell run-as dev.omalauncher.artifactpreview rm -f files/oma-question-drafts.json
+shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es waitingQuestion builder --ez queuedBehind true
+clearlog
+expect Questions waiting
+expect queued →
+expect cancel
+absent send now
+shot question-draft-no-send-now-cover
+tap answer questions
+expect Questions · 4
+scrollto Write your answer
+tap Write your answer
+type Keep the Manga look
+expect Keep the Manga look
+# Off the form: the keyboard goes, then back to chat. Nothing is sent or skipped.
+key BACK
+key BACK
+wait 800
+expect Questions waiting
+absent send now
+nolog fixture send now
+nolog phone builder question allow
+tap answer questions
+expect Before I continue
+expect Keep the Manga look
+shot question-draft-kept-cover
+# Leave the app and come back.
+key HOME
+wait 1000
+shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es waitingQuestion builder --ez queuedBehind true
+wait 1000
+expect Questions waiting
+tap answer questions
+expect Keep the Manga look
+# A restart of the app: the draft is read back from disk.
+shell am force-stop dev.omalauncher.artifactpreview
+shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es waitingQuestion builder --ez queuedBehind true
+expect Questions waiting
+absent send now
+tap answer questions
+expect Before I continue
+expect Keep the Manga look
+expect 3 of 4 questions left
+shot question-draft-after-restart-cover
+nolog fixture send now
+nolog phone builder question allow
+fold unfolded
+shell am force-stop dev.omalauncher.artifactpreview
+shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es waitingQuestion builder --ez queuedBehind true
+expect Questions waiting
+absent send now
+tap answer questions
+expect Keep the Manga look
+# A tap on the chat beside the form (the mis-tap): the form and its draft stay, nothing is sent.
+tap Fictional mail queued behind the question
+wait 800
+expect Before I continue
+expect Keep the Manga look
+absent send now
+nolog fixture send now
+nolog phone builder question allow
+shot question-draft-kept-unfolded
+shell run-as dev.omalauncher.artifactpreview rm -f files/oma-question-drafts.json
+[phone] After the bundle: a phone builder asks Boss a harmless one-question AskUserQuestion while an agent mail is queued behind it. The queued mail shows [ cancel ] but no [ send now ]. He types in Other, taps beside the form, goes home, reopens Soma, and the text is still in Other; the builder is still waiting (no "not answered"); Send delivers his typed answer once.
+[phone] Same on a Mac thread's question from the Soma desktop app: type in Other, close the form, quit and reopen the app: the text is still there and the thread still waits.

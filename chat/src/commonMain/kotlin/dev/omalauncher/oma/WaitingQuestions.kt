@@ -28,11 +28,8 @@ internal data class WaitingQuestion(val key: String, val title: String, val inpu
 internal val LocalQuestionDraftStore = staticCompositionLocalOf<WaitingQuestionDrafts?> { null }
 internal val LocalQuestionOpen = staticCompositionLocalOf<((WaitingQuestion) -> Unit)?> { null }
 
-internal fun questionInput(tool: String, input: String): Boolean = runCatching {
-    val json = JSONObject(input)
-    (tool == "AskUserQuestion" || json.optString("codex_request") == "questions") &&
-        (json.optJSONArray("questions")?.length() ?: 0) > 0
-}.getOrDefault(false)
+internal fun questionInput(tool: String, input: String): Boolean =
+    runCatching { dev.omalauncher.assist.questionWaits(tool, JSONObject(input)) }.getOrDefault(false)
 
 /** Owned above both panel branches: moving a form never replaces its draft or in-flight gate. */
 internal class WaitingQuestionDraft(initialScroll: Int = 0) {
@@ -65,9 +62,19 @@ internal class WaitingQuestionDraft(initialScroll: Int = 0) {
 }
 
 internal class WaitingQuestionDrafts {
-    private val entries = mutableMapOf<String, WaitingQuestionDraft>()
+    // Observable, so a form opened after the last save is saved too (see ChatArtifactWorkspace).
+    private val entries = mutableStateMapOf<String, WaitingQuestionDraft>()
     fun get(key: String): WaitingQuestionDraft = entries.getOrPut(key) { WaitingQuestionDraft() }
     fun json(): String = JSONObject().apply { entries.forEach { (key, draft) -> put(key, draft.json()) } }.toString()
+
+    /**
+     * What is kept on disk: only forms not yet answered or skipped, with something picked or typed, and no "sending"
+     * (after a restart nothing is in flight). The newest 20 at most.
+     */
+    fun unsentJson(): String = JSONObject().apply {
+        entries.entries.filter { (_, d) -> !d.sent && (d.answers.isNotEmpty() || d.others.values.any { it.isNotBlank() }) }.takeLast(20)
+            .forEach { (key, draft) -> put(key, draft.json().put("sending", false)) }
+    }.toString()
 
     companion object {
         fun restore(text: String) = WaitingQuestionDrafts().apply {

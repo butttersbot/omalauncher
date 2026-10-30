@@ -630,10 +630,11 @@ private fun ChatScreen(
                                     host.cancelFollowUp(task.time)
                                     tick++
                                 },
-                                onSendNow = {
+                                // Not while a question form of this builder waits: Send now would end it unanswered (Boss, 2026-10-29).
+                                onSendNow = if (by.pending.any { questionInput(it.approval.tool, it.approval.input.toString()) }) null else ({
                                     host.sendNow(task.time)
                                     tick++
-                                },
+                                }),
                             )
                         }
                     }
