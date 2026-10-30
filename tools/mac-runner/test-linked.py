@@ -33,7 +33,7 @@ environment = {**os.environ, 'OMA_RUNNER_PORT': str(port), 'OMA_RUNNER_BIND': '1
                'OMA_RUNNER_LOGS': str(work / 'logs'), 'OMA_RUNNER_ROOTS': str(work / 'Projects'), 'OMA_RUNNER_KEYS': str(work / 'keys.json'),
                'OMA_RUNNER_TOKEN': str(work / 'token'), 'OMA_RUNNER_WHOIS_FILE': str(work / 'whois.json'), 'OMA_RUNNER_PHONE': 'phone',
                'OMA_RUNNER_MAIL': str(work / 'mail'), 'OMA_RUNNER_CODEX_DISCOVER': '0', 'OMA_RUNNER_CLAUDE_DISCOVER': '0',
-               'OMA_RUNNER_SERVICES_TEST': str(services),
+               'OMA_RUNNER_SERVICES_TEST': str(services), 'OMA_RUNNER_MATCHER': str(HERE / 'fake-matcher'), 'FAKE_MATCHER_LOG': str(work / 'matcher.log'),
                'OMA_RUNNER_AGENT': str(HERE / 'fake-agent'), 'OMA_RUNNER_CODEX': str(HERE / 'fake-codex'), 'OMA_RUNNER_CURSOR': str(HERE / 'fake-cursor'),
                'OMA_RUNNER_GROK': str(work / 'no-grok'), 'OMA_RUNNER_BOTS': str(work / 'bots'), 'OMA_RUNNER_ARTIFACTS': str(work / 'artifacts'),
                'OMA_RUNNER_PROJECTS': str(work / 'projects.json'), 'HOME': str(work)}
@@ -162,6 +162,64 @@ class Linked(unittest.TestCase):
         code, said = self.deliver(self.q_link_b, raw, sig)
         self.assertEqual(200, code, said)
         self.assertIn('Keep them apart', answered(self.link_b)[0])
+
+
+# Tonight's pair (Boss, 2026-10-29): Phone A's card and the MacBook thread's, the same decision worded differently.
+TONIGHT_A = {'questions': [{'question': 'Were those 3 skills removed on purpose?', 'header': 'Skills', 'multiSelect': False,
+                            'options': [{'label': 'Restore', 'description': 'Bring the 3 skills back'}, {'label': 'Keep deleted', 'description': 'They were meant to go'}]}]}
+TONIGHT_MACBOOK = {'questions': [{'question': 'Three skills (code-review, simplify, x-read) are gone from ~/.claude/skills on the MacBook. Bring them back?',
+                                  'header': 'Deleted skills', 'multiSelect': False,
+                                  'options': [{'label': 'Bring them back', 'description': 'Copy them from the Mac Pro'}, {'label': 'Leave them deleted', 'description': 'They stay gone'}]}]}
+OTHER = {'questions': [{'question': 'Which colour for the Hunch header?', 'header': 'Colour', 'multiSelect': False,
+                        'options': [{'label': 'Red', 'description': ''}, {'label': 'Blue', 'description': ''}]}]}
+UNSURE = {'questions': [{'question': 'Move the skills folder somewhere else? (unsure-case)', 'header': 'Folder', 'multiSelect': False,
+                         'options': [{'label': 'Move', 'description': ''}, {'label': 'Leave', 'description': ''}]}]}
+
+
+class ByMeaning(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        Linked.setUpClass.__func__(cls)
+        cls.macbook, cls.q_macbook = asking('MacBook t1703ae4f', TONIGHT_MACBOOK)
+        cls.other, cls.q_other = asking('Hunch', OTHER)
+        cls.unsure, cls.q_unsure = asking('Folder', UNSURE)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.runner.terminate()
+        cls.runner.wait()
+
+    def match(self, card, answers, **extra):
+        code, said = call('POST', '/questions/match', {'card': card, 'answers': answers, 'where': 'phone:A', **extra})
+        self.assertEqual(200, code, said)
+        return {m['thread']: m for m in said['matches']}
+
+    def test_1_tonightsPairWordedDifferentlyIsAnsweredInTheOthersOwnTerms(self):
+        found = self.match(TONIGHT_A, {'Were those 3 skills removed on purpose?': 'Restore'})
+        m = found[self.macbook]
+        self.assertEqual(('meaning', True), (m['match'], m['deliver']))
+        self.assertEqual({TONIGHT_MACBOOK['questions'][0]['question']: 'Bring them back'}, m['answers'])
+        self.assertNotIn(self.other, found)  # a different decision isn't offered at all
+        self.assertEqual(('hint', False), (found[self.unsure]['match'], found[self.unsure]['deliver']))  # unsure: his tap
+        # Delivered through the approvals route Soma already answers with: the MacBook's agent hears its own label.
+        code, said = call('POST', '/threads/%s/approvals/%s' % (self.macbook, m['approval']), {'decision': 'allow', 'nonce': m['nonce'], 'answers': m['answers']})
+        self.assertEqual(200, code, said)
+        self.assertIn('Bring them back', answered(self.macbook)[0])
+
+    def test_2_aMappingOntoALabelTheCardDoesntHaveIsNeverOffered(self):
+        _, q = asking('Bad map', {'questions': [{'question': 'Remove the skills? (bad-map)', 'header': 'x', 'multiSelect': False,
+                                                  'options': [{'label': 'Yes', 'description': ''}, {'label': 'No', 'description': ''}]}]})
+        m = self.match(TONIGHT_A, {'Were those 3 skills removed on purpose?': 'Restore'})[q['thread']]
+        self.assertFalse(m['deliver'])
+        self.assertNotIn('answers', m)
+
+    def test_3_aSharedLinkOrTheSameCardNeedsNoModel(self):
+        found = self.match(LINKED_A, {'Pick the theme for the new widget': 'Sync them'}, thread=self.link_a, approval=self.q_link_a['approval'])
+        # LINKED_B shares the link and the very labels: offered directly; the model is asked only about the rest.
+        self.assertTrue(found[self.link_b]['deliver'])
+        self.assertEqual('link', found[self.link_b]['match'])
+        self.assertEqual({'Which way for the widget theme?': 'Sync them'}, found[self.link_b]['answers'])
+        self.assertNotIn(self.link_a, found)  # the one he answered is left out
 
 
 if __name__ == '__main__':

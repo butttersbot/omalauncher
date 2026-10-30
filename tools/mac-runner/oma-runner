@@ -19,6 +19,10 @@ Only exact Codex command scopes the owner explicitly saved may reuse that decisi
   GET  /threads[?all=1]                  every thread: id, name, summary, status, last_worked, tail, pending, bot; internal ones
                                          (made by agents for tests, proofs and helpers) only with all=1
   POST /threads/ID/internal  {internal}  marks a thread internal (hidden from the list) or not; nothing is deleted
+  POST /questions/match {card, answers, where, thread?, approval?}
+                                         which questions waiting here are the same decision Boss just answered: by link, the
+                                         same card, or meaning (one quick model call); [{thread, approval, nonce, match:
+                                         link|exact|meaning|hint, deliver, answers (in that card's own labels), why}]
   GET  /questions                        every question waiting on this runner, across threads: {thread, approval, nonce, link,
                                          fingerprint, title, card, same_pending}, so Soma finds one question asked in several threads
   GET  /bots/ID                          one bot this machine hosts: its settings, instructions and notes (read only)
@@ -4247,6 +4251,140 @@ def linked_answers(entry, raw, sig):
     return answers, hashlib.sha256(raw.encode('utf-8')).hexdigest()[:24]
 
 
+# By meaning (Boss, 2026-10-29: "those two cards WERE the same question, wording doesn't matter"): when he answers a
+# question, Soma asks each runner (POST /questions/match) which questions waiting there are the same decision. A shared
+# link, or the very same card, settles that at once; otherwise one quick model call judges sameness and maps his answer
+# onto each card's own options. Only a clear match with a clear mapping onto the card's own labels (or its Other text)
+# is offered for delivery; anything unsure is a hint for his one tap. Soma delivers (through the approvals route it
+# already answers with, with his receipt kept on its side), and he can undo it there.
+MATCH_MODEL = os.environ.get('OMA_RUNNER_MATCH_MODEL', 'sonnet')
+MATCHER = os.environ.get('OMA_RUNNER_MATCHER')  # tests: a stand-in for the model
+MATCH_MOST = 20
+
+
+def card_text(card):
+    return '\n'.join('Q: %s\n   options: %s' % (q['question'], ' | '.join(q['options']) or '(free text)') for q in card)
+
+
+def match_prompt(answered, answers, where, candidates):
+    said = '\n'.join('%s -> %s' % (q, ', '.join(v) if isinstance(v, list) else v) for q, v in answers.items())
+    listed = '\n\n'.join('id %s (thread "%s"):\n%s' % (c['id'], c['thread_name'], card_text(c['card'])) for c in candidates)
+    return ('Boss answered a question in thread "%s".\n\nTHE QUESTION HE ANSWERED:\n%s\n\nHIS ANSWER:\n%s\n\n'
+            'Other questions are waiting for him in other threads:\n\n%s\n\n'
+            'For each one, decide whether it is the SAME decision, however it is worded: his answer above fully settles it. '
+            'If it is, say what his answer is in that card\'s own terms: for each of its questions, one of ITS option labels '
+            'exactly (a list of them for a multi-select), or, only if none of its options says what he chose, {"other": '
+            '"his choice in a few words"}. confident is true only when both the sameness and the mapping are clear; when in '
+            'doubt, say unsure. A different decision, or a related but separate one, is "no".\n\n'
+            'Answer with ONLY one JSON object: {"matches": [{"id": "...", "same": "yes"|"no"|"unsure", "confident": true|false, '
+            '"answers": {"<that card\'s question text>": "<label>" | ["<label>", ...] | {"other": "..."}}, "why": "a few words"}]}'
+            % (where, card_text(answered), said, listed))
+
+
+def ask_matcher(prompt):
+    """The model's judgment as a dict, from a quick headless call that is never kept as a session (nor shown as a tab)."""
+    work = pathlib.Path(tempfile.mkdtemp(prefix='soma-match-'))
+    try:
+        (work / INTERNAL_MARKER).write_text('')
+        if MATCHER:
+            command = [MATCHER]
+        else:
+            claude = program('claude')
+            if not claude:
+                raise RuntimeError('Claude Code is not installed here')
+            command = [claude, '-p', '--no-session-persistence', '--model', MATCH_MODEL, '--output-format', 'json', '--tools', '',
+                       '--strict-mcp-config', '--setting-sources', 'project']
+        done = subprocess.run(command, input=prompt, capture_output=True, text=True, timeout=150, cwd=work,
+                              env={**clean_environment(), **claude_token()})
+        if done.returncode != 0:
+            raise RuntimeError('the matcher ended with %d: %s' % (done.returncode, (done.stderr or done.stdout).strip()[-200:]))
+        out = done.stdout.strip()
+        try:
+            wrapped = json.loads(out)
+            text = wrapped.get('result', out) if isinstance(wrapped, dict) and 'result' in wrapped else out
+        except ValueError:
+            text = out
+        text = text if isinstance(text, str) else json.dumps(text)
+        start, end = text.find('{'), text.rfind('}')
+        return json.loads(text[start:end + 1])
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def mapped_answers(entry, given):
+    """His answer in the target card's own terms, checked: every question answered with its own labels (or an Other text
+    where the card allows one), as question_answers takes them; None when anything doesn't fit."""
+    info = entry.get('input') or {}
+    codex = info.get('codex_request') == 'questions'
+    out = {}
+    for q in info.get('questions') or []:
+        key = q.get('id') if codex else q.get('question')
+        value = (given or {}).get(q.get('question')) if isinstance(given, dict) else None
+        if value is None and codex:
+            value = (given or {}).get(key)
+        labels = [o.get('label') for o in (q.get('options') or []) if isinstance(o, dict)]
+        if isinstance(value, dict) and isinstance(value.get('other'), str) and value['other'].strip():
+            if q.get('isOtherAllowed') is False or codex:
+                return None
+            value = value['other'].strip()[:300]
+        elif isinstance(value, list):
+            if not q.get('multiSelect') or not value or any(v not in labels for v in value):
+                return None
+        elif not isinstance(value, str) or value not in labels:
+            return None
+        out[key] = value
+    try:
+        return question_answers(entry, out)
+    except ValueError:
+        return None
+
+
+def match_questions(card, answers, where, skip):
+    """Every question waiting here that is the same decision as [card] (his [answers]), and whether to deliver."""
+    asked = card_of((card or {}).get('questions') if isinstance(card, dict) else card)
+    if not asked or not isinstance(answers, dict):
+        raise ValueError('card {questions: [...]} and his answers are needed')
+    link, fingerprint = card_link(card if isinstance(card, dict) else {}, asked), card_fingerprint(asked)
+    found, ask_model = [], []
+    with changed:
+        for thread in threads.values():
+            for key, entry in thread.pending.items():
+                theirs = question_card(entry)
+                if not theirs or (thread.meta['id'], key) in skip:
+                    continue
+                row = {'id': '%s/%s' % (thread.meta['id'], key), 'thread': thread.meta['id'], 'thread_name': thread.meta.get('name', ''),
+                       'approval': key, 'nonce': entry['nonce'], 'card': theirs, 'entry': entry}
+                their_link = card_link(entry.get('input') or {}, theirs)
+                row['match'] = 'link' if link and their_link == link else 'exact' if card_fingerprint(theirs) == fingerprint else None
+                # The same card, or a linked one offering the very same labels: his answer maps onto it as it is.
+                direct = {q['question']: answers.get(a['question']) for q, a in zip(theirs, asked)} if row['match'] and len(theirs) == len(asked) else None
+                row['answers'] = mapped_answers(entry, direct) if direct else None
+                (found if row['answers'] else ask_model).append(row)
+    ask_model = ask_model[:MATCH_MOST]
+    if ask_model:
+        try:
+            judged = {m.get('id'): m for m in (ask_matcher(match_prompt(asked, answers, where, ask_model)).get('matches') or []) if isinstance(m, dict)}
+        except (RuntimeError, ValueError, OSError, subprocess.SubprocessError) as problem:
+            judged, error = {}, str(problem)[:200]
+        else:
+            error = None
+        for row in ask_model:
+            m = judged.get(row['id']) or {}
+            same, sure = m.get('same'), m.get('confident') is True
+            mapped = mapped_answers(row['entry'], m.get('answers')) if same == 'yes' else None
+            if row['match'] == 'link' or same == 'yes':
+                row['match'] = row['match'] or 'meaning'
+                row['answers'] = mapped if sure or row['match'] == 'link' else None
+                row['why'] = m.get('why', '')[:200] if m else error or ''
+                found.append(row)
+            elif same == 'unsure' or (row['match'] == 'exact'):
+                row['match'], row['answers'], row['why'] = 'hint', None, m.get('why', '')[:200]
+                found.append(row)
+    return [{key: row[key] for key in ('thread', 'thread_name', 'approval', 'nonce', 'match')} |
+            {'deliver': bool(row.get('answers')), **({'answers': row['answers']} if row.get('answers') else {}), 'why': row.get('why', '')}
+            for row in found]
+
+
 def question_answers(entry, supplied):
     """Validate a complete answer without consuming the nonce or changing the original tool input."""
     info = entry.get('input') or {}
@@ -4598,6 +4736,13 @@ class Runner(BaseHTTPRequestHandler):
             return self.answer(200, {'ok': True, 'held': update_held(), 'busy': update_busy()})
         if parts == ['threads'] and update_held():
             return self.answer(503, {'ok': False, 'error': "this computer's runner is updating; try again in a minute"})
+        if parts == ['questions', 'match']:
+            # Which questions waiting here are the same decision as the one Boss just answered (match_questions).
+            skip = {(str(body.get('thread')), str(body.get('approval')))} if body.get('thread') else set()
+            try:
+                return self.answer(200, {'ok': True, 'matches': match_questions(body.get('card'), body.get('answers'), str(body.get('where') or 'another thread')[:120], skip)})
+            except ValueError as problem:
+                return self.answer(400, {'ok': False, 'error': str(problem)})
         if parts == ['threads']:
             name = str(body.get('name') or '').strip()[:80]
             project = allowed_project(body.get('project') or '')
