@@ -35,7 +35,7 @@ absent Tapback like
 keyboard hidden
 key BACK
 expect Ana Demo
-shot reference-back-list card=messages-parity-pinned-muted
+shot reference-back-list
 tap Ana Demo
 expect Reference motion draft
 key BACK
