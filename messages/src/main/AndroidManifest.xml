@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Pages and videos open in the side panel beside the chat. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Linked to the Mac, chats come with numbers and emails only: names come from the phone's own contacts. -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <!-- Voice messages: recorded and sent as audio, never turned into words. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!-- Once linked to the Mac, new messages notify from here, and the link is kept while the app is in the
+         background, as a quiet foreground service (remote messaging), which comes back after a restart. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- OpenBubbles does the iMessage work; this app opens its conversations, so it has to be able to see it. -->
+    <queries>
+        <package android:name="com.openbubbles.messaging" />
+    </queries>
+
+    <application
+        android:label="Soma Messages"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:allowBackup="false"
+        android:enableOnBackInvokedCallback="true"
+        android:supportsRtl="true"
+        android:usesCleartextTraffic="true">
+        <!-- Plain http only to the Mac's service on the tailnet (100.64.0.0/10, ts.net), which Tailscale encrypts;
+             MacAddress refuses any other plain address. -->
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:resizeableActivity="true"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density|keyboardHidden|uiMode"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- The link the Mac's iMessage service prints: soma-messages://link?url=…&token=… -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="soma-messages" android:host="link" />
+            </intent-filter>
+        </activity>
+
+        <!-- Photos go to OpenBubbles' conversation as copies it may read once, from the cache. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="dev.omalauncher.messages.photos"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/shared_photos" />
+        </provider>
+
+        <service
+            android:name=".engine.LinkService"
+            android:exported="false"
+            android:foregroundServiceType="remoteMessaging" />
+
+        <!-- Reply and Mark read from a notification. -->
+        <receiver
+            android:name=".engine.AlertReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".engine.BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Reads OpenBubbles' message notifications and answers through their Reply action. Android asks the owner
+             before it binds, in its notification access settings. -->
+        <service
+            android:name=".engine.OpenBubblesListener"
+            android:exported="true"
+            android:label="Soma Messages"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+    </application>
+</manifest>

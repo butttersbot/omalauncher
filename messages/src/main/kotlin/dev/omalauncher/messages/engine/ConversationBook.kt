@@ -1,0 +1,343 @@
+package dev.omalauncher.messages.engine
+
+import org.json.JSONArray
+import org.json.JSONObject
+
+/** One message as Soma Messages keeps it. [sender] is the other person's name, or empty for the owner's own. */
+data class Message(
+    val text: String,
+    val time: Long,
+    val sender: String,
+    /** Sent from this app; it stays until OpenBubbles shows it back, then the two are one message. */
+    val sentHere: Boolean = false,
+    /** The message this one answered ("Mina: are we still on…"), kept on this phone: OpenBubbles' reply action sends words only. */
+    val quote: String? = null,
+    /** Handed to OpenBubbles' own chat to send there (photos); it stays marked until OpenBubbles shows it back. */
+    val handedOff: Boolean = false,
+    /**
+     * The Mac's id for it, when the conversation comes from the Mac (MacLink): "c:" and the client id while one sent
+     * from here waits for the Mac to show it back.
+     */
+    val id: String? = null,
+    /** Sent from here, but the Mac didn't take it. */
+    val failed: Boolean = false,
+    /** The Mac's attachments this message stands for ("2 Photos"), each "id|mime", to show them here. */
+    val files: List<String> = emptyList(),
+    /** Tapbacks on it, from the Mac: each a kind ("love", "like"… or an emoji), "me:" before the owner's own. */
+    val tapbacks: List<String> = emptyList(),
+    /** The phone's id for one sent from here, as the Mac echoes it back: matches the waiting "c:" message. Not kept. */
+    val clientId: String? = null,
+) {
+    val fromMe get() = sender.isEmpty()
+}
+
+/** A conversation: what OpenBubbles has shown of it since Soma Messages started listening. */
+data class Conversation(
+    val id: String,
+    val title: String,
+    val isGroup: Boolean,
+    val messages: List<Message>,
+    val unread: Int,
+) {
+    val last get() = messages.lastOrNull()
+    val lastTime get() = last?.time ?: 0L
+}
+
+/** A message as a notification shows it: [sender] null means the owner wrote it. */
+data class SeenMessage(
+    val text: String,
+    val time: Long,
+    val sender: String?,
+)
+
+/** What one OpenBubbles notification says about a conversation: its id (the chat's shortcut), title and recent messages. */
+data class SeenConversation(
+    val id: String,
+    val title: String,
+    val isGroup: Boolean,
+    val messages: List<SeenMessage>,
+)
+
+/**
+ * Every conversation seen so far, merged from OpenBubbles' notifications. A notification repeats the conversation's
+ * recent messages each time it is posted, so a message already here is not counted twice; one the owner sent from this
+ * app is matched to the copy OpenBubbles shows back.
+ */
+class ConversationBook(
+    private val byId: Map<String, Conversation> = emptyMap(),
+) {
+    val conversations: List<Conversation> get() = byId.values.sortedByDescending { it.lastTime }
+
+    operator fun get(id: String): Conversation? = byId[id]
+
+    /** Merges what a notification shows. New messages from others count as unread. */
+    fun take(seen: SeenConversation): ConversationBook {
+        val old = byId[seen.id]
+        val messages = old?.messages?.toMutableList() ?: mutableListOf()
+        var fresh = 0
+        for (m in seen.messages.sortedBy { it.time }) {
+            val sender = m.sender.orEmpty()
+            if (messages.any { it.time == m.time && it.text == m.text && it.sender == sender }) continue
+            if (sender.isEmpty()) {
+                // OpenBubbles showing back what was sent from here: the same words within a couple of minutes.
+                val echo =
+                    messages.indexOfFirst {
+                        it.sentHere && it.text == m.text && (kotlin.math.abs(it.time - m.time) <= ECHO_MS || it.handedOff && m.time >= it.time - ECHO_MS && m.time - it.time <= HANDOFF_MS)
+                    }
+                if (echo >= 0) {
+                    messages[echo] = Message(m.text, m.time, "", quote = messages[echo].quote)
+                    continue
+                }
+            } else {
+                fresh++
+            }
+            messages += Message(m.text, m.time, sender)
+        }
+        messages.sortBy { it.time }
+        val conversation =
+            Conversation(
+                id = seen.id,
+                title = seen.title.ifBlank { old?.title ?: seen.id },
+                isGroup = seen.isGroup,
+                messages = messages.takeLast(MAX_MESSAGES),
+                unread = (old?.unread ?: 0) + fresh,
+            )
+        return ConversationBook(byId + (seen.id to conversation))
+    }
+
+    /** The owner sent [text] from this app at [time]. */
+    fun sent(
+        id: String,
+        text: String,
+        time: Long,
+        quote: String? = null,
+    ): ConversationBook {
+        val old = byId[id] ?: return this
+        return ConversationBook(byId + (id to old.copy(messages = old.messages + Message(text, time, "", sentHere = true, quote = quote))))
+    }
+
+    /** The owner handed [text] to OpenBubbles' own chat [id] at [time], to send there. */
+    fun handedOff(
+        id: String,
+        text: String,
+        time: Long,
+        quote: String? = null,
+    ): ConversationBook {
+        val old = byId[id] ?: return this
+        return ConversationBook(byId + (id to old.copy(messages = old.messages + Message(text, time, "", sentHere = true, quote = quote, handedOff = true))))
+    }
+
+    /** Takes back a handed-off message the owner didn't send after all. */
+    fun drop(
+        id: String,
+        message: Message,
+    ): ConversationBook {
+        val old = byId[id] ?: return this
+        if (!message.handedOff) return this
+        return ConversationBook(byId + (id to old.copy(messages = old.messages - message)))
+    }
+
+    /**
+     * What the Mac says about conversation [id]: its name, and [incoming] messages, each with the Mac's id. One already
+     * here is replaced. One the owner sent from here (`c:`, waiting) gives way to the Mac's copy of the same words,
+     * keeping its quote: the copy is the owner's own, with the same text, from close to when it went. New messages from
+     * others are counted, unless [counting] is off (history). [unread] is the Mac's count when it gave one: it starts a
+     * conversation first seen, and later may only lower the count (read on the Mac or elsewhere), never raise it past what
+     * came in. An update about the owner's own message leaves the count as it was (Boss, 2026-10-24: his own messages put
+     * a red dot on the conversation; the Mac counts its unread sends too). Neither made nor cleared by an outgoing one.
+     */
+    fun fromMac(
+        id: String,
+        title: String?,
+        isGroup: Boolean?,
+        incoming: List<Message>,
+        unread: Int? = null,
+        counting: Boolean = true,
+    ): ConversationBook {
+        val old = byId[id]
+        val messages = old?.messages?.toMutableList() ?: mutableListOf()
+        var fresh = 0
+        for (m in incoming) {
+            val at = messages.indexOfFirst { it.id == m.id }
+            if (at >= 0) {
+                messages[at] = m.copy(quote = m.quote ?: messages[at].quote)
+                continue
+            }
+            // The Mac's copy of one sent from here: by the client id it echoes, else by the same words close in time.
+            // A "failed" one counts too: a send that timed out here can still have gone (the Mac asleep, then awake),
+            // and its "Not sent" stayed beside the real message (Boss, 2026-10-23: errors stay on earlier messages).
+            val echo =
+                if (m.fromMe) {
+                    m.clientId?.let { c -> messages.indexOfFirst { it.id == "c:$c" } }?.takeIf { it >= 0 }
+                        ?: messages.indexOfFirst { it.id?.startsWith("c:") == true && it.text == m.text && kotlin.math.abs(it.time - m.time) <= (if (it.failed) FAILED_ECHO_MS else ECHO_MS) }
+                } else {
+                    -1
+                }
+            if (echo >= 0) {
+                messages[echo] = m.copy(quote = m.quote ?: messages[echo].quote)
+                continue
+            }
+            messages += m
+            if (!m.fromMe && counting) fresh++
+        }
+        messages.sortBy { it.time }
+        val counted = (old?.unread ?: 0) + fresh
+        val mine = incoming.lastOrNull()?.fromMe == true
+        val conversation =
+            Conversation(
+                id = id,
+                title = title?.takeIf { it.isNotBlank() } ?: old?.title ?: id,
+                isGroup = isGroup ?: old?.isGroup ?: false,
+                messages = messages.takeLast(MAX_MESSAGES),
+                unread =
+                    when {
+                        unread == null || mine -> counted
+                        old == null -> unread
+                        else -> minOf(unread, counted)
+                    },
+            )
+        return ConversationBook(byId + (id to conversation))
+    }
+
+    /** The Mac took back messages [ids] in [id] (undo send); an attachment's part ("#a") goes with its message. */
+    fun removed(
+        id: String,
+        ids: Collection<String>,
+    ): ConversationBook {
+        val old = byId[id] ?: return this
+        val gone = ids.flatMap { listOf(it, "$it#a") }.toSet()
+        return ConversationBook(byId + (id to old.copy(messages = old.messages.filter { it.id !in gone })))
+    }
+
+    /** The owner sent [text] from here through the Mac, as [clientId]; it waits until the Mac shows it back. */
+    fun waiting(
+        id: String,
+        clientId: String,
+        text: String,
+        time: Long,
+        quote: String? = null,
+    ): ConversationBook {
+        val old = byId[id] ?: return this
+        return ConversationBook(byId + (id to old.copy(messages = old.messages + Message(text, time, "", sentHere = true, quote = quote, id = "c:$clientId"))))
+    }
+
+    /** Message [messageId] in [id] stands for [files] (a photo picked here, until the Mac shows it back). */
+    fun withFiles(
+        id: String,
+        messageId: String,
+        files: List<String>,
+    ): ConversationBook {
+        val old = byId[id] ?: return this
+        return ConversationBook(byId + (id to old.copy(messages = old.messages.map { if (it.id == messageId) it.copy(files = files) else it })))
+    }
+
+    /** The Mac didn't take [clientId]'s messages. */
+    fun failed(
+        id: String,
+        clientId: String,
+    ): ConversationBook {
+        val old = byId[id] ?: return this
+        return ConversationBook(byId + (id to old.copy(messages = old.messages.map { if (it.id == "c:$clientId") it.copy(failed = true) else it })))
+    }
+
+    /** Takes [message] out of [id]: a failed send about to be tried again. */
+    fun without(
+        id: String,
+        message: Message,
+    ): ConversationBook {
+        val old = byId[id] ?: return this
+        return ConversationBook(byId + (id to old.copy(messages = old.messages - message)))
+    }
+
+    /**
+     * Only the conversations that came from the Mac: one whose messages all lack the Mac's ids came from OpenBubbles'
+     * notifications, and would stand beside the Mac's own copy. The same book when there is nothing to drop.
+     */
+    fun fromMacOnly(): ConversationBook {
+        val kept = byId.filterValues { c -> c.messages.isEmpty() || c.messages.any { it.id != null } }
+        return if (kept.size == byId.size) this else ConversationBook(kept)
+    }
+
+    /** The owner has looked at [id]. */
+    fun read(id: String): ConversationBook {
+        val old = byId[id] ?: return this
+        if (old.unread == 0) return this
+        return ConversationBook(byId + (id to old.copy(unread = 0)))
+    }
+
+    fun toJson(): String =
+        JSONObject()
+            .put("version", 1)
+            .put(
+                "conversations",
+                JSONArray(
+                    byId.values.map { c ->
+                        JSONObject().put("id", c.id).put("title", c.title).put("group", c.isGroup).put("unread", c.unread)
+                            .put(
+                                "messages",
+                                JSONArray(
+                                    c.messages.map { m ->
+                                        JSONObject().put("text", m.text).put("time", m.time).put("sender", m.sender).put("here", m.sentHere).apply {
+                                            m.quote?.let { put("quote", it) }
+                                            if (m.handedOff) put("off", true)
+                                            m.id?.let { put("id", it) }
+                                            if (m.failed) put("failed", true)
+                                            if (m.files.isNotEmpty()) put("files", JSONArray(m.files))
+                                            if (m.tapbacks.isNotEmpty()) put("tapbacks", JSONArray(m.tapbacks))
+                                        }
+                                    },
+                                ),
+                            )
+                    },
+                ),
+            ).toString()
+
+    companion object {
+        /** How far apart a message sent from here and OpenBubbles' copy of it may be. */
+        const val ECHO_MS = 2 * 60_000L
+
+        /** How long after a send that failed here the Mac's copy may still show it went (a sleeping Mac, woken). */
+        const val FAILED_ECHO_MS = 30 * 60_000L
+
+        /**
+         * How long a handed-off message waits for OpenBubbles to show it back. OpenBubbles reposts a conversation only
+         * when something arrives, so its copy may come much later than a reply's.
+         */
+        const val HANDOFF_MS = 12 * 60 * 60_000L
+
+        /** The most messages kept per conversation. */
+        const val MAX_MESSAGES = 2_000
+
+        /** The book saved by [toJson]; an unreadable file is an empty book, never a crash. */
+        fun fromJson(text: String): ConversationBook =
+            runCatching {
+                val list = JSONObject(text).getJSONArray("conversations")
+                val byId = LinkedHashMap<String, Conversation>()
+                for (i in 0 until list.length()) {
+                    val c = list.getJSONObject(i)
+                    val ms = c.getJSONArray("messages")
+                    val messages =
+                        (0 until ms.length()).map { j ->
+                            val m = ms.getJSONObject(j)
+                            Message(
+                                m.getString("text"),
+                                m.getLong("time"),
+                                m.getString("sender"),
+                                m.optBoolean("here"),
+                                m.optString("quote").ifEmpty { null },
+                                m.optBoolean("off"),
+                                m.optString("id").ifEmpty { null },
+                                m.optBoolean("failed"),
+                                m.optJSONArray("files")?.let { f -> (0 until f.length()).map { f.getString(it) } }.orEmpty(),
+                                m.optJSONArray("tapbacks")?.let { f -> (0 until f.length()).map { f.getString(it) } }.orEmpty(),
+                            )
+                        }
+                    val id = c.getString("id")
+                    // Unread with no message from anyone else among those kept: the owner's own sends counted before 0.8.2.
+                    val unread = if (messages.none { !it.fromMe }) 0 else c.optInt("unread")
+                    byId[id] = Conversation(id, c.getString("title"), c.optBoolean("group"), messages, unread)
+                }
+                ConversationBook(byId)
+            }.getOrDefault(ConversationBook())
+    }
+}

@@ -40,3 +40,5 @@ if (providers.gradleProperty("artifactPreview").isPresent) {
 
 // Standalone, read-only outcome browser; no launcher dependency or wallet.
 if (providers.gradleProperty("hunch").isPresent) include(":hunch")
+// Soma Messages: a standalone app beside the launcher, on Soma's shared looks and composer (features/soma-messages in ClaudeSync).
+include(":messages")

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Soma Messages: an ink speech balloon on paper, in the 108 dp adaptive-icon grid (safe zone 66 dp). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FF111111"
+        android:pathData="M34,34h40a6,6 0,0 1,6 6v22a6,6 0,0 1,-6 6H52l-12,10v-10h-6a6,6 0,0 1,-6 -6V40a6,6 0,0 1,6 -6z" />
+</vector>

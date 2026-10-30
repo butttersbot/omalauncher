@@ -1,0 +1,49 @@
+# Soma Messages' own notifications (0.7+), linked to the Mac service's DEMO on the Mac Pro (sample chats only; every
+# send gets a fake reply 2 s later). A message that arrives while the app is in the background notifies; Reply in the
+# shade sends; tapping opens the conversation.
+shell cmd statusbar collapse
+key HOME
+shell pm clear dev.omalauncher.messages
+shell pm grant dev.omalauncher.messages android.permission.READ_CONTACTS
+shell pm grant dev.omalauncher.messages android.permission.POST_NOTIFICATIONS
+shell am start -a android.intent.action.VIEW -d "'soma-messages://link?url=http%3A%2F%2F100.120.219.46%3A8765&token=BON7avwraojOZCR1WT8sLWZg9WTx0RFaqeR3udg1kzA'" dev.omalauncher.messages
+wait 2500
+tap Link
+wait 4000
+expect Ana Demo
+# Linked: the quiet notice that keeps it in touch with the Mac.
+shell cmd statusbar expand-notifications
+wait 1200
+expect Connected to your Mac
+shot link-notice
+shell cmd statusbar collapse
+wait 800
+tap Ana Demo
+wait 2000
+tap 0.5 0.925
+wait 600
+type notify test
+wait 400
+key ENTER
+# Away before the demo's answer (2 s): it arrives in the background.
+key HOME
+wait 4000
+shell cmd statusbar expand-notifications
+wait 1500
+expect Demo reply to: notify test
+expect Reply
+expect Mark read
+shot message-notification
+tap Demo reply to: notify test
+wait 2500
+# The tap opens the conversation, and its notification goes.
+expect notify test
+expect Demo reply to: notify test
+shot opened-from-notification
+shell cmd statusbar expand-notifications
+wait 1200
+absent Demo reply to: notify test
+shell cmd statusbar collapse
+[phone] Real service: lock the Fold, have someone text Boss: one notification, with the name from contacts, sound as Android sets it; Reply from the lock screen goes out from his number.
+[phone] After a restart of the Fold, "Connected to your Mac" is back without opening the app.
+[phone] OpenBubbles' own notifications: Boss decides whether to turn them off, so each message doesn't notify twice.

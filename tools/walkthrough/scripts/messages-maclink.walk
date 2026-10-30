@@ -1,0 +1,337 @@
+# Soma Messages linked to the Mac's iMessage service (0.6+). Against the service's DEMO on the Mac Pro: sample
+# chats only, nothing of Boss's; every send gets a fake reply 2 s later. The token below is the demo's own.
+shell cmd statusbar collapse
+key HOME
+# A clean start: not linked yet, no contacts answer.
+shell pm clear dev.omalauncher.messages
+# Contacts allowed ahead, so Android's prompt (whose title also says Allow) doesn't cover the inbox.
+shell pm grant dev.omalauncher.messages android.permission.READ_CONTACTS
+# 0.7+ asks for notifications when linked; granted here so its prompt does not cover the inbox.
+shell pm grant dev.omalauncher.messages android.permission.POST_NOTIFICATIONS
+shell pm grant dev.omalauncher.messages android.permission.RECORD_AUDIO
+# Quoted twice: walk.py hands the line to the phone's shell, which would split the link at '&'.
+shell am start -a android.intent.action.VIEW -d "'soma-messages://link?url=http%3A%2F%2F100.120.219.46%3A8765&token=BON7avwraojOZCR1WT8sLWZg9WTx0RFaqeR3udg1kzA'" dev.omalauncher.messages
+wait 2500
+# The owner says yes to the Mac by name before anything goes to it.
+expect Get your iMessages from 100.120.219.46?
+shot link-dialog
+tap Link
+wait 1500
+# Names come from the phone's contacts; the Mac's names stand in when the phone has none.
+wait 4000
+expect Weekend
+expect Ana Demo
+absent OpenBubbles
+shot inbox-from-the-mac
+tap Weekend
+wait 2000
+expect Look at this
+# The photo itself, fetched from the Mac (the demo's is a tiny orange square), in place of a "1 Photo" card.
+expect Photo
+# Not a sliver: the photo fills a 240 dp frame (the demo's 2x2 picture scaled up to an orange block).
+# Look (0.8.3, Boss 2026-10-24): the photo stands alone with its own rounded corners, as in iMessage: no balloon
+# round it and no tail under it; its words ("Look at this") in their own balloon.
+shot photo-fills-its-frame
+# Look: the white balloons' tails are one piece with the balloon; no line of its outline across the tail's top.
+shot white-balloon-tail
+expect from your Mac
+shot group-with-photo-card
+key BACK
+wait 800
+tap Ana Demo
+wait 2000
+# A threaded reply from the Mac shows the message it answers.
+# The demo keeps every test message, so the older reply sits above them: scroll back up to it.
+# The demo keeps every walk's messages, so the history grows: far enough up for many runs.
+swipe 0.5 0.3 0.5 0.85 400
+swipe 0.5 0.3 0.5 0.85 400
+swipe 0.5 0.3 0.5 0.85 400
+swipe 0.5 0.3 0.5 0.85 400
+swipe 0.5 0.3 0.5 0.85 400
+swipe 0.5 0.3 0.5 0.85 400
+swipe 0.5 0.3 0.5 0.85 400
+swipe 0.5 0.3 0.5 0.85 400
+swipe 0.5 0.3 0.5 0.85 400
+swipe 0.5 0.3 0.5 0.85 400
+swipe 0.5 0.3 0.5 0.85 400
+swipe 0.5 0.3 0.5 0.85 400
+wait 600
+expect Perfect, see you there
+expect You: Yes! 7pm
+# Ana's love tapback on "Yes! 7pm" (the demo's own), under that message.
+expect ❤️
+shot reply-quote
+# Back down before writing, so the answer shows. Swiped, not "tap Latest": a short demo thread is all on one
+# screen, and the pill only shows once scrolled away from the bottom (the 0.7.6 walk failed on it).
+swipe 0.5 0.8 0.5 0.3 200
+swipe 0.5 0.8 0.5 0.3 200
+swipe 0.5 0.8 0.5 0.3 200
+wait 800
+# The field and the send button by place (cover screen): "Message" would also match the inbox's heading, under
+# the conversation.
+tap 0.5 0.925
+wait 600
+type walk test from the Fold
+wait 600
+shot typed
+# With words in the field, the arrow is the send button, and says so (TalkBack reads it too).
+expect Send
+# A hardware Enter sends (the on-screen Return breaks the line, as Apple's does); the keyboard moves the arrow.
+key ENTER
+wait 1500
+# Only a message that went gets an answer: the demo replies to each send 2 s later. (The draft in the field would
+# match the sent words too, so they prove nothing.)
+wait 3000
+expect Demo reply to: walk test from the Fold
+shot sent-and-answered
+# A voice message (0.8.4, Boss 2026-10-24): with the field empty the send arrow is a microphone. Start the emulator
+# with -no-audio (the microphone then hears silence): with the Mac's own audio it hung on the recording, twice. Tap to record, Stop,
+# then the recording to play back, send or throw away; it goes as audio (Opus in CAF, an iPhone's own), never words.
+expect Record a voice message
+tap Record a voice message
+wait 2500
+shot voice-recording
+tap Stop recording
+wait 800
+expect Send voice message
+shot voice-review
+tap Send voice message
+wait 1500
+# In the conversation at once, from the recording itself, until the Mac shows it back.
+expect Voice message
+absent Voice message not sent
+shot voice-sent
+# The field again, keyboard up, as after a typed send: the two BACKs below put it away, then leave Ana's chat (the
+# 0.8.4 walk: with no keyboard up after the voice send, the second BACK left the app).
+tap 0.5 0.925
+wait 600
+# Videos (0.7.7; Boss's phone, 2026-10-23: "1 Video" did nothing). The demo's "Clips" chat has one short MP4 from the
+# other person. Not fetched until tapped; then it plays in the phone's player, and is shown by a frame of its own.
+# Back twice: the first only puts the keyboard away after the send; the second leaves Ana's chat for the inbox.
+key BACK
+wait 600
+key BACK
+wait 800
+expect Clips
+tap Clips
+wait 1500
+expect Tap to play
+tap Tap to play
+wait 5000
+shot video-playing
+# Back from the player to the chat: the app brought forward, as the number of Backs the player takes varies (the
+# emulator's first full-screen sheet took one of its own).
+key BACK
+wait 800
+shell am start -W -n dev.omalauncher.messages/.MainActivity
+wait 1500
+expect Video, tap to play
+absent Getting it from your Mac
+# Look: the video shown by a frame from it, with a play mark.
+shot video-frame
+# Held, the video's frame opens the same menu as words: tapbacks, Reply (0.7.8; Boss, 2026-10-23: tapbacks didn't
+# work on pictures, as the picture's own tap took the hold). A long press on the frame, by place: since the
+# conversation sits down on the composer (ab49e4e) the frame is about 62-80% down the cover (the 0.8.3 walk).
+swipe 0.3 0.71 0.3 0.71 900
+wait 800
+expect Reply
+shot hold-menu-on-video
+# Back closes the menu only: the chat stays, and its link still opens after (the 0.7.8 walk: it didn't).
+key BACK
+wait 600
+absent Copy
+expect Clips
+# A shared link (the demo's second "Clips" message, "https://www.tiktok.com/@soma/video/1"): a card, and a tap opens it.
+expect tiktok.com
+tap tiktok.com
+wait 4000
+shot link-opened
+# Back to the app by bringing it forward: TikTok's page now opens a "Watch this video" sheet that a Back only closes.
+shell am start -W -n dev.omalauncher.messages/.MainActivity
+wait 1000
+expect Clips
+# Unfolded, the side panel's "Photos & files": the video plays from there too (it said "Open in OpenBubbles" and did
+# nothing once linked to the Mac).
+fold open
+wait 2500
+expect Photos & files
+# The panel's card by its title: "Tap to play" also matches the chat's video ("Video, tap to play"; matching ignores case).
+tap 1 Video
+wait 7000
+shot panel-video-playing
+# Back to the app as after the first video: the player's full-screen sheet takes a Back of its own.
+shell am start -W -n dev.omalauncher.messages/.MainActivity
+wait 1000
+fold folded
+wait 2500
+# A voice message (0.8.0): the demo's "Voices" chat has one, Opus in CAF as iMessage sends them. A tap fetches it,
+# rewraps it as Ogg and plays it here.
+key BACK
+wait 800
+expect Voices
+tap Voices
+wait 1500
+expect Voice message
+tap Tap to play
+# The demo's note is 2 s: looked at while it plays (at 3 s it had already ended, the 0.8.0 walk).
+wait 900
+expect Playing
+# Stopped at once, by place (the bubble, cover screen): a tap by its words waits for the screen to settle, ~12 s,
+# and the note had ended and started again by then (the 0.8.1 walk).
+tap 0.21 0.23
+wait 600
+wait 800
+expect Tap to play
+# Older history (0.7.6): the demo's "Long thread" has 120 messages, "Long #1" (the oldest, "Long thread starts here")
+# to "Long #120"; the first fetch brings 50, the demo's earlier pages fewer, so scrolling to the top loads several.
+# From Voices (no keyboard up): one Back to the inbox.
+key BACK
+wait 800
+expect Long thread
+tap Long thread
+wait 1500
+expect Long #120
+absent Long #60
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+# Ten more, and a pause for the last page (the 506b24d walk stopped at #22).
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+swipe 0.5 0.3 0.5 0.85 300
+wait 400
+wait 3000
+swipe 0.5 0.3 0.5 0.85 300
+wait 500
+swipe 0.5 0.3 0.5 0.85 300
+wait 500
+swipe 0.5 0.3 0.5 0.85 300
+wait 500
+swipe 0.5 0.3 0.5 0.85 300
+wait 500
+swipe 0.5 0.3 0.5 0.85 300
+wait 500
+swipe 0.5 0.3 0.5 0.85 300
+wait 500
+swipe 0.5 0.3 0.5 0.85 300
+wait 500
+swipe 0.5 0.3 0.5 0.85 300
+wait 500
+wait 2000
+expect Long thread starts here
+# Look: oldest first at the top, no message twice across the pages' seams (#70/#71, #20/#21), no jump.
+shot long-thread-top
+# At the side: the middle of the bottom is where the Latest pill sits.
+swipe 0.2 0.85 0.2 0.3 300
+wait 600
+# No "new" count for history loaded above (0.7.7 walk: "↓ 36 new" after paging).
+absent new
+shot long-thread-seam
+# Unread (0.8.2; Boss, 2026-10-24: his own messages put a red dot on the conversation). The inbox row says the count in
+# its TalkBack words ("Ana Demo, 1 unread"), beside its dot.
+tap 0.06 0.094
+wait 800
+# His sends to Ana and her answers came while her chat was open: nothing unread anywhere (0.8.1 counted her answer).
+absent unread
+shot inbox-nothing-unread
+# His own message, then straight back to the inbox by the arrow's place, before her answer (the demo's, 2 s later).
+tap Ana Demo
+wait 1500
+tap 0.5 0.925
+wait 600
+# Words without "unread" in them: the inbox row shows the answer, and the checks below look for that word.
+type walk dot test
+key ENTER
+tap 0.06 0.094
+wait 4000
+# One unread: her answer, which came while he was on the inbox. His own message beside it is not counted.
+expect Ana Demo, 1 unread
+shot inbox-incoming-unread
+# Opened, it is read.
+tap Ana Demo
+wait 1500
+tap 0.06 0.094
+wait 800
+absent unread
+# The Mac stopped: the inbox says so and keeps what it has.
+[phone] With the real service on the MacBook: link from the phone-link file (Taildropped), chats and names are Boss's own, one plain-text send to a chat he picks arrives on his other devices, a reply from him shows within seconds.
+[phone] Mac locked: one plain text and one tapback (later slice) still go; note which don't.
+[phone] Hold a message from someone: the six tapbacks show above Reply/Copy; tapping one puts it under the message here and on the Mac; tapping it again takes it off.
+[phone] Open a long chat with a friend and scroll to the top: older messages keep coming past the first 50, in order, with nothing twice.
+[phone] With the Mac asleep (lid closed), send a message: one "Not sent" line under it, and an error bar under the conversation that goes by itself after a few seconds and isn't shown in other conversations. Wake the Mac: if the message went after all, its "Not sent" goes; a new send there clears any error left.
+[phone] Tap a video a friend sent: it comes from the Mac (a moment), plays in the phone's player with sound, and Back returns to the chat, where the video now shows a frame of itself.
+[phone] Tap a TikTok or Instagram link a friend sent: it opens (in TikTok/Instagram, or beside the chat on the open Fold), and Back returns to the chat.
+[phone] Hold a photo a friend sent: the tapback picker shows; pick one: it shows under the photo here and on the Mac.
+[phone] Open the chat with the friend's voice message: it shows as "Voice message · Tap to play"; a tap plays it here, in the conversation, with sound; a second tap stops it. A PDF or document a friend sent says "Tap to open" and opens in the app for it.
+[phone] Play a video, close Soma Messages from recents, open the chat again: the video still shows its own frame, not the plain card.
+[phone] Send a photo and a video: each stands on its own with rounded corners, no balloon or tail round it, as in iMessage; hold one: the tapback picker still shows.
+[phone] A friend's white balloons: the tail at the end of a run has no line through its top.
+[phone] A portrait photo taken on the Fold and sent, and one a friend sends from an iPhone: both show the right way up in the chat, in the side panel and in the viewer; a portrait video's frame too.
+[phone] With the field empty, tap the microphone (Android asks for it the first time), say a few words, Stop, play it back, then send it to a friend on an iPhone: it arrives as a voice message with a play button that plays in the conversation, not as a file, and sounds right.
+[phone] Hold the microphone, speak, let go: the recording is kept for review; × throws it away.
+[phone] Hold a photo a friend sent, tap Copy, and paste into another app (Notes, a chat): the photo itself goes in, not "1 Photo". The same for a video that has been opened once.
+[phone] GIF from Soma's keyboard (Boss, 2026-10-27: it went in as its KLIPY link): in a chat, open the keyboard's GIF panel and tap a GIF: it sits in the field as a photo tile with ×, and no link text is typed. Send: it shows in the conversation as a moving picture (not a still, not a link), and arrives on his other devices as a GIF.
+[phone] A GIF someone sends him (Boss, 2026-10-27: "when i receive gifs too") plays (moves) in the conversation; a tap opens it in the viewer, a hold still brings the tapbacks.
