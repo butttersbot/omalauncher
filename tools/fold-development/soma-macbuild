@@ -155,6 +155,8 @@ walk_report() {
     fi
     # The quick diff: advisory, holds nothing.
     [ -s "$wdir/design.txt" ] && cat "$wdir/design.txt"
+    # Frame timings from walks that have them: to find problems, and never a verdict.
+    for f in "$wdir"/*/frames.txt; do [ -f "$f" ] && { echo "Frames, $(basename "$(dirname "$f")"):"; sed 's/^/  /' "$f"; }; done
     echo "Screenshots and logs: walk-$short-$code.zip (Taildropped)."
   } >"$wdir/report.txt"
   local design=""

@@ -1,0 +1,35 @@
+# Messages' feel: the reference that feel-chat.walk is read against, on the app's own example conversations. Frame
+# timings report and never hold anything.
+fold folded
+rotate portrait
+shell pm clear dev.omalauncher.messages
+launch dev.omalauncher.messages/.MainActivity
+tap Look around with example conversations
+wait 1000
+frames start dev.omalauncher.messages
+frames tap open-chat Tahoe trip
+expect cabin or hotel
+frames start dev.omalauncher.messages
+swipe 0.5 0.35 0.5 0.75 200
+swipe 0.5 0.35 0.5 0.75 200
+swipe 0.5 0.75 0.5 0.35 200
+swipe 0.5 0.75 0.5 0.35 200
+wait 800
+frames report scroll
+shot after-scroll
+frames start dev.omalauncher.messages
+swipe 0.3 0.5 0.95 0.5 250
+wait 800
+frames report slide-back
+shot back-at-inbox
+frames tap open-again Mina Park
+expect should I bring the sake
+frames tap back-button Back to conversations
+frames tap open-third Mina Park
+tap iMessage | Message
+type a line to send
+frames start dev.omalauncher.messages
+frames tap send Send
+wait 800
+frames report send
+shot sent

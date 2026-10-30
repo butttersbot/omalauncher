@@ -1,0 +1,33 @@
+# Soma chat's feel, with Messages as the reference (feel-messages.walk). Frame timings report and never hold anything.
+# The fictional chat fixture runs production OmaChatScreen; no real sends. Prerequisite:
+# -PartifactPreview :artifact-preview:assembleDebug installed on this emulator.
+fold folded
+rotate portrait
+shell am force-stop dev.omalauncher.artifactpreview
+shell am start -S -W -n dev.omalauncher.artifactpreview/.PreviewActivity --ei longThread 60
+wait 2000
+frames start dev.omalauncher.artifactpreview
+swipe 0.5 0.35 0.5 0.75 200
+swipe 0.5 0.35 0.5 0.75 200
+swipe 0.5 0.35 0.5 0.75 200
+swipe 0.5 0.75 0.5 0.35 200
+swipe 0.5 0.75 0.5 0.35 200
+swipe 0.5 0.75 0.5 0.35 200
+wait 800
+frames report scroll
+shot after-scroll
+frames tap tabs-open Show the tabs
+expect all
+shot tabs-open
+frames tap tab-to-fold Fold
+shot tab-fold
+frames tap tabs-close Hide the tabs
+frames start dev.omalauncher.artifactpreview
+tap ask soma
+type a line to send
+frames tap send Send
+wait 800
+frames report send
+expect a line to send
+shot sent
+key BACK

@@ -153,5 +153,43 @@ class CanvasCards(unittest.TestCase):
                    {"result": "FAIL", "screenshot": None, "card": "never-taken"}]
         self.assertEqual({"02-market": "hunch-market", "03-calls-list": "phone-calls"}, walk.canvas_map(results))
 
+
+
+class FramesTest(unittest.TestCase):
+    STATS = """
+---PROFILEDATA---
+Flags,IntendedVsync,Vsync,OldestInputEvent,NewestInputEvent,HandleInputStart,AnimationStart,PerformTraversalsStart,DrawStart,FrameDeadline,FrameStartTime,FrameInterval,WorkloadTarget,SyncQueued,SyncStart,IssueDrawCommandsStart,SwapBuffers,FrameCompleted,DequeueBufferDuration,QueueBufferDuration,GpuCompleted,SwapBuffersCompleted,DisplayPresentTime,CommandSubmissionCompleted,
+0,1000000000,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1010000000,0,0,0,0,0,0,
+1,1020000000,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1030000000,0,0,0,0,0,0,
+0,1500000000,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1520000000,0,0,0,0,0,0,
+0,1530000000,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1550000000,0,0,0,0,0,0,
+0,3000000000,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3010000000,0,0,0,0,0,0,
+---PROFILEDATA---
+"""
+
+    def test_the_summary_is_read(self):
+        got = walk.parse_gfxinfo("Total frames rendered: 120\nJanky frames: 6 (5.00%)\n50th percentile: 8ms\n90th percentile: 16ms\n95th percentile: 21ms\n99th percentile: 40ms\nNumber Missed Vsync: 1\nNumber Slow UI thread: 3\nNumber Slow issue draw commands: 2\n")
+        self.assertEqual((got["frames"], got["janky"], got["p50"], got["p99"], got["slow_ui"]), (120, 6, 8, 40, 3))
+        self.assertEqual(walk.frames_note({"frames": 0}), "no frames drawn")
+
+    def test_flagged_frames_dont_count(self):
+        self.assertEqual(walk.parse_framestats(self.STATS)[0:2], [(1000000000, 1010000000), (1500000000, 1520000000)])
+
+    def test_touches_are_on_the_frame_clock(self):
+        down, up = walk.parse_touches("Input Dispatcher State at time 5000000000:\n  RecentQueue: length=2\n    MotionEvent(deviceId=-1, action=DOWN, x=1), age=4000.0ms\n    MotionEvent(deviceId=-1, action=UP, x=1), age=3900.5ms\n")
+        self.assertEqual((down, up), (1000000000, 1099500000))
+        self.assertEqual(walk.parse_touches("nothing here"), (None, None))
+
+    def test_tap_response_takes_the_first_frame_and_the_run_after_it(self):
+        frames = walk.parse_framestats(self.STATS)
+        self.assertEqual(walk.tap_response(frames, 1400000000, 1450000000), (120, 100))
+        self.assertEqual(walk.tap_response(frames, 9000000000, None), (None, None))
+
+    def test_a_frame_step_can_never_fail_a_walk(self):
+        ok, note, _ = walk.frames_step("no-such-serial", ["report", "x"], "/nonexistent")
+        self.assertIs(ok, True)
+        self.assertIn("not measured", note)
+
+
 if __name__ == "__main__":
     unittest.main()

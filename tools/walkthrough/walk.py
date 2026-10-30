@@ -153,8 +153,101 @@ def shot(serial, path):
     with open(path, "wb") as f:
         f.write(subprocess.run(cmd, capture_output=True, timeout=60).stdout)
 
+def parse_gfxinfo(text):
+    """The summary `dumpsys gfxinfo PKG` prints since its last reset: frames, janky frames and the percentiles, in ms."""
+    def number(pattern):
+        m = re.search(pattern, text)
+        return float(m.group(1)) if m else None
+    got = {"frames": number(r"Total frames rendered: (\d+)"), "janky": number(r"Janky frames: (\d+)"),
+           "p50": number(r"50th percentile: (\d+)ms"), "p90": number(r"90th percentile: (\d+)ms"),
+           "p95": number(r"95th percentile: (\d+)ms"), "p99": number(r"99th percentile: (\d+)ms"),
+           "slow_ui": number(r"Number Slow UI thread: (\d+)"), "slow_draw": number(r"Number Slow issue draw commands: (\d+)"),
+           "missed_vsync": number(r"Number Missed Vsync: (\d+)")}
+    return {k: int(v) if v is not None else None for k, v in got.items()}
+
+def parse_framestats(text):
+    """(intended vsync, frame completed) in ns of each frame in a `gfxinfo PKG framestats`, skipping those flagged not to count."""
+    frames, columns = [], None
+    for line in text.splitlines():
+        cells = line.strip().rstrip(",").split(",")
+        if cells[0] == "Flags":
+            columns = {name: i for i, name in enumerate(cells)}
+        elif columns and cells[0].isdigit() and len(cells) >= len(columns) - 1:
+            intended, done = int(cells[columns["IntendedVsync"]]), int(cells[columns["FrameCompleted"]])
+            if int(cells[0]) == 0 and 0 < intended <= done:
+                frames.append((intended, done))
+    return sorted(frames)
+
+def parse_touches(text):
+    """When the last finger went down and up, in ns on the frame clock: `dumpsys input` gives its time and each recent event's age."""
+    now = re.search(r"Input Dispatcher State at time (\d+)", text)
+    if not now:
+        return None, None
+    times = {}
+    for action, age in re.findall(r"MotionEvent\([^\n]*?action=(DOWN|UP)[^\n]*?age=([\d.]+)ms", text):
+        times[action] = int(now.group(1)) - int(float(age) * 1e6)
+    return times.get("DOWN"), times.get("UP")
+
+def tap_response(frames, down, up, gap_ms=100):
+    """Ms from the finger to the first frame after it, and to the last of the run of frames that follows (the screen at rest again)."""
+    after = [f for f in frames if down is not None and f[0] >= down]
+    if not after:
+        return None, None
+    last = after[0][1]
+    for start, done in after[1:]:
+        if start - last > gap_ms * 1e6:
+            break
+        last = done
+    return round((after[0][1] - down) / 1e6), round((last - (up or down)) / 1e6)
+
+FRAMES = {}
+
+def frames_note(got):
+    if not got.get("frames"):
+        return "no frames drawn"
+    pct = round(100 * got["janky"] / got["frames"]) if got["janky"] is not None else "?"
+    return f"{got['frames']} frames, {got['janky']} janky ({pct}%), p50 {got['p50']} p90 {got['p90']} p99 {got['p99']} ms, slow UI thread {got['slow_ui']}"
+
+def frames_step(serial, args, out):
+    """`frames start PKG`, `frames report NAME` and `frames tap NAME ...where`: reported, and never a reason for a walk to fail."""
+    try:
+        if args[0] == "start":
+            FRAMES["pkg"] = args[1]
+            adb(serial, "shell", "dumpsys", "gfxinfo", args[1], "reset")
+            return True, "", None
+        if args[0] == "report":
+            got = parse_gfxinfo(adb(serial, "shell", "dumpsys", "gfxinfo", FRAMES["pkg"]).stdout)
+            note = frames_note(got)
+            FRAMES.setdefault("report", []).append({"name": args[1], "pkg": FRAMES["pkg"], **got})
+        else:
+            if len(args) == 4 and re.fullmatch(r"[\d.]+", args[2]) and re.fullmatch(r"[\d.]+", args[3]):
+                x, y = point(serial, args[2], args[3])
+            else:
+                p = find(serial, " ".join(args[2:]), wait_ms=8000, actionable=True)
+                if not p:
+                    return True, "nothing says " + " ".join(args[2:]) + ": not measured", None
+                x, y = p
+            # The screen at rest first, so the first frame after the finger is its answer.
+            time.sleep(1.2)
+            adb(serial, "shell", "dumpsys", "gfxinfo", FRAMES["pkg"], "reset")
+            adb(serial, "shell", "input", "tap", str(x), str(y))
+            time.sleep(1.5)
+            down, up = parse_touches(adb(serial, "shell", "dumpsys", "input").stdout)
+            frames = parse_framestats(adb(serial, "shell", "dumpsys", "gfxinfo", FRAMES["pkg"], "framestats").stdout)
+            first, rest = tap_response(frames, down, up)
+            note = f"first frame {first} ms after the finger, at rest {rest} ms after it lifted" if first is not None else "no frame or no touch time seen: not measured"
+            FRAMES.setdefault("report", []).append({"name": args[1], "pkg": FRAMES["pkg"], "first_ms": first, "rest_ms": rest})
+        with open(os.path.join(out, "frames.txt"), "a", encoding="utf-8") as f:
+            f.write(f"{args[1]}: {note}\n")
+        json.dump(FRAMES["report"], open(os.path.join(out, "frames.json"), "w"), indent=1)
+        return True, note, None
+    except Exception as e:
+        return True, "not measured: " + str(e)[:200], None
+
 def run_step(serial, op, args, out, n):
     """One [emu] step; returns (ok, note, screenshot or None)."""
+    if op == "frames":
+        return frames_step(serial, args, out)
     if op == "launch":
         adb(serial, "shell", "am", "start", "-S", "-W", "-n", args[0], check=True); time.sleep(1.5); wait_for_tree(serial); return True, "", None
     if op == "url":

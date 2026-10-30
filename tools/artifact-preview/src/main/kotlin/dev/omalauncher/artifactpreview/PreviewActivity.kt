@@ -101,6 +101,21 @@ Open the preview to try the layout. We can keep talking while you look at it.
 [Interaction notes](outputs/interaction-notes.md)
 """.trimIndent(), status = TaskStatus.Done, answeredBy = "Claude Code"))
 
+        // --ei longThread N: N fictional entries in a thread, with the kinds of words real answers have, to scroll in the feel walks.
+        private val longThread = (context as? android.app.Activity)?.intent?.getIntExtra("longThread", 0) ?: 0
+        private val longEntries by lazy {
+            (1..longThread).map { i ->
+                ChatTask(now - (longThread - i) * 60_000L, "Claude Code", "Fictional request $i: look at the list and say what changed.", status = TaskStatus.Done, answeredBy = "Claude Code", result = """
+**Entry $i.** The list is checked and the fixture is fine. A few lines, so an answer is about as tall as a real one:
+
+- first point, with `some code` in it
+- second point, with a [link](https://example.com/$i)
+
+${"Some plain words to wrap across the width of the cover screen. ".repeat(1 + i % 4)}
+""".trimIndent())
+            }
+        }
+
         override fun readArtifact(thread: String, path: String): ArtifactRead {
             val html = path.endsWith(".html")
             val content = if (html && questions) context.assets.open("questions/proposal.html").bufferedReader().use { it.readText() } else if (html) page else "# Interaction notes\n\nThe chat stays beside the preview. Close it to return to the same draft."
@@ -127,6 +142,7 @@ Open the preview to try the layout. We can keep talking while you look at it.
                 result = if (questionDone) "All four phone builder answers returned." else "",
                 approvals = listOf(dev.omalauncher.oma.ChatApproval("AskUserQuestion", "Four fictional choices", if (questionDone) dev.omalauncher.oma.ApprovalAnswer.Approved else dev.omalauncher.oma.ApprovalAnswer.Waiting, "builder-ticket")))) +
                 if (queuedBehind) listOf(ChatTask(now + 1, "Claude Code", "Fictional mail queued behind the question", builder = BuilderId.A.saved, mail = "Agent mail from a fictional Mac lane", status = TaskStatus.Queued)) else emptyList()
+            if (longThread > 0) return longEntries + modeAnswers
             return (if (empty) emptyList() else if (questionSkipped) thread.map { it.copy(steps = it.steps + "skipped") } else thread) + modeAnswers
         }
         // /mode in a new chat (slice 6): answered with the engine's own words, as Soma's answer under his.
@@ -260,7 +276,10 @@ Open the preview to try the layout. We can keep talking while you look at it.
         override fun builderFacts() = emptyMap<BuilderId, BuilderFacts>()
         override fun lookAtBuilders() {}
         override fun build(prompt: String, images: List<String>, way: BuildWay, builder: BuilderId?) {}
-        override fun askFront(prompt: String, chat: String) {}
+        override fun askFront(prompt: String, chat: String) {
+            // Only the feel walks have a long thread: there a sent line is answered at once, for its arrival to be watched.
+            if (longThread > 0) modeAnswers = modeAnswers + ChatTask(System.currentTimeMillis(), dev.omalauncher.oma.QUICK_AGENT, prompt, chat = chat, direct = true, status = TaskStatus.Done, result = "Fictional answer to: $prompt", answeredBy = dev.omalauncher.oma.QUICK_AGENT)
+        }
         override fun startMacChat(prompt: String, chat: String, images: List<java.io.File>) { answerMode(prompt, chat) }
         override fun sayToMac(prompt: String, thread: String, name: String, chat: String, images: List<java.io.File>) { android.util.Log.i("SomaWalk", "fixture said to $thread: ${prompt.take(60)}") }
         private var answerCount = 0

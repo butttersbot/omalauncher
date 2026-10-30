@@ -42,7 +42,14 @@ pixels (`540 1800`).
 | `scrollto TEXT` | swipes up until TEXT shows (a WebView reports only what is on screen) |
 | `shot NAME` | a screenshot to look at (canvas-drawn UI, like the keyboard, has no text to expect) |
 | `shot NAME card=CARD-ID` | the same, and this screenshot is that Soma Canvas card: see the design gate below |
+| `frames start PKG` | clears the frame counters of that app, for a scripted gesture to follow |
+| `frames report NAME` | notes frames, janky frames, percentiles and slow UI-thread frames since `start`, in `frames.txt` and `frames.json` |
+| `frames tap NAME TEXT` or `frames tap NAME X Y` | taps with the screen at rest, then notes ms from the finger to the first frame and until the frames stop |
 | `[phone] …` | a step in words for the real Fold, after promotion |
+
+`frames` steps are for finding problems, not chasing a score (Boss's rule): they always pass, and a number can't hold a
+build, a take or an install. An emulator's numbers only compare against each other on the same run, with Messages as
+the reference; they say nothing of 120 Hz or the real phone.
 
 A `shot` is reported **LOOK**, never PASS: a walk counts only once its screenshots have been looked at. (The first
 walk, of 128, "passed" the GIF keyboard while its swipes had missed the handle and pulled down Android's shade.)
