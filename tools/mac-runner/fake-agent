@@ -102,7 +102,12 @@ def handle(given):
             out({'type': 'assistant', 'message': {'role': 'assistant', 'content': ['not a block']}})
         if 'slow' in prompt:
             time.sleep(3)
-        if 'question-form' in prompt:
+        if 'question-json:' in prompt:  # a form the test gives (test-linked.py: duplicates across threads)
+            form = json.loads(prompt.split('question-json:', 1)[1])
+            out({'type': 'control_request', 'request_id': 'q-' + uuid.uuid4().hex[:8], 'request': {'subtype': 'can_use_tool', 'tool_name': 'AskUserQuestion', 'input': form}})
+            reply = json.loads(sys.stdin.readline())['response']['response']
+            said('Answers: ' + json.dumps(reply.get('updatedInput', {}).get('answers', {})) if reply['behavior'] == 'allow' else 'Questions skipped.')
+        elif 'question-form' in prompt:
             form = {'questions': [
                 {'question': 'Which layout should we use?', 'header': 'Layout', 'options': [{'label': 'Split', 'description': 'Chat stays beside the form'}, {'label': 'Full screen', 'description': 'Focus on the question'}], 'multiSelect': False},
                 {'question': 'Which checks should we run?', 'header': 'Checks', 'options': [{'label': 'Cover', 'description': 'Narrow phone'}, {'label': 'Unfolded', 'description': 'Two-pane phone'}], 'multiSelect': True}]}
