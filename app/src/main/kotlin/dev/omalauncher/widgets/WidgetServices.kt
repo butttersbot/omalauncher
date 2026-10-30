@@ -472,7 +472,12 @@ class WidgetServices(
             "copy" -> copy(arg)
             "notify" -> notify(arg, args.getOrNull(1)?.takeIf { it != Null }?.toString())
             "torch" -> modes.torch(args[0])
-            "dictation" -> context.startActivity(Intent(context, dev.omalauncher.assist.RelayPromptActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            "dictation" ->
+                when (arg) {
+                    "open" -> context.startActivity(Intent(context, dev.omalauncher.assist.RelayPromptActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    // MG1 didn't answer: the one thing this phone can do about it is its own Tailscale, if that is what's off.
+                    "reconnect" -> dev.omalauncher.assist.TailscaleHeal.after(context, dev.omalauncher.assist.MacLink.NoAnswer)
+                }
             "share" -> share(arg)
             "haptic" -> view?.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
             "open" -> openApp(arg)

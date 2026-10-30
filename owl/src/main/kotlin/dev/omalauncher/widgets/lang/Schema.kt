@@ -189,7 +189,7 @@ internal val ACTION_WORDS =
         "volume" to setOf("up", "down", "mute", "unmute", "toggle").let { Words(it, "volume takes a level in percent, or ${it.joinToString()}", numbers = true) },
         // true and false also turn it on and off.
         "torch" to setOf("on", "off", "toggle").let { Words(it, "torch takes true, false, ${it.joinToString()}") },
-        "dictation" to setOf("open").let { Words(it, "dictation takes ${it.joinToString()}") },
+        "dictation" to setOf("open", "reconnect").let { Words(it, "dictation takes ${it.joinToString()}") },
         "notification" to setOf("open", "dismiss").let { Words(it, "notification takes ${it.joinToString()} and a notification's key") },
     )
 

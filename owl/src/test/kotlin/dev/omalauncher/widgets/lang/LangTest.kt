@@ -879,6 +879,35 @@ class LangTest {
         assertTrue(compileError("widget {\n meta { owl: 11 }\n onTap: dictation(\"start\")\n Text { text: 1 } }").contains("dictation takes"))
     }
 
+    /** The rail's status and its tap, on what owl already has (Boss, 2026-10-30: connected, not, trying). */
+    @Test fun aRailCanShowMg1sStatusAndRetryFromATap() {
+        Compiler.compile(
+            """
+            widget "dictation" {
+              meta { owl: 11 }
+              over: "art:f4618f2aa61acfb0"
+              padding: 0
+              source hello = http("http://100.77.138.16:8481/v1/hello") every 30s json timeout 3s status
+              source now = clock every 1s
+              state tryUntil = 0
+              let up = hello != null && hello.ok
+              let trying = !up && now < tryUntil
+              every 2s { if trying { refresh() } }
+              onTap: {
+                if up {
+                  dictation("open")
+                } else {
+                  tryUntil = now + 8
+                  dictation("reconnect")
+                  refresh()
+                }
+              }
+              Text { text: trying ? "MG1 trying" : up ? "MG1 ${'$'}{hello.out.ready ? "up" : hello.out.why}" : "MG1 not connected" }
+            }
+            """.trimIndent(),
+        )
+    }
+
     @Test fun androidNotificationsAndVolume() {
         val p = Compiler.compile("widget {\n meta { owl: 4 }\n source n = android.notifications\n source v = android.volume\n Text { text: n.count; onTap: volume(\"up\") } }")
         assertEquals(listOf("android.notifications", "android.volume"), p.globals.map { (it as Global.Source).kind })

@@ -483,7 +483,7 @@ after it in its block (and blocks inside them), and needs a name not used for a 
 | `screen()` / `close()` | opens the widget's `screen { }` full screen, or closes it (owl 5) |
 | `media("toggle")` | controls what's playing: `toggle`, `play`, `pause`, `next`, `previous`, or `open` (brings up the player app) |
 | `volume(50)` | sets the media volume in percent; or `volume("up")`, `"down"`, `"mute"`, `"unmute"`, `"toggle"` (owl 4) |
-| `dictation("open")` | opens the listening screen to type on MG1 (owl 11), only in the file `dictation-mg1.owl` and only from a tap; anywhere else it does nothing. What he says waits for his Send; a failed send keeps the words, and they never go anywhere else |
+| `dictation("open")` | opens the listening screen to type on MG1 (owl 11), only in the file `dictation-mg1.owl` and only from a tap; anywhere else it does nothing. What he says waits for his Send; a failed send keeps the words, and they never go anywhere else. `dictation("reconnect")`, there too: turns this phone's Tailscale back on if it is off (no sooner than once a minute); it can't reach MG1 itself |
 | `notification("open", key)` | opens a notification from `android.notifications` as tapping it in the shade would; `"dismiss"` clears it. Without notification access, opens the setting that grants it (owl 4) |
 
 ## Images from the web
