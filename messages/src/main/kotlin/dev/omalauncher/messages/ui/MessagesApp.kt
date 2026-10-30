@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import dev.omalauncher.messages.engine.Messages
 import dev.omalauncher.ui.ComposerState
+import dev.omalauncher.ui.moveTo
 import dev.omalauncher.ui.Motion
 import dev.omalauncher.ui.Pack
 import kotlinx.coroutines.CancellationException
@@ -121,21 +122,21 @@ private fun Sliding(
     val modalChanged: (Boolean) -> Unit = remember { { value -> modal = value } }
     val x = remember { Animatable(widthPx) }
     val scope = rememberCoroutineScope()
-    LaunchedEffect(Unit) { x.animateTo(0f, Motion.spatial) }
+    LaunchedEffect(Unit) { x.moveTo(0f, MessageMotion.open) }
     val back: () -> Unit = {
         scope.launch {
-            x.animateTo(widthPx, Motion.spatial)
+            x.moveTo(widthPx, MessageMotion.close)
             onGone()
         }
     }
     PredictiveBackHandler(enabled = !modal) { progress: Flow<BackEventCompat> ->
         try {
             progress.collect { e -> x.snapTo(e.progress * widthPx) }
-            x.animateTo(widthPx, Motion.spatial)
+            x.moveTo(widthPx, Motion.spatial)
             onGone()
         } catch (e: CancellationException) {
             // The finger let go early: the screen goes back where it was, outside the cancelled gesture.
-            scope.launch { x.animateTo(0f, Motion.spatial) }
+            scope.launch { x.moveTo(0f, Motion.spatial) }
             throw e
         }
     }
@@ -158,17 +159,17 @@ private fun Sliding(
                         val v = velocity.calculateVelocity().x
                         scope.launch {
                             if (x.value > widthPx * BACK_AT || v > fling) {
-                                x.animateTo(widthPx, Motion.spatial)
+                                x.moveTo(widthPx, Motion.spatial)
                                 onGone()
                             } else {
-                                x.animateTo(0f, Motion.spatial)
+                                x.moveTo(0f, Motion.spatial)
                             }
                         }
                     }
                     pulling = false
                 },
                 onDragCancel = {
-                    if (pulling) scope.launch { x.animateTo(0f, Motion.spatial) }
+                    if (pulling) scope.launch { x.moveTo(0f, Motion.spatial) }
                     pulling = false
                 },
             ) { change, dx ->

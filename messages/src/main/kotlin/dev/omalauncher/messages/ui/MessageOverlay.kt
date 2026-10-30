@@ -1,5 +1,10 @@
 package dev.omalauncher.messages.ui
 
+import androidx.compose.animation.core.Animatable
+import dev.omalauncher.ui.Motion
+import dev.omalauncher.ui.moveTo
+import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -20,7 +25,7 @@ import androidx.compose.ui.window.DialogWindowProvider
 import dev.omalauncher.ui.Pack
 
 /** A real modal window: accessibility and Back stay on the menu, using Soma's existing scrim. */
-@Composable internal fun MessageOverlay(onDismiss: () -> Unit, dismissOnOutside: Boolean = true, content: @Composable BoxScope.() -> Unit) {
+@Composable internal fun MessageOverlay(onDismiss: () -> Unit, dismissOnOutside: Boolean = true, enterMillis: Int = 0, content: @Composable BoxScope.() -> Unit) {
     // Capture the host's focus before entering the dialog's separate focus owner. Otherwise
     // Android restores a previously focused composer and reopens an already dismissed IME.
     val hostFocus = LocalFocusManager.current
@@ -53,7 +58,17 @@ import dev.omalauncher.ui.Pack
             if (view.isAttachedToWindow) view.post(apply)
             onDispose { view.removeCallbacks(apply); view.removeOnAttachStateChangeListener(listener) }
         }
-        Box(Modifier.fillMaxSize().background(Pack.foreground.copy(alpha = 0.18f)).then(if (dismissOnOutside) Modifier.clickable(onClick = onDismiss) else Modifier),
-            contentAlignment = Alignment.Center, content = content)
+        // Opt-in for the existing hold/tapback menu only; reply/search/edit overlays keep
+        // their own focus and layout behavior. No delayed actions or network gating.
+        val entrance = remember { Animatable(if (enterMillis > 0 && !Motion.reduced) 0f else 1f) }
+        LaunchedEffect(Unit) { entrance.moveTo(1f, Motion.timed(enterMillis, Motion.easing)) }
+        Box(Modifier.fillMaxSize().background(Pack.foreground.copy(alpha = 0.18f * entrance.value))
+            .then(if (dismissOnOutside) Modifier.clickable(onClick = onDismiss) else Modifier)) {
+            Box(Modifier.fillMaxSize().graphicsLayer {
+                alpha = entrance.value
+                scaleX = 0.96f + 0.04f * entrance.value
+                scaleY = scaleX
+            }, contentAlignment = Alignment.Center, content = content)
+        }
     }
 }

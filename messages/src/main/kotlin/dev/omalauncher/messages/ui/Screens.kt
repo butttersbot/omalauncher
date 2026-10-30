@@ -613,7 +613,7 @@ fun Thread(
                 itemsIndexed(c.messages, key = { _, m -> m.renderKey }) { i, m ->
                     val entering = remember(m.renderKey) { SendMotion.take(m.renderKey) && !Motion.reduced }
                     val entrance = remember(m.renderKey) { Animatable(if (entering) 0f else 1f) }
-                    LaunchedEffect(m.renderKey) { entrance.moveTo(1f, Motion.spatial) }
+                    LaunchedEffect(m.renderKey) { entrance.moveTo(1f, MessageMotion.send) }
                     val prev = c.messages.getOrNull(i - 1)
                     val next = c.messages.getOrNull(i + 1)
                     val first = prev == null || prev.sender != m.sender
@@ -1485,7 +1485,7 @@ private fun HoldMenu(
     onEdit: (() -> Unit)? = null,
     onUnsend: (() -> Unit)? = null,
 ) {
-    MessageOverlay(onDismiss) {
+    MessageOverlay(onDismiss, enterMillis = MessageMotion.MENU_ENTER_MS) {
         val shape = composerShape(14.dp)
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
         // iMessage's six tapbacks, above the actions; the owner's own one is marked, and a second tap takes it off.

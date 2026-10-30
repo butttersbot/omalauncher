@@ -1,0 +1,50 @@
+# canvas-app: soma-messages
+# Paired isolated DEMO only, fresh state, starting folded in inbox.
+# Never run this on the Mac Pro while Boss's simulator ban is in force.
+# Record native video concurrently; use frame PTS, not nominal FPS, for visual review.
+# See docs/messages-imessage-parity-build.md: this walk does not prove 120Hz/latency.
+shell am start -n dev.omalauncher.messages/.MainActivity
+expect Ana Demo
+tap Ana Demo
+expect Perfect, see you there
+shot reference-chat-open card=messages-parity-status
+# Native IME controls layout; no second timed inset animator.
+tap Message
+type Reference motion draft
+keyboard shown
+shot reference-keyboard-up card=messages-parity-status
+closeime
+keyboard hidden
+expect Reference motion draft
+shot reference-keyboard-down card=messages-parity-status
+tap Send
+expect Reference motion draft
+wait 600
+shot reference-send-settled card=messages-parity-send-motion
+hold Perfect, see you there
+expect Tapback like
+shot reference-hold-menu card=messages-parity-reaction-menu
+key BACK
+absent Tapback like
+expect Perfect, see you there
+doubletap Perfect, see you there
+expect Tapback like
+shot reference-doubletap-existing-menu card=messages-parity-reaction-menu
+key BACK
+absent Tapback like
+keyboard hidden
+key BACK
+expect Ana Demo
+shot reference-back-list card=messages-parity-pinned-muted
+tap Ana Demo
+expect Reference motion draft
+key BACK
+expect Ana Demo
+# Partial back cancels; content remains usable. Gesture spring itself is unchanged.
+tap Ana Demo
+swipe 0.02 0.50 0.12 0.50 700
+expect Perfect, see you there
+shot reference-back-cancel card=messages-parity-status
+# Device settings: repeat open/back/send/menu with animator duration scale 0,
+# then restore the prior scale. Do not change Boss's phone settings.
+# Reduced-motion/device frame review remains an explicit native-walk check.
