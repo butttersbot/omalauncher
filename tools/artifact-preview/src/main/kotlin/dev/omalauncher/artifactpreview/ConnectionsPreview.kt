@@ -23,7 +23,8 @@ fun ConnectionsPreview() {
     val now = remember { System.currentTimeMillis() }
     var clock by remember { mutableStateOf(now) }
     val ledger = remember { ConnectionAlerts() }
-    fun snapshot(state: ConnectionState = ConnectionState.Failed): ConnectionsSnapshot = ConnectionsSnapshot(Capability.entries.map { c ->
+    // Stamped when each scenario is shown, as the monitor stamps a check when it lands.
+    fun snapshot(state: ConnectionState = ConnectionState.Failed, modelsTrouble: Boolean = false): ConnectionsSnapshot = System.currentTimeMillis().let { clock -> ConnectionsSnapshot(Capability.entries.filter { it != Capability.Models }.map { c ->
         val affected = c in setOf(Capability.Agents, Capability.Builds)
         ConnectionReading(c, if (affected) state else ConnectionState.Ready,
             when { affected -> "Fictional runner evidence; agent runs and builds share one incident."
@@ -32,7 +33,7 @@ fun ConnectionsPreview() {
                 else -> "Fictional end-to-end capability verified." }, clock, if (affected) "runner:fixture" else null, if (affected) "Fictional Mac" else "",
             if (affected) "fictional-mac" else "")
     } + ConnectionReading(Capability.Network, ConnectionState.Ready, "Fictional route to the Mac responded; capability status is checked separately.",
-        clock, "network", "Fictional Mac", "fictional-mac"), clock)
+        clock, "network", "Fictional Mac", "fictional-mac") + fictionalModels(clock, modelsTrouble), clock) }
     fun show(s: String) {
         scenario = s; ConnectionsSource.repair = null; ConnectionsSource.guide = null
         ConnectionsSource.diagnostic = org.json.JSONObject().put("schema", 1).put("service", "fictional-runner")
@@ -46,8 +47,18 @@ fun ConnectionsPreview() {
             "Auth check" -> ConnectionState.Auth
             "Stale check" -> ConnectionState.Ready
             "Pause checks" -> ConnectionState.Paused
+            "Models trouble" -> ConnectionState.Ready
             else -> ConnectionState.Failed
-        }).let { if (s == "Stale check") it.copy(readings = it.readings.map { r -> r.copy(checkedAt = clock - 100_000) }) else it }
+        }, modelsTrouble = s == "Models trouble").let { if (s == "Stale check") it.copy(readings = it.readings.map { r -> r.copy(checkedAt = clock - 100_000) }) else it }
+    }
+    // The monitor's rounds, as the real one lands a fresh check every half minute: the walk leaves the sheet open past the 90 s limit.
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(20_000)
+            if (scenario == "Stale check") continue
+            val t = System.currentTimeMillis()
+            ConnectionsSource.snapshot = ConnectionsSource.snapshot.let { it.copy(readings = it.readings.map { r -> r.copy(checkedAt = t) }, checkedAt = t) }
+        }
     }
     LaunchedEffect(Unit) {
         show("Outage")
@@ -79,7 +90,7 @@ fun ConnectionsPreview() {
             for (s in listOf("Small", "Medium", "Large")) FixtureAction(s) { shape = s }
         }
         FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            for (s in listOf("Outage", "Auth check", "Stale check", "Active jobs", "Failed repair", "Successful repair", "Pause checks")) FixtureAction(s) { show(s) }
+            for (s in listOf("Outage", "Auth check", "Stale check", "Active jobs", "Failed repair", "Successful repair", "Pause checks", "Models trouble")) FixtureAction(s) { show(s) }
         }
         BasicText(receipt, style = Pack.body())
         BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -95,4 +106,16 @@ fun ConnectionsPreview() {
     Box(Modifier.heightIn(min = 44.dp).clickable(onClick = action).padding(horizontal = 4.dp, vertical = 10.dp)) {
         BasicText(label, style = Pack.mono(Pack.size.small, Pack.accent))
     }
+}
+
+/** The phone's agents, fictional: Claude Code and Codex (GPT-6.1 Terra) healthy, Grok with no run yet; "Models trouble" adds a Codex error and a missing Claude... */
+private fun fictionalModels(now: Long, trouble: Boolean): List<ConnectionReading> {
+    fun turn(agent: String, status: dev.omalauncher.oma.TaskStatus, result: String, builder: String = "") =
+        dev.omalauncher.oma.ChatTask(now - 1000, agent, "fictional", status = status, result = result, builder = builder)
+    val installed = listOf(InstalledAgent("claude", "Claude Code"), InstalledAgent("codex", "Codex"), InstalledAgent("grok", "Grok"))
+    val tasks = listOf(turn("Claude Code", dev.omalauncher.oma.TaskStatus.Done, "fine"),
+        if (trouble) turn("Codex", dev.omalauncher.oma.TaskStatus.Failed, "You've hit your usage limit. Try again later.", "D") else turn("Codex", dev.omalauncher.oma.TaskStatus.Done, "fine", "D"))
+    val needs = if (trouble) listOf(AgentNeed("grok", "Grok", listOf("the front agent")), AgentNeed("opencode", "OpenCode", listOf("Phone C")))
+        else listOf(AgentNeed("grok", "Grok", listOf("the front agent")))
+    return phoneModelReadings(installed, needs, tasks, now) { t -> if (t.agent == "Codex" && t.builder == "D") prettyModel("gpt-6.1-terra") else null }
 }

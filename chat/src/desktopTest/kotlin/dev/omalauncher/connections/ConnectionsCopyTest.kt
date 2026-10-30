@@ -12,16 +12,23 @@ class ConnectionsCopyTest {
         } + listOfNotNull(if (route) ConnectionReading(Capability.Network, ConnectionState.Ready, "route", now, "network", "Mac Pro", "mac-pro") else null), now)
 
     @Test fun statusWordsAndColoursFollowTheCards() {
+        val ready = ConnectionsSnapshot(Capability.entries.map { ConnectionReading(it, ConnectionState.Ready, "x", now) }, now)
+        val rows = ready.rows(now).associateBy { it.capability }
+        assertEquals(ConnectionStatus("✓", "Connected", ConnectionTone.Good), connectionStatus(rows.getValue(Capability.Network), emptyList(), card = true))
+        // The sheet says Connected too, as the small card does (Boss, 2026-10-30).
+        assertEquals("✓ Connected", connectionStatus(rows.getValue(Capability.Network), emptyList()).text)
+        assertEquals("✓ Synced", connectionStatus(rows.getValue(Capability.Sync), emptyList()).text)
+        assertEquals("✓ Synced", connectionStatus(rows.getValue(Capability.Canvas), emptyList()).text)
+        assertEquals("✓ Available", connectionStatus(rows.getValue(Capability.Optional), emptyList()).text)
+        assertEquals("✓ Healthy", connectionStatus(rows.getValue(Capability.Models), emptyList()).text)
+        assertEquals("✓ Ready", connectionStatus(rows.getValue(Capability.Phone), emptyList()).text)
+        // The runners' health is the Device connections row: a failing runner is what needs repair there.
         val s = outage(true)
-        val rows = s.rows(now).associateBy { it.capability }
+        val out = s.rows(now).associateBy { it.capability }
         val incidents = s.incidents(now)
-        assertEquals(ConnectionStatus("✓", "Connected", ConnectionTone.Good), connectionStatus(rows.getValue(Capability.Network), incidents, card = true))
-        assertEquals("✓ Ready", connectionStatus(rows.getValue(Capability.Network), incidents).text)
-        assertEquals("✓ Synced", connectionStatus(rows.getValue(Capability.Sync), incidents).text)
-        assertEquals("✓ Synced", connectionStatus(rows.getValue(Capability.Canvas), incidents).text)
-        assertEquals("✓ Available", connectionStatus(rows.getValue(Capability.Optional), incidents).text)
-        assertEquals(ConnectionStatus("△", "Needs repair", ConnectionTone.Bad), connectionStatus(rows.getValue(Capability.Agents), incidents))
-        assertEquals("△ Affected", connectionStatus(rows.getValue(Capability.Builds), incidents).text)
+        assertNull(out[Capability.Agents])
+        assertEquals(ConnectionStatus("△", "Needs repair", ConnectionTone.Bad), connectionStatus(out.getValue(Capability.Network), incidents))
+        assertEquals("△ Affected", connectionStatus(out.getValue(Capability.Builds), incidents).text)
         val unknown = ConnectionReading(Capability.Voice, ConnectionState.Unknown, "Not checked yet.", now)
         assertEquals(ConnectionTone.Quiet, connectionStatus(unknown, incidents).tone)
     }

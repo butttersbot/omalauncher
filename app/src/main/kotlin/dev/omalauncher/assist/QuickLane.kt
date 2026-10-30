@@ -62,6 +62,13 @@ object QuickLane {
      * and signed in in the guest, unless `oma front haiku` chose Haiku; Haiku on Claude Code otherwise. Looked at for
      * each request, so a sign-in or a switch counts from the next one.
      */
+    /** The front agent he chose (`oma front`), whether or not it can answer now: what the phone is expected to have. */
+    fun wantedAgent(context: Context): FrontAgent {
+        val home = (context.applicationContext as App).runtime.proot.home
+        val chosen = runCatching { java.io.File(home, FRONT_CHOICE).takeIf { it.isFile }?.readText() }.getOrNull()
+        return FrontAgent.pick(chosen, grok = true, signedIn = true, claude = true)!!
+    }
+
     fun agent(context: Context): FrontAgent? {
         val runtime = (context.applicationContext as App).runtime
         val installed = runtime.agents.installed

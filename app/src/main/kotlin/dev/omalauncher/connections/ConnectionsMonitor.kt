@@ -223,8 +223,14 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
                 if (keeper.result == "pass") "Phone keeper answered its real list protocol."
                 else "Phone keeper protocol is unverified; no running jobs are inferred or terminated.",
                 checks = listOf(keeper))
-            rows += phoneAgentReadings(dev.omalauncher.oma.ChatLog.of(context).tasks, System.currentTimeMillis())
         } else add(Capability.Agents, ConnectionState.Disabled, "Phone Linux runtime is off intentionally.")
+        // Models: each agent installed on this phone and how its last real run went, and any a builder or the front agent needs that is missing.
+        runtime.agents.refresh()
+        rows += phoneModelReadings(runtime.agents.installed.map { InstalledAgent(it.bin, it.name) },
+            dev.omalauncher.assist.agentNeeds(dev.omalauncher.assist.QuickLane.wantedAgent(context)),
+            dev.omalauncher.oma.ChatLog.of(context).tasks, System.currentTimeMillis()) { task ->
+            dev.omalauncher.assist.phoneModelOf(task.builder, task.agent)?.let(::prettyModel)
+        }
         val machines = readMacMachines(runtime.proot.launcherConfig)
         working = if (machines.isEmpty()) null else 0; queued = if (machines.isEmpty()) null else 0
         val aliases = machines.associate { m -> (m.id.ifEmpty { dev.omalauncher.canvas.COCKPIT_POCKET_HOST }) to URI(m.config.url).host }

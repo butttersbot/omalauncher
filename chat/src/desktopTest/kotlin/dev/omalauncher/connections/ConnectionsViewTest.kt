@@ -41,10 +41,13 @@ class ConnectionsViewTest {
         ConnectionsSource.toggleAlerts = { alerts++ }
         try {
             setContent { ConnectionsDialog(now) {} }
+            // Collapsed until the flag is tapped.
+            onNodeWithText("Restart the agent runner").assertDoesNotExist()
+            onNodeWithContentDescription("Connection check: 1 incident").assertExists().performClick()
             onNodeWithText("Your Mac Pro is connected.\nIts runner needs a restart.").assertExists()
             onNodeWithText("Restart the agent runner").assertExists()
             onNodeWithText("One repair. Two features back.").assertExists()
-            onNodeWithContentDescription("Agent runs: Needs repair").assertExists()
+            onNodeWithContentDescription("Device connections: Needs repair").assertExists()
             onNodeWithContentDescription("Builds & installs: Affected").assertExists()
             // Boss's widget has his controls only: agents read the incident with `oma connections incident`.
             onNodeWithText("[ Check again ]").performScrollTo().assertIsDisplayed()
@@ -53,5 +56,62 @@ class ConnectionsViewTest {
             onNodeWithText("Notify me about unexpected outages and recovery").performScrollTo().performClick()
             assertEquals(1, alerts)
         } finally { ConnectionsSource.snapshot = ConnectionsSnapshot() }
+    }
+
+    private fun readyEverywhere(at: Long) = ConnectionsSnapshot(Capability.entries.filter { it != Capability.Models }.map { c ->
+        ConnectionReading(c, ConnectionState.Ready, "evidence", at, if (c == Capability.Network) "network" else null, if (c == Capability.Network) "Mac Pro" else "")
+    } + phoneModelReadings(listOf(InstalledAgent("claude", "Claude Code")), emptyList(),
+        listOf(dev.omalauncher.oma.ChatTask(1, "Claude Code", "x", status = dev.omalauncher.oma.TaskStatus.Done, result = "fine")), at), at)
+
+    @Test fun aFreshCheckStaysFreshWhenTheHomeTickIsFrozen() = runComposeUiTest {
+        // The tick home hands the module moves only when home looks: here it stands 5 minutes behind the checks. Freshness is
+        // judged on the clock, so nothing reads Stale (it read the whole sheet Stale when it was judged against the tick).
+        val clock = 1_000_000_000L
+        ConnectionsSource.clock = { clock }
+        ConnectionsSource.snapshot = readyEverywhere(clock - 5_000)
+        try {
+            setContent { ConnectionsModule(ModuleSize.Card, clock - 300_000) }
+            onNodeWithText("Connections").performClick()
+            onNodeWithText("All capabilities", ignoreCase = true).performScrollTo().assertIsDisplayed()
+            onAllNodesWithText("Stale").assertCountEquals(0)
+            onAllNodesWithContentDescription("Device connections: Connected").onLast().assertExists()
+            onAllNodesWithContentDescription("Device connections: Stale").assertCountEquals(0)
+        } finally { ConnectionsSource.snapshot = ConnectionsSnapshot(); ConnectionsSource.clock = { System.currentTimeMillis() } }
+    }
+
+    @Test fun theSheetSaysConnectedForADeviceAndTheFlagOpensAndClosesTheCheck() = runComposeUiTest {
+        val clock = 1_000_000_000L
+        ConnectionsSource.clock = { clock }
+        ConnectionsSource.snapshot = readyEverywhere(clock)
+        try {
+            setContent { ConnectionsDialog(clock) {} }
+            onNodeWithContentDescription("Device connections: Connected").assertExists()
+            onNodeWithContentDescription("Models: Healthy").assertExists()
+            onNodeWithText("Agent runs", ignoreCase = true).assertDoesNotExist()
+            // The flag is the button, collapsed first; its words and place are unchanged.
+            onNodeWithText("Everything is ready.").assertDoesNotExist()
+            onNodeWithText("✓ ALL READY ▾").assertExists()
+            onNodeWithContentDescription("Connection check: All ready").assertHasClickAction().performClick()
+            onNodeWithText("Everything is ready.").assertExists()
+            onNodeWithText("✓ ALL READY ▴").assertExists()
+            onNodeWithContentDescription("Connection check: All ready").performClick()
+            onNodeWithText("Everything is ready.").assertDoesNotExist()
+        } finally { ConnectionsSource.snapshot = ConnectionsSnapshot(); ConnectionsSource.clock = { System.currentTimeMillis() } }
+    }
+
+    @Test fun modelsListsEachAgentWithItsHealthAndTheRealError() = runComposeUiTest {
+        val clock = 1_000_000_000L
+        ConnectionsSource.clock = { clock }
+        val tasks = listOf(dev.omalauncher.oma.ChatTask(1, "Codex", "x", status = dev.omalauncher.oma.TaskStatus.Failed, result = "You've hit your usage limit. Try later."))
+        val lines = phoneModelReadings(listOf(InstalledAgent("claude", "Claude Code"), InstalledAgent("codex", "Codex")),
+            listOf(AgentNeed("grok", "Grok", listOf("the front agent"))), tasks, clock)
+        ConnectionsSource.snapshot = ConnectionsSnapshot(readyEverywhere(clock).readings.filter { it.capability != Capability.Models } + lines, clock)
+        try {
+            setContent { ConnectionsDialog(clock) {} }
+            onNodeWithContentDescription("Claude Code: No recent run").assertExists()
+            onNodeWithContentDescription("Codex: Usage limit. You've hit your usage limit. Try later.").assertExists()
+            onNodeWithContentDescription("Grok: Missing").assertExists()
+            onNodeWithContentDescription("Connection check: 2 incidents").assertExists()
+        } finally { ConnectionsSnapshot().let { ConnectionsSource.snapshot = it }; ConnectionsSource.clock = { System.currentTimeMillis() } }
     }
 }

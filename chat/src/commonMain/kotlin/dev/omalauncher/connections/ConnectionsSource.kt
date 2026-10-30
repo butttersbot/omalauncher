@@ -6,6 +6,11 @@ import androidx.compose.runtime.setValue
 
 /** One process-wide feed, independent of whether a home tile is visible. Desktop is explicitly unconfigured. */
 object ConnectionsSource {
+    /**
+     * The time freshness is judged against: the real clock, read when the view draws and again as it stays open. Not the
+     * home look's tick, which only moves when home looks and left every check that landed after it reading Stale. A test sets it.
+     */
+    var clock: () -> Long = { System.currentTimeMillis() }
     var snapshot by mutableStateOf(ConnectionsSnapshot())
     var checking by mutableStateOf(false)
     var repair by mutableStateOf<String?>(null)

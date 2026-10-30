@@ -7,7 +7,11 @@ enum class ConnectionState(val label: String, val mark: String) {
     Disabled("Disabled", "–"), Paused("Paused", "Ⅱ"), Sleeping("Sleeping", "z")
 }
 enum class Capability(val title: String, val band: String? = null) {
-    Network("Device connections", "Network"), Agents("Agent runs", "Agents"),
+    Network("Device connections", "Network"),
+    /** The runners' own health and the phone's Linux checks: shown under Device connections, not as a row of their own. */
+    Agents("Agent runs"),
+    /** The agents installed on this phone, each with the health of its last real run, and any a builder needs that is missing. */
+    Models("Models", "Models"),
     Phone("Phone control", "Phone"), Sync("Workspace sync", "Sync"),
     Activity("Device activity"), Files("Files & deliveries"), Builds("Builds & installs"),
     Voice("Voice"), Search("Search"), Messages("Messages"), Canvas("Design Canvas", "Canvas"), Optional("Optional tools")
@@ -19,25 +23,41 @@ enum class Capability(val title: String, val band: String? = null) {
  */
 private const val CLOCK_TOLERANCE_MS = 10_000L
 
+/** The row a capability is drawn in: the agent runners' health sits under Device connections. */
+val Capability.shown get() = if (this == Capability.Agents) Capability.Network else this
+
+/** Settled: nothing to do about it. An agent with no real run yet is not a failure, so it doesn't keep "everything is ready" from being said. */
+val ConnectionReading.settled get() = state == ConnectionState.Ready || state == ConnectionState.Disabled ||
+    (capability == Capability.Models && state == ConnectionState.Unknown)
+
 data class ConnectionReading(
     val capability: Capability, val state: ConnectionState, val detail: String,
     val checkedAt: Long, val root: String? = null, val host: String = "", val sourceHost: String = "", val checks: List<ConnectionCheck> = emptyList(),
+    /** What a Models line is called: the agent, and the model it ran where that is known. */
+    val label: String = "",
 ) {
     fun current(now: Long): ConnectionReading = if (state !in setOf(ConnectionState.Disabled, ConnectionState.Paused) &&
         (checkedAt <= 0 || checkedAt - now > CLOCK_TOLERANCE_MS || now - checkedAt > 90_000)) copy(state = ConnectionState.Stale, detail = "Last check is no longer current. $detail") else this
 }
 data class ConnectionIncident(val key: String, val readings: List<ConnectionReading>)
 data class ConnectionsSnapshot(val readings: List<ConnectionReading> = emptyList(), val checkedAt: Long = 0) {
-    fun rows(now: Long) = Capability.entries.map { c ->
-        val parts = readings.filter { it.capability == c }.map { it.current(now) }
+    fun rows(now: Long) = Capability.entries.filter { it != Capability.Agents }.map { c ->
+        val parts = readings.filter { it.capability.shown == c }.map { it.current(now) }
         val priority = listOf(ConnectionState.Failed, ConnectionState.Auth, ConnectionState.Stale, ConnectionState.Degraded,
             ConnectionState.Unknown, ConnectionState.Paused, ConnectionState.Sleeping, ConnectionState.Ready, ConnectionState.Disabled)
-        val worst = parts.minByOrNull { priority.indexOf(it.state) }
-        worst?.copy(detail = parts.joinToString("\n\n") { listOf(it.host, it.detail).filter(String::isNotBlank).joinToString(": ") })
+        // An agent with no run yet says nothing about the others' health.
+        val judged = if (c == Capability.Models && parts.any { it.state != ConnectionState.Unknown }) parts.filter { it.state != ConnectionState.Unknown } else parts
+        val worst = judged.minByOrNull { priority.indexOf(it.state) }
+        worst?.copy(capability = c, detail = parts.joinToString("\n\n") { listOf(it.host, it.detail).filter(String::isNotBlank).joinToString(": ") })
             ?: ConnectionReading(c, ConnectionState.Unknown, "Not checked yet.", now)
     }
-    fun incidents(now: Long): List<ConnectionIncident> = readings.map { it.current(now) }
+    /**
+     * A reading that says Failed, Auth or Degraded stays an incident however old it is: a stale reading never hides a real
+     * failure. Only a fresh check that says otherwise clears it. Its detail says the last check is no longer current.
+     */
+    fun incidents(now: Long): List<ConnectionIncident> = readings
         .filter { it.root != null && it.state in setOf(ConnectionState.Failed, ConnectionState.Auth, ConnectionState.Degraded) }
+        .map { if (it.current(now).state == ConnectionState.Stale) it.copy(detail = "Last check is no longer current. ${it.detail}") else it }
         .groupBy { it.root!! }.map { ConnectionIncident(it.key, it.value.distinctBy { r -> r.capability }) }
 
 }

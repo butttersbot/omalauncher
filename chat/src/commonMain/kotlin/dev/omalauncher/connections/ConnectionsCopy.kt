@@ -9,18 +9,20 @@ data class ConnectionStatus(val mark: String, val word: String, val tone: Connec
     val text get() = "$mark $word"
 }
 
-/** [card]: the home tile's wording ("Connected"); the expanded inventory says "Ready" for the same reading. */
+/** [card] is kept for callers; the card and the sheet now word a ready device connection alike ("Connected"). */
 fun connectionStatus(row: ConnectionReading, incidents: List<ConnectionIncident>, card: Boolean = false): ConnectionStatus {
     val state = row.state
     if (state == ConnectionState.Ready) return ConnectionStatus("✓", when (row.capability) {
-        Capability.Network -> if (card) "Connected" else "Ready"
+        Capability.Network -> "Connected"
+        Capability.Models -> "Healthy"
         Capability.Sync, Capability.Canvas -> "Synced"
         Capability.Optional -> "Available"
         else -> "Ready"
     }, ConnectionTone.Good)
+    if (state == ConnectionState.Unknown && row.capability == Capability.Models) return ConnectionStatus("–", "No recent run", ConnectionTone.Quiet)
     if (state in setOf(ConnectionState.Failed, ConnectionState.Degraded, ConnectionState.Auth)) {
-        val primary = incidents.any { it.readings.first().capability == row.capability }
-        val involved = incidents.any { i -> i.readings.any { it.capability == row.capability } }
+        val primary = incidents.any { it.readings.first().capability.shown == row.capability }
+        val involved = incidents.any { i -> i.readings.any { it.capability.shown == row.capability } }
         val word = when {
             state == ConnectionState.Auth -> state.label
             primary -> "Needs repair"
@@ -33,14 +35,14 @@ fun connectionStatus(row: ConnectionReading, incidents: List<ConnectionIncident>
 }
 
 private val Capability.noun get() = when (this) {
-    Capability.Network -> "device connections"; Capability.Agents -> "agent runs"; Capability.Phone -> "phone control"
+    Capability.Network -> "device connections"; Capability.Agents -> "agent runs"; Capability.Models -> "models"; Capability.Phone -> "phone control"
     Capability.Sync -> "workspace sync"; Capability.Activity -> "device activity"; Capability.Files -> "file deliveries"
     Capability.Builds -> "builds"; Capability.Voice -> "voice"; Capability.Search -> "search"; Capability.Messages -> "messages"
     Capability.Canvas -> "Design Canvas"; Capability.Optional -> "optional tools"
 }
-private val Capability.plural get() = this in setOf(Capability.Network, Capability.Agents, Capability.Files, Capability.Builds, Capability.Messages, Capability.Optional)
+private val Capability.plural get() = this in setOf(Capability.Network, Capability.Agents, Capability.Models, Capability.Files, Capability.Builds, Capability.Messages, Capability.Optional)
 private val Capability.short get() = when (this) {
-    Capability.Network -> "device"; Capability.Agents -> "agent"; Capability.Phone -> "phone control"; Capability.Sync -> "sync"
+    Capability.Network -> "device"; Capability.Agents -> "agent"; Capability.Models -> "model"; Capability.Phone -> "phone control"; Capability.Sync -> "sync"
     Capability.Activity -> "activity"; Capability.Files -> "delivery"; Capability.Builds -> "build"; Capability.Voice -> "voice"
     Capability.Search -> "search"; Capability.Messages -> "messages"; Capability.Canvas -> "Canvas"; Capability.Optional -> "tool"
 }
@@ -56,6 +58,7 @@ fun connectionCause(reading: ConnectionReading, key: String?): String {
     reading.checks.firstNotNullOfOrNull { it.agentTrouble() }?.let { t ->
         return listOf(reading.host.ifBlank { "This phone" }, t.agent, t.words).joinToString(" · ")
     }
+    reading.checks.firstNotNullOfOrNull { it.agentMissing() }?.let { return "${reading.host.ifBlank { "This phone" }} · $it · missing" }
     val what = when {
         reading.state == ConnectionState.Auth -> "sign-in unverified"
         reading.state == ConnectionState.Degraded -> "degraded"
@@ -82,17 +85,21 @@ fun incidentCopy(incident: ConnectionIncident, snapshot: ConnectionsSnapshot, no
         .any { it.root == "network" && it.state == ConnectionState.Ready && it.sourceHost in sources }
     val nouns = capabilities.map { it.noun }
     val are = if (capabilities.size > 1 || capabilities.first().plural) "are" else "is"
-    val others = snapshot.rows(now).filter { it.capability !in capabilities }
-    val rest = if (others.all { it.state == ConnectionState.Ready || it.state == ConnectionState.Disabled }) " Other Soma features are ready."
+    val others = snapshot.rows(now).filter { it.capability !in capabilities.map { c -> c.shown } }
+    val rest = if (others.all { it.settled }) " Other Soma features are ready."
         else " Some other checks aren't confirmed yet."
     val verify = "Verify ${capabilities.map { it.short }.spoken("&")} connections"
     val note = "One repair. ${counted(capabilities.size, "feature")} back."
     val primary = capabilities.first()
     val trouble = readings.flatMap { it.checks }.firstNotNullOfOrNull { it.agentTrouble() }
+    val missing = readings.flatMap { it.checks }.firstNotNullOfOrNull { it.agentMissing() }
     return when {
+        missing != null -> IncidentCopy("$host / $missing", "$missing isn't installed on ${if (host == "This phone") "this phone" else host}.\nWork that needs it can't start.",
+            readings.first().detail.ifBlank { "$missing is missing." } + " Nothing was changed.",
+            listOf("Install $missing in Omalauncher", "Sign it in if it asks", "Check again"), note)
         // A restart wouldn't help an agent's service, so nothing here says to do one.
-        trouble != null -> IncidentCopy("$host / ${trouble.agent}", "${trouble.agent} is failing on $host.\n${trouble.words.capital()}.",
-            "Its last turn ended with: ${trouble.error.ifBlank { trouble.words }}. Nothing was restarted.",
+        trouble != null -> IncidentCopy("$host / ${trouble.agent}", "${trouble.agent} is failing on ${if (host == "This phone") "this phone" else host}.\n${trouble.words.capital()}.",
+            "Its last turn ended with: ${trouble.error.ifBlank { trouble.words }.trimEnd('.')}. Nothing was restarted.",
             listOf("Read the error", if (trouble.code == "sign_in") "Sign ${trouble.agent} in again" else "Wait for its service", "Send it a message: a good turn clears this"), note)
         key == "network" -> IncidentCopy("This phone / tailnet", "This phone has no tailnet route.\nTailscale needs a look.",
             "Soma can't reach your other devices until it is back. Nothing was changed.",

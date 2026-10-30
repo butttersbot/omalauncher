@@ -41,17 +41,50 @@ class AgentTroubleTest {
         assertEquals("server_error", agentError("API Error: 500"))
         for (other in listOf("the build failed", "API Error: safeguards flagged this session", "")) assertNull(other, agentError(other))
     }
-    @Test fun onThisPhoneTheNewestTurnThatSaysAnythingDecides() {
-        fun task(time: Long, status: TaskStatus, result: String, agent: String = "Claude Code", thread: String = "") = ChatTask(time, agent, "x", status = status, result = result, thread = thread)
-        assertTrue(phoneAgentReadings(emptyList(), now).isEmpty())
-        val failed = phoneAgentReadings(listOf(task(1, TaskStatus.Done, "fine"), task(2, TaskStatus.Failed, "API Error: 529 overloaded_error")), now).single()
+    private val claude = InstalledAgent("claude", "Claude Code")
+    private val codex = InstalledAgent("codex", "Codex")
+    private fun task(time: Long, status: TaskStatus, result: String, agent: String = "Claude Code", thread: String = "") = ChatTask(time, agent, "x", status = status, result = result, thread = thread)
+
+    @Test fun onThisPhoneTheNewestRealRunOfEachInstalledAgentDecides() {
+        // No run yet: a line that says so, not a failure.
+        val none = phoneModelReadings(listOf(claude), emptyList(), emptyList(), now).single()
+        assertEquals(ConnectionState.Unknown, none.state)
+        assertEquals("No recent run", modelWord(none))
+        assertTrue(ConnectionsSnapshot(listOf(none), now).incidents(now).isEmpty())
+        val failed = phoneModelReadings(listOf(claude), emptyList(), listOf(task(1, TaskStatus.Done, "fine"), task(2, TaskStatus.Failed, "API Error: 529 overloaded_error")), now).single()
         assertEquals(ConnectionState.Failed, failed.state)
         assertEquals("Claude: overloaded. API Error: 529 overloaded_error", failed.detail)
+        assertEquals("Overloaded", modelWord(failed))
+        assertEquals("API Error: 529 overloaded_error", modelError(failed))
         // A later good turn clears it, for that agent only; a failure that isn't the service's says nothing; a Mac's turn is its runner's to report.
-        assertEquals(ConnectionState.Ready, phoneAgentReadings(listOf(task(2, TaskStatus.Failed, "API Error: 529"), task(3, TaskStatus.Done, "fine")), now).single().state)
-        assertEquals(ConnectionState.Ready, phoneAgentReadings(listOf(task(2, TaskStatus.Done, "fine"), task(3, TaskStatus.Failed, "the build failed")), now).single().state)
-        assertEquals(ConnectionState.Failed, phoneAgentReadings(listOf(task(2, TaskStatus.Failed, "API Error: 529"), task(3, TaskStatus.Done, "fine", "Codex")), now).first().state)
-        assertTrue(phoneAgentReadings(listOf(task(2, TaskStatus.Failed, "API Error: 529", thread = "t1")), now).isEmpty())
+        assertEquals("Healthy", modelWord(phoneModelReadings(listOf(claude), emptyList(), listOf(task(2, TaskStatus.Failed, "API Error: 529"), task(3, TaskStatus.Done, "fine")), now).single()))
+        assertEquals(ConnectionState.Ready, phoneModelReadings(listOf(claude), emptyList(), listOf(task(2, TaskStatus.Done, "fine"), task(3, TaskStatus.Failed, "the build failed")), now).single().state)
+        val both = phoneModelReadings(listOf(claude, codex), emptyList(), listOf(task(2, TaskStatus.Failed, "API Error: 529"), task(3, TaskStatus.Done, "fine", "Codex")), now)
+        assertEquals(listOf(ConnectionState.Failed, ConnectionState.Ready), both.map { it.state })
+        assertEquals(ConnectionState.Unknown, phoneModelReadings(listOf(claude), emptyList(), listOf(task(2, TaskStatus.Failed, "API Error: 529", thread = "t1")), now).single().state)
+    }
+    @Test fun aLineIsNamedWithItsModelWhereKnownAndByTheAgentAloneWhereNot() {
+        val tasks = listOf(task(1, TaskStatus.Done, "fine", "Codex"))
+        assertEquals("Codex · GPT-6.1 Terra", phoneModelReadings(listOf(codex), emptyList(), tasks, now) { prettyModel("gpt-6.1-terra") }.single().label)
+        assertEquals("Codex", phoneModelReadings(listOf(codex), emptyList(), tasks, now).single().label)
+        assertEquals("GPT-6.1 Terra", prettyModel("gpt-6.1-terra"))
+    }
+    @Test fun anAgentANeededBuilderLacksIsMissingAndAnIncident() {
+        val needs = listOf(AgentNeed("codex", "Codex", listOf("Phone B", "Phone D")), AgentNeed("claude", "Claude Code", listOf("Phone C")))
+        val lines = phoneModelReadings(listOf(claude), needs, emptyList(), now)
+        // Claude is installed, so it has its own line; Codex is not, so it is Missing, and that is an incident naming who needs it.
+        assertEquals(listOf("Claude Code", "Codex"), lines.map { it.label })
+        val missing = lines.last()
+        assertEquals("Missing", modelWord(missing))
+        assertEquals(ConnectionState.Failed, missing.state)
+        assertEquals("Codex isn't installed on this phone. Phone B and Phone D need it.", missing.detail)
+        val snapshot = ConnectionsSnapshot(lines, now)
+        val incident = snapshot.incidents(now).single()
+        assertEquals("agent:phone:codex:missing", incident.key)
+        assertEquals("Codex isn't installed on this phone.\nWork that needs it can't start.", incidentCopy(incident, snapshot, now).headline)
+        assertEquals("This phone · Codex · missing", connectionCause(missing, incident.key))
+        // Installed, it is no longer missing, whatever its builders fall back to.
+        assertTrue(phoneModelReadings(listOf(claude, codex), needs, emptyList(), now).none { modelWord(it) == "Missing" })
     }
     @Test fun aDownDeviceIsNamedAndAHealthyOneIsNot() {
         val down = listOf(Capability.Network, Capability.Agents, Capability.Builds).map { ConnectionReading(it, ConnectionState.Failed, "no reply", now, "runner:macbook", "MacBook", "macbook") }

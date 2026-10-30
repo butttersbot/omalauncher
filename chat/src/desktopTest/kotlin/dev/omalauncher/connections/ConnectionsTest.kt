@@ -137,4 +137,14 @@ class ConnectionsTest {
     @Test fun endpointNeverPrintsCredentials() {
         assertFalse(ConnectionEndpoint("http://example/health?token=secret", "secret").toString().contains("secret"))
     }
+
+    @Test fun aStaleReadingNeverHidesARealFailureFromIncidents() {
+        val failed = ConnectionsSnapshot(listOf(row(Capability.Agents, ConnectionState.Failed, at = 1).copy(root = "runner:mac")), 1)
+        // Long after its check, the row says Stale, but the failure is still an incident until a fresh check says otherwise.
+        assertEquals(ConnectionState.Stale, failed.rows(1_000_000).first { it.capability == Capability.Network }.state)
+        val incident = failed.incidents(1_000_000).single()
+        assertEquals("runner:mac", incident.key)
+        assertTrue(incident.readings.single().detail.startsWith("Last check is no longer current."))
+        assertEquals(ConnectionState.Failed, incident.readings.single().state)
+    }
 }

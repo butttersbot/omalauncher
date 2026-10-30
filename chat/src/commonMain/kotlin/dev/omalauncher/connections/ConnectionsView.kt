@@ -20,6 +20,8 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -114,15 +116,32 @@ private fun repairCardSummary(text: String): String = when {
     else -> text
 }
 
+/** How often the view looks at the clock again while it is on screen: a check's age keeps moving with the sheet left open. */
+private const val CLOCK_EVERY_MS = 5_000L
+
+/**
+ * The current time for judging freshness, [ConnectionsSource.clock]: read again when a new check lands and every few
+ * seconds. The home look's tick is no clock (it moves only when home looks), so it is not used.
+ */
 @Composable
-fun ConnectionsModule(size: ModuleSize, now: Long, modifier: Modifier = Modifier) {
+private fun liveNow(): Long {
+    var time by remember { mutableLongStateOf(ConnectionsSource.clock()) }
+    val landed = ConnectionsSource.snapshot.checkedAt
+    LaunchedEffect(landed) { time = ConnectionsSource.clock() }
+    LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(CLOCK_EVERY_MS); time = ConnectionsSource.clock() } }
+    return time
+}
+
+@Composable
+fun ConnectionsModule(size: ModuleSize, @Suppress("UNUSED_PARAMETER") tick: Long, modifier: Modifier = Modifier) {
+    val now = liveNow()
     var expanded by remember { mutableStateOf(false) }
     val snapshot = ConnectionsSource.snapshot
     val rows = snapshot.rows(now)
     val incidents = snapshot.incidents(now)
     val worst = incidents.firstOrNull()
     val bad = worst?.readings?.firstOrNull()
-    val allReady = rows.all { it.state == ConnectionState.Ready || it.state == ConnectionState.Disabled }
+    val allReady = rows.all { it.settled }
     BoxWithConstraints(modifier.widthIn(max = 475.dp).heightIn(max = if (size == ModuleSize.Full) 300.dp else 180.dp)
         .scrap(focused = LocalModuleFocus.current, key = "connections")
         .clickable { expanded = true }.semantics { contentDescription = "Connections module" }
@@ -165,8 +184,8 @@ fun ConnectionsModule(size: ModuleSize, now: Long, modifier: Modifier = Modifier
                 }
                 Spacer(Modifier.weight(1f))
             } else {
-                val bands = if (small) listOf(Capability.Network, Capability.Agents, Capability.Canvas)
-                    else listOf(Capability.Network, Capability.Agents, Capability.Canvas, Capability.Phone, Capability.Sync)
+                val bands = if (small) listOf(Capability.Network, Capability.Models, Capability.Canvas)
+                    else listOf(Capability.Network, Capability.Models, Capability.Canvas, Capability.Phone, Capability.Sync)
                 Row(Modifier.fillMaxWidth().weight(1f), verticalAlignment = Alignment.CenterVertically) {
                     for (capability in bands) {
                         val row = rows.first { it.capability == capability }
@@ -175,7 +194,7 @@ fun ConnectionsModule(size: ModuleSize, now: Long, modifier: Modifier = Modifier
                             modifier = Modifier.weight(1f).semantics { contentDescription = "${capability.title}: ${status.word}" }) {
                             // Typed, as the card's CSS sets them (.connection-strip i{font-size:17px}): the card renders a heavy ✓ beside a
                             // smaller, thin △ (soma-look of connections-small-cover v6, 2026-10-29), and the same face here draws the same.
-                            Words(row.state.mark, sans(17.sp, status.tone.color), 1)
+                            Words(if (row.capability == Capability.Models) status.mark else row.state.mark, sans(17.sp, status.tone.color), 1)
                             Words(capability.band.orEmpty(), sans(10.sp, weight = FontWeight.Medium), 1)
                         }
                     }
@@ -246,12 +265,25 @@ fun ConnectionsDialog(now: Long, close: () -> Unit) {
 private fun ConnectionsRepair(snapshot: ConnectionsSnapshot, now: Long) {
     val incidents = snapshot.incidents(now)
     val stage = repairStage(ConnectionsSource.repair, ConnectionsSource.checking)
-    SectionHead("Connection check", when {
+    // Collapsed until he taps the flag: the incident blocks, or "No confirmed failure" with [ Check again ], sit under it.
+    var open by remember { mutableStateOf(false) }
+    val flag = when {
         incidents.isNotEmpty() -> "△ ${incidents.size} incident${if (incidents.size == 1) "" else "s"}"
         stage == 3 -> "✓ Restored"
-        else -> if (snapshot.rows(now).all { it.state == ConnectionState.Ready || it.state == ConnectionState.Disabled }) "✓ All ready" else "No incident"
-    }, if (incidents.isNotEmpty()) Pack.accent else Pack.green)
-    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        else -> if (snapshot.rows(now).all { it.settled }) "✓ All ready" else "No incident"
+    }
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Words("CONNECTION CHECK", plainMono(10.sp, Pack.foreground, .07f), 1, Modifier.padding(bottom = 10.dp))
+        // The flag is the button; its hit area runs down into the space the heading leaves under it, so nothing moves.
+        Box(Modifier.clickable(role = Role.Button) { open = !open }.padding(start = 16.dp, bottom = 10.dp).semantics(mergeDescendants = true) {
+            role = Role.Button
+            contentDescription = "Connection check: ${flag.removePrefix("△ ").removePrefix("✓ ")}"
+            stateDescription = if (open) "Expanded" else "Collapsed"
+        }) {
+            Words("${flag.uppercase()} ${if (open) "▴" else "▾"}", plainMono(10.sp, if (incidents.isNotEmpty()) Pack.accent else Pack.green, .07f), 1)
+        }
+    }
+    if (open) Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         for (incident in incidents) {
             val copy = incidentCopy(incident, snapshot, now)
             Column(Modifier.fillMaxWidth().bar(Pack.accent)) {
@@ -264,7 +296,7 @@ private fun ConnectionsRepair(snapshot: ConnectionsSnapshot, now: Long) {
             }
         }
         if (incidents.isEmpty()) {
-            val ready = snapshot.rows(now).all { it.state == ConnectionState.Ready || it.state == ConnectionState.Disabled }
+            val ready = snapshot.rows(now).all { it.settled }
             Column(Modifier.fillMaxWidth().bar(if (ready) Pack.green else Pack.muted)) {
                 Words(Pack.caption("All devices"), caption(10.sp))
                 Words(if (stage == 3) "Back in working order." else if (ready) "Everything is ready." else "No confirmed failure.",
@@ -304,7 +336,41 @@ private fun ConnectionsInventory(snapshot: ConnectionsSnapshot, now: Long) {
     val rows = snapshot.rows(now)
     val incidents = snapshot.incidents(now)
     SectionHead("All capabilities", "${rows.size} groups")
-    for (row in rows) ConnectionDisclosure(row, connectionStatus(row, incidents))
+    for (row in rows) {
+        if (row.capability == Capability.Models) ModelsSection(row, connectionStatus(row, incidents), snapshot.readings.filter { it.capability == Capability.Models }.map { it.current(now) })
+        else ConnectionDisclosure(row, connectionStatus(row, incidents))
+    }
+}
+/** Models: the row, then a line under it for each agent on the phone, named with its model where known, and its health word. */
+@Composable
+private fun ModelsSection(row: ConnectionReading, status: ConnectionStatus, lines: List<ConnectionReading>) {
+    Column(Modifier.fillMaxWidth().rule(bottom = true)) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).semantics { contentDescription = "${row.capability.title}: ${status.word}" }, verticalAlignment = Alignment.CenterVertically) {
+            Words(row.capability.title, sans(13.sp), modifier = Modifier.weight(1f))
+            StatusWord(status)
+        }
+        for (line in lines) {
+            val word = modelWord(line)
+            val lineStatus = if (line.state == ConnectionState.Failed || line.state == ConnectionState.Auth) ConnectionStatus(line.state.mark, word, ConnectionTone.Bad)
+                else connectionStatus(line, emptyList()).copy(word = word)
+            val error = modelError(line)
+            Column(Modifier.fillMaxWidth().padding(bottom = 10.dp).semantics { contentDescription = "${line.label}: $word${if (error.isEmpty()) "" else ". $error"}" }) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Words(line.label.ifBlank { "Agent" }, sans(12.sp, Pack.foreground), modifier = Modifier.weight(1f))
+                    StatusWord(lineStatus)
+                }
+                if (error.isNotEmpty()) Words(error, sans(11.sp, Pack.muted), 3)
+            }
+        }
+    }
+}
+@Composable
+private fun StatusWord(status: ConnectionStatus) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+        if (status.mark == "✓" || status.mark == "△") Box(Modifier.size(7.dp)) { StripMark(status.mark, status.tone.color, 7.dp, 1.dp) }
+        else Words(status.mark, plainMono(10.sp, status.tone.color), 1)
+        Words(status.word, plainMono(10.sp, status.tone.color), 1)
+    }
 }
 @Composable
 private fun ConnectionDisclosure(row: ConnectionReading, status: ConnectionStatus) {

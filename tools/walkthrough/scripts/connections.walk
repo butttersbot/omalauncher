@@ -9,11 +9,20 @@ shell am start -n dev.omalauncher.artifactpreview/.PreviewActivity --ez connecti
 expect Connections fixture
 expect Connections
 expect Network
-expect Agents
+expect Models
 expect Canvas
 expect runner not responding
 shot connections-small-cover card=connections-small-cover
 tap Connections
+expect All capabilities
+absent Restart the agent runner
+expect Models
+expect Claude Code
+expect Codex · GPT-6.1 Terra
+expect No recent run
+expect Device connections: Needs repair
+shot connections-collapsed-cover
+tap Connection check:
 expect All capabilities
 expect Your Fictional Mac is connected.
 expect Its runner needs a restart.
@@ -43,7 +52,7 @@ expect Sync
 shot connections-medium-cover card=connections-medium-cover
 tap Large
 expect Device connections
-expect Connected
+expect Needs repair
 expect Synced
 expect Design Canvas
 shot connections-large-cover card=connections-large-cover
@@ -53,6 +62,7 @@ expect Repair blocked
 # Utility must not open the modal.
 absent Close Connections
 tap Connections
+tap Connection check:
 expect Blocked: active jobs cannot be verified
 shot connections-blocked-details-cover card=connections-expanded-blocked-cover
 key BACK
@@ -60,6 +70,7 @@ tap Active jobs
 tap [ Restore ]
 expect Repair blocked
 tap Connections
+tap Connection check:
 expect Blocked: active or queued
 key BACK
 tap Failed repair
@@ -67,6 +78,7 @@ tap [ Restore ]
 expect Repair failed
 shot connections-failed-cover
 tap Connections
+tap Connection check:
 expect Failed: fictional
 shot connections-failed-details-cover card=connections-expanded-failed-cover
 key BACK
@@ -76,6 +88,7 @@ expect Service restored
 expect Everything is ready
 shot connections-restored-cover
 tap Connections
+tap Connection check:
 expect Restored: fictional
 expect Back in working order.
 shot connections-restored-details-cover card=connections-expanded-restored-cover
@@ -93,6 +106,19 @@ tap Pause checks
 tap Connections
 expect Paused
 key BACK
+# Models (Boss, 2026-10-30): an agent with a real error says it as printed; one a builder or the front agent needs that isn't installed is Missing and an incident.
+tap Models trouble
+tap Connections
+expect Models
+expect Codex · GPT-6.1 Terra
+expect Usage limit
+expect hit your usage limit
+expect Missing
+tap Connection check:
+expect 2 INCIDENTS
+expect OpenCode
+shot connections-models-trouble-cover
+key BACK
 # Notification debounce/dedup/recovery and pause are checked in ConnectionsTest; no real Android alerts in this fixture.
 fold unfolded
 shell am force-stop dev.omalauncher.artifactpreview
@@ -105,6 +131,10 @@ tap Large
 expect Design Canvas
 shot connections-large-unfolded card=connections-large-unfolded
 tap Connections
+expect All capabilities
+absent Restart the agent runner
+shot connections-collapsed-unfolded
+tap Connection check:
 expect All capabilities
 expect Your Fictional Mac is connected.
 shot connections-expanded-unfolded card=connections-expanded-unfolded
@@ -132,4 +162,26 @@ expect All capabilities
 shot connections-expanded-rotated
 key BACK
 expect Connections fixture
+# Stale (Boss, 2026-10-30): every row read Stale though the checks were fresh. The sheet is judged on the real clock now, and
+# the fixture lands a fresh check every 20 s as the real monitor does: left open past two minutes, nothing reads Stale.
+fold folded
+shell am force-stop dev.omalauncher.artifactpreview
+shell am start -n dev.omalauncher.artifactpreview/.PreviewActivity --ez connections true
+expect Connections fixture
+tap Connections
+expect Device connections
+wait 70000
+absent Device connections: Stale
+absent Models: Stale
+shot connections-open-70s-cover
+wait 70000
+absent Device connections: Stale
+absent Phone control: Stale
+absent Design Canvas: Stale
+absent Models: Stale
+expect Device connections: Needs repair
+shot connections-open-140s-cover
+key BACK
 [phone] After combined install: add module:connections on an owner-chosen home page via canvas placement; verify real configured peers, core Design Canvas, VPN loss versus auth refusal, helper stale/asleep/paused, source freshness and actual notification permission/channel state. Owner enables alerts in context. Controlled test outage only on an idle test service: wait debounce, observe one local Android alert even with tunnel down, dismiss without repeat, restore externally and verify one recovery. Confirm intentional pause stays quiet and closing detail leaves checks running. Do not stop active builds/agents, toggle security/debugging, reboot hosts or install from this lane. Successful automatic restart remains unavailable until a supported guarded host-control API is deployed.
+[phone] After install: open Connections on the home page and leave the sheet open for over two minutes: no row says Stale while the monitor's checks are fresh (the journal's last_seen and /services stamps are current), and the flag at the upper right of CONNECTION CHECK opens and closes the check.
+[phone] In Connections, Models lists Claude Code, Codex and Grok with a health word from their real runs (no sign-in check, no test call); Codex shows its model where Soma knows it; a missing needed agent says Missing and counts as an incident; the Mac and MG1 runners and phone Linux checks still show under Device connections with Restore.
