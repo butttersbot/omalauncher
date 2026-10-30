@@ -711,6 +711,26 @@ try:
     check('the words sent now go first, then what else waited', [event['text'] for event in events if event['type'] == 'message'] == ['go now', 'behind'])
     check('in the same conversation', [(entry['prompt'], entry['resumed']) for entry in starts()[-2:]] == [('go now', True), ('behind', True)])
 
+    # Tapped again while the agent is already gone and what it left is still going: nothing that waits may be lost.
+    settle(thread, 'idle')
+    last = call('GET', '/threads/' + thread)[1]['thread']['last_event']
+    call('POST', '/threads/%s/messages' % thread, {'text': 'stubborn again'})
+    call('POST', '/threads/%s/messages' % thread, {'text': 'first tapped'})
+    call('POST', '/threads/%s/messages' % thread, {'text': 'then tapped'})
+    heard = turn_held(thread, last)
+    call('POST', '/threads/%s/send-now' % thread, {'text': 'first tapped'})
+    stubborn = int(next(event['text'] for event in heard if event['type'] == 'text' and event['text'].startswith('Stubborn:')).split()[1])
+    gone_by = time.monotonic() + 10
+    while alive(stubborn) and time.monotonic() < gone_by:
+        time.sleep(0.05)
+    time.sleep(0.3)
+    check('a second tap while the stopped turn is going is taken', call('POST', '/threads/%s/send-now' % thread, {'text': 'then tapped'})[1]['sent'] == 'now')
+    events = stream(thread, after=heard[-1]['id'], until=('stopped',))
+    check('and all that waited still waits', events[-1]['dropped'] == 0 and events[-1].get('kept') is True)
+    while [event['type'] for event in events].count('result') < 2:
+        events += stream(thread, after=events[-1]['id'])
+    check('the last tapped goes first, then the other', [event['text'] for event in events if event['type'] == 'message'] == ['then tapped', 'first tapped'])
+
     settle(thread, 'idle')
     last = call('GET', '/threads/' + thread)[1]['thread']['last_event']
     call('POST', '/threads/%s/messages' % thread, {'text': 'stubborn two'})

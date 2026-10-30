@@ -4574,13 +4574,17 @@ def send_now(thread, text):
         # A question form waiting for him is only ended by answering it or by [ stop ] (Boss, 2026-10-29).
         if any(entry.get('tool') == 'AskUserQuestion' or (entry.get('input') or {}).get('codex_request') == 'questions' for entry in thread.pending.values()):
             return {'sent': 'question'}
-        # A hand-over was sent with a preface ahead of his words, and the entry may know only those.
+        # A hand-over was sent with a preface ahead of his words and pictures' places after them, and the entry may know only those.
         waiting = [q for q in thread.queue if isinstance(q, str)]
-        words = next((q for q in waiting if q == text), None) or next((q for q in waiting if q.endswith('\n' + text)), None)
+        words = next((q for q in waiting if q == text), None) or next((q for q in waiting if '\n%s\n' % text in '\n%s\n' % q), None)
         if words is None:
             return {'sent': 'gone'}
         thread.queue.remove(words)
         thread.queue.insert(0, words)
+        # Tapped again while the turn is still going: it is already stopping for what waits, and a second stop would drop all of it.
+        if thread.sending_now:
+            thread.save()
+            return {'sent': 'now'}
         process = thread.process
         # Taken before the agent ends, while they are still known as its own: Claude Code runs a command in a group of its own,
         # which outlives it (seen on a real Claude Code, 2026-10-30), and would run on beside the words sent now.
