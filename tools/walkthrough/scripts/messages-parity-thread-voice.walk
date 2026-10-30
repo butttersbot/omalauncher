@@ -1,0 +1,28 @@
+# canvas-app: soma-messages
+# Dedicated DEMO pairing. Whole-pane controls must not dismiss the focused thread.
+shell am force-stop dev.omalauncher.messages
+shell am start -n dev.omalauncher.messages/.MainActivity
+expect Messages
+tap Sideways
+doubletap Photo
+tap Show replies
+expect Replies
+keyboard hidden
+tap Record a voice message
+expect Stop recording
+shot thread-recording
+wait 2500
+tap Stop recording
+expect Send voice message
+shot thread-voice-review
+tap Send voice message
+wait 3500
+expect Voice message, tap to play
+expect Replies
+shot thread-voice-sent
+closeime
+key BACK
+expect Photo
+key BACK
+expect Messages
+# Own DEMO SSE observer must record audio/x-caf with replyTo DEMO-SIDEWAYS-1.

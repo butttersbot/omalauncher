@@ -26,6 +26,10 @@ pixels (`540 1800`).
 | `launch PKG/ACTIVITY` | starts an activity and waits for it |
 | `url URL` | opens a link |
 | `ime PKG/SERVICE` | makes that keyboard the current one |
+| `keyboard shown` or `keyboard hidden` | checks Android's current IME visibility without retaining its dump |
+| `closeime` | dismisses a shown keyboard; when already hidden, performs no Back navigation |
+| `replace "FIELD LABEL" NEW TEXT` | selects all in the named native editor and types new text (emulator Android supports `input keycombination`) |
+| `expectexact TEXT` or `absentexact TEXT` | matches a complete text/description line, e.g. distinguishes the Edit action from Edited |
 | `tap TEXT` or `tap X Y` | taps what says TEXT (text or content description; `A \| B` for whichever shows), or a point (`48dp` works too) |
 | `swipe X1 Y1 X2 Y2 [MS]` | a drag |
 | `doubletap TEXT` / `doubletap X Y` | two taps within Android's double-tap window, after finding the target once |
@@ -92,3 +96,5 @@ A failed walk publishes nothing. Tests: `python3 -m unittest discover -s tools/w
 Launch, URL open, `shell am start`, rotation and fold steps wait for a readable app tree. Every lookup makes a new dump: the old `/sdcard/walk.xml` is removed first, dump/read failures and malformed or empty trees retry (at most three attempts, with bounded adb timeouts). A named WebView shell with no readable descendants is not ready, even when its pixels have already rendered. `expect`, `absent` and `scrollto` all use this same fresh lookup. If the tree stays unavailable the step FAILS explicitly; it cannot turn into an `absent` PASS or an ungrounded swipe. These retries do not relax the expected text or turn failures into passes.
 
 Regression: launcher164's Hunch wallet screenshot showed Copy wallet address and Back to markets after rotation while UiAutomation exposed no matching controls. LaneB's b18de027 wallet walk passed35/0, with a similar one-off cold-MainActivity empty-tree delay. The runner correction targets that evidence failure, not wallet behavior. Unit coverage: `python3 -m unittest discover -s tools/walkthrough -p test_walk.py -v` (10 tests passed at implementation). Emulator wallet rerun and broader165 report coverage remain pending the lane checkpoint.
+
+Use `--fail-fast` to retain partial results and stop dependent taps after the first failure. `replace` waits for native focus, selects all and checks the exact field text; a substring insertion is a failure.

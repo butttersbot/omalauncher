@@ -20,7 +20,7 @@ import androidx.compose.ui.window.DialogWindowProvider
 import dev.omalauncher.ui.Pack
 
 /** A real modal window: accessibility and Back stay on the menu, using Soma's existing scrim. */
-@Composable internal fun MessageOverlay(onDismiss: () -> Unit, content: @Composable BoxScope.() -> Unit) {
+@Composable internal fun MessageOverlay(onDismiss: () -> Unit, dismissOnOutside: Boolean = true, content: @Composable BoxScope.() -> Unit) {
     // Capture the host's focus before entering the dialog's separate focus owner. Otherwise
     // Android restores a previously focused composer and reopens an already dismissed IME.
     val hostFocus = LocalFocusManager.current
@@ -53,7 +53,7 @@ import dev.omalauncher.ui.Pack
             if (view.isAttachedToWindow) view.post(apply)
             onDispose { view.removeCallbacks(apply); view.removeOnAttachStateChangeListener(listener) }
         }
-        Box(Modifier.fillMaxSize().background(Pack.foreground.copy(alpha = 0.18f)).clickable(onClick = onDismiss),
+        Box(Modifier.fillMaxSize().background(Pack.foreground.copy(alpha = 0.18f)).then(if (dismissOnOutside) Modifier.clickable(onClick = onDismiss) else Modifier),
             contentAlignment = Alignment.Center, content = content)
     }
 }

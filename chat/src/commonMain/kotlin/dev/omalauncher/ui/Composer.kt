@@ -318,6 +318,11 @@ class ComposerState(
         return review.clip
     }
 
+    /** A send rejected before hand-off leaves the same recording available for review. */
+    fun restoreVoice(clip: VoiceClip) {
+        if (stage == VoiceStage.Off && text.isBlank()) stage = VoiceStage.Review(clip)
+    }
+
     /** The text to send, trimmed, leaving the field empty; null when there is none. */
     fun takeText(): String? {
         val t = text.trim()
@@ -360,6 +365,8 @@ fun SomaComposer(
     inField: (@Composable () -> Unit)? = null,
     sendsElsewhere: Boolean = false,
     receive: ((TransferableContent) -> TransferableContent?)? = null,
+    /** Optional input handle, e.g. restoring focus after an explicitly closed conversation subview. */
+    inputModifier: Modifier = Modifier,
 ) {
     val stage = state.stage
     val action = ComposerRules.action(stage, state.text, attached, voice != null, emptyAction != null)
@@ -451,7 +458,7 @@ fun SomaComposer(
             verticalAlignment = Alignment.Bottom,
         ) {
             when (stage) {
-                VoiceStage.Off -> if (receive == null) Field(state, placeholder, enabled, ::send) else ReceivingField(state, placeholder, enabled, ::send, receive)
+                VoiceStage.Off -> if (receive == null) Field(state, placeholder, enabled, ::send, inputModifier) else ReceivingField(state, placeholder, enabled, ::send, receive, inputModifier)
                 is VoiceStage.Recording -> RecordingBar(state, stage, tick)
                 is VoiceStage.Review -> ReviewBar(state, stage, voice, tick, now)
             }
@@ -473,6 +480,7 @@ private fun RowScope.Field(
     placeholder: String,
     enabled: Boolean,
     send: () -> Unit,
+    inputModifier: Modifier,
 ) {
     val style = Pack.body(Pack.size.item)
     BasicTextField(
@@ -480,6 +488,7 @@ private fun RowScope.Field(
         { state.text = it },
         Modifier
             .weight(1f)
+            .then(inputModifier)
             .padding(vertical = 6.dp)
             .semantics { contentDescription = "Message" }
             // A hardware Enter sends; Shift+Enter starts a new line. The on-screen keyboard's Return breaks the line, as Apple's does.
@@ -517,6 +526,7 @@ private fun RowScope.ReceivingField(
     enabled: Boolean,
     send: () -> Unit,
     receive: (TransferableContent) -> TransferableContent?,
+    inputModifier: Modifier,
 ) {
     val style = Pack.body(Pack.size.item)
     val field = rememberTextFieldState(state.text)
@@ -527,6 +537,7 @@ private fun RowScope.ReceivingField(
         field,
         Modifier
             .weight(1f)
+            .then(inputModifier)
             .padding(vertical = 6.dp)
             .semantics { contentDescription = "Message" }
             .contentReceiver(ReceiveContentListener { latestReceive(it) })
@@ -647,14 +658,16 @@ private fun EndButton(
                     awaitFirstDown()
                     val what = current
                     if (what == ComposerAction.Record) {
-                        val lifted = withTimeoutOrNull(ComposerRules.HOLD_MS) { waitForUpOrCancellation() }
-                        if (lifted != null) {
-                            currentAct(ComposerAction.Record)
-                        } else {
-                            // Held: record while the finger stays, review when it lifts.
-                            currentAct(ComposerAction.Record)
-                            waitForUpOrCancellation()
-                            if (stage() is VoiceStage.Recording) currentAct(ComposerAction.Stop)
+                        val lifted = withTimeoutOrNull(ComposerRules.HOLD_MS) { waitForUpOrCancellation() != null }
+                        when (lifted) {
+                            true -> currentAct(ComposerAction.Record)
+                            false -> Unit // A cancelled touch must never start the microphone.
+                            null -> {
+                                // Held: record while the finger stays, review on release or cancellation.
+                                currentAct(ComposerAction.Record)
+                                waitForUpOrCancellation()
+                                if (stage() is VoiceStage.Recording) currentAct(ComposerAction.Stop)
+                            }
                         }
                     } else if (waitForUpOrCancellation() != null) {
                         if (what == ComposerAction.Send) currentSend() else currentAct(what)

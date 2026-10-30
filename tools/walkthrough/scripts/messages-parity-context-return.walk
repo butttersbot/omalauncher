@@ -1,0 +1,39 @@
+# canvas-app: soma-messages
+# Dedicated isolated DEMO only. Exercise Replies -> parent -> search on the cover.
+shell cmd device_state state 0
+shell am force-stop dev.omalauncher.messages
+shell am start -a android.intent.action.VIEW -d "'soma-messages://link?url=http%3A%2F%2F127.0.0.1%3A1&token=INJECT_EPHEMERAL_DEMO_TOKEN'" dev.omalauncher.messages
+expect Get your iMessages from 100.120.219.46?
+tap Link
+wait 1500
+expect Messages
+tap Long thread
+tap Open reply context
+expect Replies
+expect Long #5
+key BACK
+expect Long #120
+tap Search
+expect Find
+tap Search in conversation
+type Long #2
+expect Find
+tap Find
+keyboard hidden
+expect 11 results
+tap Long #29
+expect Search context
+expect Long #29
+absent Latest
+shot search-context-cover card=messages-parity-search-context
+tap Earlier context
+expect Long #29
+absent 1 new
+absent Latest
+shot context-paging-no-arrival
+key BACK
+expect 11 results
+tap Done searching
+expect Long #120
+key BACK
+expect Messages

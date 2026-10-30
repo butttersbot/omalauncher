@@ -3,6 +3,7 @@
 package dev.omalauncher.ui
 
 import androidx.compose.foundation.text.BasicText
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -20,6 +21,20 @@ import org.junit.Test
  */
 @OptIn(ExperimentalTestApi::class)
 class ComposerTapTest {
+    @Test fun draggingOffMicrophoneNeverStartsRecording() =
+        runComposeUiTest {
+            mainClock.autoAdvance = false
+            val mic = FakeRecorder()
+            setContent { SomaComposer(rememberComposerState(), onSend = {}, voice = mic) }
+            mainClock.advanceTimeBy(100)
+            onNodeWithContentDescription("Record a voice message").performTouchInput {
+                down(center); moveTo(Offset(center.x, -100f)); up()
+            }
+            mainClock.advanceTimeBy(ComposerRules.HOLD_MS + 200)
+            assertTrue("Microphone calls after cancelled drag: ${mic.calls}", mic.calls.isEmpty())
+            onNodeWithContentDescription("Record a voice message").assertExists()
+        }
+
     @Test fun typingTurnsTheMicrophoneIntoSend() =
         runComposeUiTest {
             val sent = mutableListOf<String>()

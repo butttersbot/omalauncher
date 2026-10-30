@@ -5,6 +5,7 @@ Usage: review.py MANIFEST --evidence DIR --out messages-parity-group-2.html
 Images and native recordings are embedded; no fonts, scripts or media are fetched.
 """
 import argparse
+import html as html_std
 import base64
 import json
 import mimetypes
@@ -14,6 +15,9 @@ p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('manifest', type=Path)
 p.add_argument('--evidence', type=Path, required=True)
 p.add_argument('--out', type=Path, required=True)
+p.add_argument('--group', type=int, default=2)
+p.add_argument('--title', default='Soma Messages: gestures and response')
+p.add_argument('--limits')
 a = p.parse_args()
 cards = json.loads(a.manifest.read_text())
 for card in cards:
@@ -53,5 +57,10 @@ if(c.clip){const v=document.createElement('video');v.controls=true;v.playsInline
 nav.querySelectorAll('button').forEach((b,j)=>b.setAttribute('aria-current',String(i===j)));select.value=String(i);}
 cards.forEach((c,i)=>{const b=document.createElement('button');b.textContent=c.title;b.onclick=()=>show(i);nav.append(b);const o=document.createElement('option');o.value=i;o.textContent=(i+1)+' / '+cards.length+' · '+c.title;select.append(o)});select.onchange=()=>show(Number(select.value));show(0);</script></html>'''
 a.out.parent.mkdir(parents=True, exist_ok=True)
+html = html.replace('group 2 review', f'group {a.group} review').replace('PARITY-G2-V1', f'PARITY-G{a.group}-V1').replace('Soma Messages: gestures and response', html_std.escape(a.title))
+if a.limits:
+    start = html.index('<details class="note">')
+    end = html.index('</details>', start) + len('</details>')
+    html = html[:start] + '<details class="note"><summary>Emulator demo · test limits</summary><p>' + html_std.escape(a.limits) + '</p></details>' + html[end:]
 a.out.write_text(html.replace('PAYLOAD', payload))
 print(f'{a.out}: {len(cards)} review cards, {a.out.stat().st_size} bytes')

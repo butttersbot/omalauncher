@@ -10,7 +10,7 @@ data class Message(
     val sender: String,
     /** Sent from this app; it stays until OpenBubbles shows it back, then the two are one message. */
     val sentHere: Boolean = false,
-    /** The message this one answered ("Mina: are we still on…"), kept on this phone: OpenBubbles' reply action sends words only. */
+    /** Display context ("Mina: are we still on…"). The wire identity is kept separately in [replyTo]. */
     val quote: String? = null,
     /** Handed to OpenBubbles' own chat to send there (photos); it stays marked until OpenBubbles shows it back. */
     val handedOff: Boolean = false,
@@ -33,6 +33,16 @@ data class Message(
     val richLinks: List<RichLink> = emptyList(),
     val hiddenLinks: Set<String> = emptySet(),
     val reactions: List<Reaction> = emptyList(),
+    /** Exact server message/part ID answered by this message. Never reconstructed from quote text. */
+    val replyTo: String? = null,
+    val edited: Boolean = false,
+    val editedAt: Long? = null,
+    val editCount: Int? = null,
+    val editHistory: List<MessageRevision> = emptyList(),
+    val editHistoryComplete: Boolean = false,
+    val unsent: Boolean = false,
+    val unsentAt: Long? = null,
+    val changes: AllowedChanges = AllowedChanges(),
 ) {
     val fromMe get() = sender.isEmpty()
     val renderKey get() = uiKey ?: id ?: "legacy:$time:$sender:$text"
@@ -165,9 +175,25 @@ class ConversationBook(
         val messages = old?.messages?.toMutableList() ?: mutableListOf()
         var fresh = 0
         for (m in incoming) {
+            if (m.unsent) {
+                if (m.id == null) continue
+                val replaced = messages.firstOrNull { it.id?.removeSuffix("#a") == m.id }
+                messages.removeAll { it.id?.removeSuffix("#a") == m.id }
+                messages += m.copy(uiKey = replaced?.uiKey ?: replaced?.renderKey ?: m.uiKey, replyTo = m.replyTo ?: replaced?.replyTo)
+                continue
+            }
+            // A stale history page must never resurrect the contents or media of an unsent part.
+            if (messages.any { it.unsent && it.id == m.id?.removeSuffix("#a") }) continue
             val at = messages.indexOfFirst { it.id == m.id }
             if (at >= 0) {
-                messages[at] = m.copy(quote = m.quote ?: messages[at].quote, uiKey = messages[at].uiKey, hiddenLinks = messages[at].hiddenLinks, delivery = messages[at].delivery?.keeping(m.delivery) ?: m.delivery, richLinks = m.richLinks.ifEmpty { messages[at].richLinks.filter { it.url in Parts.links(m.text).map(Parts::openable) } })
+                val prior = messages[at]
+                val staleEdit = prior.editedAt != null && (m.editedAt == null || m.editedAt < prior.editedAt) ||
+                    prior.editCount != null && m.editCount != null && m.editCount < prior.editCount
+                if (staleEdit) {
+                    messages[at] = prior.copy(delivery = prior.delivery?.keeping(m.delivery) ?: m.delivery)
+                    continue
+                }
+                messages[at] = m.copy(quote = m.quote ?: messages[at].quote, replyTo = m.replyTo ?: messages[at].replyTo, uiKey = messages[at].uiKey, hiddenLinks = messages[at].hiddenLinks, delivery = messages[at].delivery?.keeping(m.delivery) ?: m.delivery, richLinks = m.richLinks.ifEmpty { messages[at].richLinks.filter { it.url in Parts.links(m.text).map(Parts::openable) } })
                 continue
             }
             // The Mac's copy of one sent from here: by the client id it echoes, else by the same words close in time.
@@ -181,11 +207,18 @@ class ConversationBook(
                     -1
                 }
             if (echo >= 0) {
-                messages[echo] = m.copy(quote = m.quote ?: messages[echo].quote, uiKey = messages[echo].renderKey, hiddenLinks = messages[echo].hiddenLinks, delivery = m.delivery ?: messages[echo].delivery, richLinks = m.richLinks.ifEmpty { messages[echo].richLinks.filter { it.url in Parts.links(m.text).map(Parts::openable) } })
+                messages[echo] = m.copy(quote = m.quote ?: messages[echo].quote, replyTo = m.replyTo ?: messages[echo].replyTo, uiKey = messages[echo].renderKey, hiddenLinks = messages[echo].hiddenLinks, delivery = m.delivery ?: messages[echo].delivery, richLinks = m.richLinks.ifEmpty { messages[echo].richLinks.filter { it.url in Parts.links(m.text).map(Parts::openable) } })
                 continue
             }
             messages += m
             if (!m.fromMe && counting) fresh++
+        }
+        val targets = messages.filter { it.id != null }.associateBy { it.id!!.removeSuffix("#a") }
+        for (i in messages.indices) {
+            val item = messages[i]
+            val target = item.replyTo?.let(targets::get) ?: continue
+            if (!item.unsent) messages[i] = item.copy(quote = if (target.unsent) "Message was unsent" else
+                (if (target.fromMe) "You" else target.sender) + ": " + target.text.take(90))
         }
         messages.sortBy { it.time }
         val counted = (old?.unread ?: 0) + fresh
@@ -204,6 +237,17 @@ class ConversationBook(
                     },
             )
         return ConversationBook(byId + (id to conversation))
+    }
+
+    fun quoteFacts(id: String, facts: List<Message>): ConversationBook {
+        val old = byId[id] ?: return this
+        val targets = (facts + old.messages).associateBy { it.id?.removeSuffix("#a") }
+        val updated = old.messages.map { item ->
+            val target = targets[item.replyTo]
+            if (target == null || item.unsent) item else item.copy(quote = if (target.unsent) "Message was unsent" else
+                (if (target.fromMe) "You" else target.sender) + ": " + target.text.take(90))
+        }
+        return ConversationBook(byId + (id to old.copy(messages = updated)))
     }
 
     /** The Mac took back messages [ids] in [id] (undo send); an attachment's part ("#a") goes with its message. */
@@ -225,9 +269,10 @@ class ConversationBook(
         quote: String? = null,
         richLinks: List<RichLink> = emptyList(),
         hiddenLinks: Set<String> = emptySet(),
+        replyTo: String? = null,
     ): ConversationBook {
         val old = byId[id] ?: return this
-        return ConversationBook(byId + (id to old.copy(messages = old.messages + Message(text, time, "", sentHere = true, quote = quote, id = "c:$clientId", delivery = Delivery.Sending, richLinks = richLinks, hiddenLinks = hiddenLinks))))
+        return ConversationBook(byId + (id to old.copy(messages = old.messages + Message(text, time, "", sentHere = true, quote = quote, id = "c:$clientId", delivery = Delivery.Sending, richLinks = richLinks, hiddenLinks = hiddenLinks, replyTo = replyTo))))
     }
 
     /** Message [messageId] in [id] stands for [files] (a photo picked here, until the Mac shows it back). */
@@ -304,6 +349,14 @@ class ConversationBook(
                                             if (m.hiddenLinks.isNotEmpty()) put("hiddenLinks", JSONArray(m.hiddenLinks.toList()))
                                             if (m.richLinks.isNotEmpty()) put("richLinks", JSONArray(m.richLinks.map { it.json() }))
                                             m.quote?.let { put("quote", it) }
+                                            m.replyTo?.let { put("replyTo", it) }
+                                            if (m.edited) put("edited", true)
+                                            m.editedAt?.let { put("editedAt", it) }
+                                            m.editCount?.let { put("editCount", it) }
+                                            if (m.editHistory.isNotEmpty()) put("editHistory", JSONArray(m.editHistory.map { it.json() }))
+                                            if (m.editHistoryComplete) put("editHistoryComplete", true)
+                                            if (m.unsent) put("unsent", true)
+                                            m.unsentAt?.let { put("unsentAt", it) }
                                             if (m.handedOff) put("off", true)
                                             m.id?.let { put("id", it) }
                                             if (m.failed) put("failed", true)
@@ -361,6 +414,11 @@ class ConversationBook(
                                 richLinks = RichLink.read(m.optJSONArray("richLinks")),
                                 hiddenLinks = m.optJSONArray("hiddenLinks")?.let { a -> (0 until a.length()).map { a.optString(it) }.toSet() }.orEmpty(),
                                 reactions = Reaction.read(m.optJSONArray("reactions")),
+                                replyTo = m.optString("replyTo").ifEmpty { null },
+                                edited = m.optBoolean("edited"), editedAt = m.optLong("editedAt").takeIf { m.has("editedAt") },
+                                editCount = m.optInt("editCount").takeIf { m.has("editCount") },
+                                editHistory = MessageRevision.read(m.optJSONArray("editHistory")), editHistoryComplete = m.optBoolean("editHistoryComplete"),
+                                unsent = m.optBoolean("unsent"), unsentAt = m.optLong("unsentAt").takeIf { m.has("unsentAt") },
                             )
                         }
                     val id = c.getString("id")

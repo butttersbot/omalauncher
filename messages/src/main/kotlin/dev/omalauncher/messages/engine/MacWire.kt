@@ -39,6 +39,13 @@ object MacWire {
         val failed: Boolean = false,
         val richLinks: List<RichLink> = emptyList(),
         val reactions: List<Reaction> = emptyList(),
+        val edited: Boolean = false,
+        val editedAt: Long? = null,
+        val editCount: Int? = null,
+        val editHistory: List<MessageRevision> = emptyList(),
+        val editHistoryComplete: Boolean = false,
+        val unsentAt: Long? = null,
+        val changes: AllowedChanges = AllowedChanges(),
     )
 
     class Chat(
@@ -85,6 +92,10 @@ object MacWire {
             failed = o.optBoolean("failed"),
             richLinks = RichLink.read(o.optJSONArray("richLinks")),
             reactions = Reaction.read(o.optJSONArray("tapbacks")),
+            edited = o.optBoolean("edited"), editedAt = o.optLong("editedAt").takeIf { o.has("editedAt") && !o.isNull("editedAt") },
+            editCount = o.optInt("editCount").takeIf { o.has("editCount") && !o.isNull("editCount") },
+            editHistory = MessageRevision.read(o.optJSONArray("editHistory")), editHistoryComplete = o.optBoolean("editHistoryComplete"),
+            unsentAt = o.optLong("unsentAt").takeIf { o.has("unsentAt") && !o.isNull("unsentAt") }, changes = AllowedChanges.read(o.optJSONObject("actions")),
             tapbacks =
                 (o.optJSONArray("tapbacks") ?: JSONArray()).let { t ->
                     (0 until t.length()).mapNotNull { t.optJSONObject(it) }.map { (if (it.optBoolean("fromMe")) "me:" else "") + it.optString("kind") }.filter { !it.endsWith(":") && it.isNotEmpty() }
@@ -107,6 +118,12 @@ object MacWire {
 
     /** Conversation titles are not person names, even in a single-person conversation. */
     fun participantNames(chats: List<Chat>): Map<String, String> = chats.flatMap { it.participantNames.entries }.associate { it.toPair() }
+
+    fun quoteText(message: Msg): String = when {
+        message.unsent -> "Message was unsent"
+        message.text.isNotBlank() -> message.text.take(90)
+        else -> summary(message.attachments) ?: "Message"
+    }
 
     /** GET /v1/chats. */
     fun chats(text: String): List<Chat> {
@@ -181,8 +198,10 @@ object MacWire {
         nameOf: (String) -> String? = { null },
         quoteOf: (String) -> String? = { null },
     ): List<Message> {
-        if (m.unsent || m.system) return emptyList()
+        if (m.system) return emptyList()
         val sender = if (m.fromMe) "" else m.sender?.let { nameOf(it) } ?: m.senderName ?: m.sender ?: "Unknown"
+        if (m.unsent) return listOf(Message(if (m.fromMe) "You unsent a message" else "$sender unsent a message", m.at, sender,
+            id = m.id, clientId = m.clientId, replyTo = m.replyTo, unsent = true, unsentAt = m.unsentAt))
         val quote = m.replyTo?.let(quoteOf)
         val parts =
             listOfNotNull(
@@ -194,7 +213,9 @@ object MacWire {
         return parts.mapIndexed { i, p ->
             var q = if (i == 0 && quote != null) p.copy(quote = quote) else p
             if (i == parts.lastIndex && m.tapbacks.isNotEmpty()) q = q.copy(tapbacks = m.tapbacks, reactions = m.reactions.map { r -> r.copy(name = if (r.fromMe) "You" else nameOf(r.sender) ?: r.name ?: r.sender.takeIf { it.isNotBlank() } ?: "Someone") })
-            q.copy(delivery = m.delivery, failed = m.failed, richLinks = if (p.id == m.id) m.richLinks else emptyList())
+            q.copy(delivery = m.delivery, failed = m.failed, richLinks = if (p.id == m.id) m.richLinks else emptyList(), replyTo = m.replyTo,
+                edited = m.edited, editedAt = m.editedAt, editCount = m.editCount, editHistory = m.editHistory,
+                editHistoryComplete = m.editHistoryComplete, changes = m.changes)
         }
     }
 

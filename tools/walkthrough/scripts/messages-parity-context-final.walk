@@ -1,0 +1,82 @@
+# canvas-app: soma-messages
+# Re-pair ONLY the current isolated DEMO; no phone or live-service endpoint.
+shell cmd device_state state 0
+shell am force-stop dev.omalauncher.messages
+shell am start -a android.intent.action.VIEW -d "'soma-messages://link?url=http%3A%2F%2F127.0.0.1%3A1&token=INJECT_EPHEMERAL_DEMO_TOKEN'" dev.omalauncher.messages
+expect Get your iMessages from 100.120.219.46?
+tap Link
+wait 2500
+expect Messages
+tap Long thread
+tap Message
+type FINAL-PARENT-DRAFT
+closeime
+tap Open reply context
+expect Replies
+expect Long #5
+expect Long #119
+expect Long #120
+absent Long #118
+tap Message
+type FINAL-THREAD-DRAFT
+closeime
+shot focused-thread-draft card=messages-parity-thread-draft
+key BACK
+expect FINAL-PARENT-DRAFT
+absent FINAL-THREAD-DRAFT
+tap Open reply context
+expect FINAL-THREAD-DRAFT
+shot focused-thread-context card=messages-parity-thread-context
+key BACK
+tap Search
+expect Find
+tap Search in conversation
+type Long #2
+expect Find
+tap Find
+keyboard hidden
+tap Long #29
+expect Search context
+expect Long #29
+absent Latest
+shot search-context-final card=messages-parity-search-context
+tap Earlier context
+expect Long #29
+absent Latest
+absent 1 new
+shot context-history-is-not-new
+key BACK
+expect 11 results
+key BACK
+expect FINAL-PARENT-DRAFT
+shell cmd device_state state 2
+wait 1500
+expect Long #120
+tap Search
+expect Find
+tap Search in conversation
+type Long #2
+expect Find
+tap Find
+keyboard hidden
+expect 11 results
+shot search-unfolded card=messages-parity-conversation-search-unfolded
+tap Long #29
+expect Search context
+expect Long #29
+shot context-unfolded
+key BACK
+key BACK
+expect FINAL-PARENT-DRAFT
+tap Open reply context
+expect Replies
+expect FINAL-THREAD-DRAFT
+shot replies-unfolded card=messages-parity-thread-context-unfolded
+key BACK
+expect FINAL-PARENT-DRAFT
+shell cmd device_state state 0
+wait 1000
+expect FINAL-PARENT-DRAFT
+shot cover-return-draft
+key BACK
+expect Messages

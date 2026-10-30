@@ -79,9 +79,9 @@ def nodes(serial, detailed=False, wait_ms=2000):
     for attempt in range(3):
         try:
             # Never read walk.xml left by an earlier successful dump after UiAutomation crashes.
-            adb(serial, "shell", "rm", "-f", "/sdcard/walk.xml", check=True, timeout=4)
-            adb(serial, "shell", "uiautomator", "dump", "/sdcard/walk.xml", check=True, timeout=6)
-            raw = adb(serial, "shell", "cat", "/sdcard/walk.xml", check=True, timeout=4)
+            adb(serial, "shell", "rm", "-f", "/data/local/tmp/soma-walk.xml", check=True, timeout=4)
+            adb(serial, "shell", "uiautomator", "dump", "/data/local/tmp/soma-walk.xml", check=True, timeout=6)
+            raw = adb(serial, "shell", "cat", "/data/local/tmp/soma-walk.xml", check=True, timeout=4)
             return parse_nodes(raw, detailed)
         except (TreeUnavailable, RuntimeError, subprocess.TimeoutExpired) as e:
             failure = TreeUnavailable(f"fresh accessibility tree unavailable: {str(e)[:180]}")
@@ -96,7 +96,7 @@ def wait_for_tree(serial):
     nodes(serial, wait_ms=8000)
 
 
-def find(serial, wanted, wait_ms=4000, actionable=False):
+def find(serial, wanted, wait_ms=4000, actionable=False, exact_only=False):
     """The centre of what says [wanted] on screen; a web page's nodes scrolled out of view don't count."""
     end = time.time() + wait_ms / 1000
     w, h = size(serial)
@@ -108,7 +108,7 @@ def find(serial, wanted, wait_ms=4000, actionable=False):
         for label, (l, t, r, b), attrs in nodes(serial, detailed=True):
             x, y = (l + r) // 2, (t + b) // 2
             parts = [normalize(part) for part in label.splitlines()]
-            if any(needle in part for part in parts) and 0 <= x < w and 0 <= y < h and r > l and b > t:
+            if any(needle == part if exact_only else needle in part for part in parts) and 0 <= x < w and 0 <= y < h and r > l and b > t:
                 exact = needle in parts
                 score = 3 if exact else 1
                 if actionable:
@@ -161,6 +161,25 @@ def run_step(serial, op, args, out, n):
         adb(serial, "shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", args[0]); time.sleep(1.5); wait_for_tree(serial); return True, "", None
     if op == "ime":
         adb(serial, "shell", "ime", "enable", args[0]); adb(serial, "shell", "ime", "set", args[0], check=True); return True, "", None
+    if op in ("keyboard", "closeime"):
+        # Do not save or print the input-method dump, which can contain unrelated runtime details.
+        def shown():
+            value = re.search(r"\bmInputShown=(true|false)", adb(serial, "shell", "dumpsys", "input_method"))
+            return None if value is None else value.group(1) == "true"
+        state = shown()
+        if state is None:
+            return False, "Android did not report keyboard visibility", None
+        if op == "closeime":
+            if state:
+                adb(serial, "shell", "input", "keyevent", "KEYCODE_BACK"); time.sleep(0.6)
+            return shown() is False, "", None
+        if args not in (["shown"], ["hidden"]):
+            return False, "keyboard: shown or hidden", None
+        wanted = args == ["shown"]
+        end = time.time() + 4
+        while state != wanted and time.time() < end:
+            time.sleep(0.2); state = shown()
+        return state == wanted, "" if state == wanted else "keyboard is not " + args[0], None
     if op == "doubletap":
         if len(args) == 2 and all(re.fullmatch(r"[\d.]+", a) for a in args):
             p = point(serial, *args)
@@ -245,6 +264,30 @@ def run_step(serial, op, args, out, n):
         adb(serial, "shell", "input", "swipe", str(p[0]), str(p[1]), str(x2), str(y2), ms); time.sleep(0.8); return True, "", None
     if op == "type":
         adb(serial, "shell", "input", "text", " ".join(args).replace(" ", "%s")); time.sleep(0.5); return True, "", None
+    if op == "replace":
+        # replace "FIELD LABEL" NEW TEXT: select all in the named native editor, then type the replacement.
+        if len(args) < 2:
+            return False, 'replace: "field label" new text', None
+        p = find(serial, args[0], wait_ms=8000, actionable=True)
+        if not p:
+            return False, f"nothing says “{args[0]}”", None
+        adb(serial, "shell", "input", "tap", str(p[0]), str(p[1]))
+        time.sleep(0.4) # Let Compose apply the caret/focus change before sending Select All.
+        adb(serial, "shell", "input", "keycombination", "KEYCODE_CTRL_LEFT", "KEYCODE_A")
+        time.sleep(0.2)
+        replacement = " ".join(args[1:])
+        adb(serial, "shell", "input", "text", replacement.replace(" ", "%s"))
+        time.sleep(0.5)
+        # Never report a substring insertion as a replacement. Keep the failed editor for inspection.
+        # Compose may expose the description on a parent and editable text on a child.
+        # Read the exact text at the target field, never a matching substring elsewhere.
+        exact = any(attrs.get("text") == replacement for _, (l, t, r, b), attrs in nodes(serial, detailed=True)
+                    if l <= p[0] <= r and t <= p[1] <= b)
+        if not exact:
+            path = os.path.join(out, f"{n:02}-replace-failed.png")
+            shot(serial, path)
+            return False, "editor does not contain exactly the replacement", path
+        return True, "", None
     if op == "key":
         adb(serial, "shell", "input", "keyevent", "KEYCODE_" + args[0].upper()); time.sleep(0.6); return True, "", None
     if op == "within":
@@ -321,7 +364,7 @@ def run_step(serial, op, args, out, n):
             elif time.time() > end:
                 return False, f"nothing says “{wanted}”", None
             time.sleep(0.4)
-    if op in ("shot", "expect", "absent"):
+    if op in ("shot", "expect", "absent", "expectexact", "absentexact"):
         words = " ".join(args)
         name = re.sub(r"\W+", "-", words if op == "shot" else op)[:60]
         path = os.path.join(out, f"{n:02d}-{name}.png")
@@ -330,9 +373,10 @@ def run_step(serial, op, args, out, n):
             return None, "look at it", path
         # 8 s: a WebView still loading pictures can leave uiautomator dumps without its words for a few seconds (the
         # news walk, 149 to 156: "Top stories" on screen, missing from the dump).
-        found = find(serial, words, wait_ms=8000 if op == "expect" else 800) is not None
-        ok = found if op == "expect" else not found
-        return ok, "" if ok else (f"“{words}” not on screen" if op == "expect" else f"“{words}” still on screen"), path
+        expecting = op in ("expect", "expectexact")
+        found = find(serial, words, wait_ms=8000 if expecting else 800, exact_only=op.endswith("exact")) is not None
+        ok = found if expecting else not found
+        return ok, "" if ok else (f"“{words}” not on screen" if expecting else f"“{words}” still on screen"), path
     return False, f"unknown step “{op}”", None
 
 def parse(path):
@@ -392,6 +436,8 @@ def main():
         results.append({"step": n, "where": "emu", "text": s["text"], "result": verdict, "note": note, "screenshot": png,
                         **({"card": s["card"]} if s.get("card") else {})})
         print(f"{verdict}  {n:02d}  {s['text']}" + (f"  — {note}" if note else ""))
+        if ok is False and "--fail-fast" in a:
+            break # Retain partial results and stop dependent taps after a failure.
     looks = sum(r["result"] == "LOOK" for r in results)
     if looks:
         print(f"\n{looks} screenshots to look at before this walk counts: a LOOK is not a PASS.")

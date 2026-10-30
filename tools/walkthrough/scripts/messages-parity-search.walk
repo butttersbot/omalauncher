@@ -1,0 +1,89 @@
+# canvas-app: soma-messages
+# Demo-only parity UI, with native rich-link fixtures from the isolated API branch.
+# Soma Messages linked to the Mac's iMessage service (0.6+). Against the service's DEMO on the Mac Pro: sample
+# chats only, nothing of Boss's; every send gets a fake reply 2 s later. The harness must inject its ephemeral port/token; the checked-in endpoint fails closed.
+shell cmd statusbar collapse
+key HOME
+# A clean start: not linked yet, no contacts answer.
+shell pm clear dev.omalauncher.messages
+# Contacts allowed ahead, so Android's prompt (whose title also says Allow) doesn't cover the inbox.
+shell pm grant dev.omalauncher.messages android.permission.READ_CONTACTS
+# 0.7+ asks for notifications when linked; granted here so its prompt does not cover the inbox.
+shell pm grant dev.omalauncher.messages android.permission.POST_NOTIFICATIONS
+shell pm grant dev.omalauncher.messages android.permission.RECORD_AUDIO
+# Quoted twice: walk.py hands the line to the phone's shell, which would split the link at '&'.
+shell am start -a android.intent.action.VIEW -d "'soma-messages://link?url=http%3A%2F%2F127.0.0.1%3A1&token=INJECT_EPHEMERAL_DEMO_TOKEN'" dev.omalauncher.messages
+wait 2500
+# The owner says yes to the Mac by name before anything goes to it.
+expect Get your iMessages from 100.120.219.46?
+shot link-dialog
+tap Link
+wait 1500
+# Names come from the phone's contacts; the Mac's names stand in when the phone has none.
+wait 4000
+expect Weekend
+expect Ana Demo
+absent OpenBubbles
+shot inbox-from-the-mac
+# Full history search beyond the initial 50, without splicing distant context into the timeline.
+tap Long thread
+expect Long #120
+tap Message
+type SEARCH-PARENT-DRAFT
+closeime
+tap Search
+expect "Search this conversation"
+tap Search in conversation
+type Long #2
+tap Find
+expect 11 results
+expect Long #29
+shot server-search-results card=messages-parity-conversation-search
+tap Long #29
+expect Search context
+expect Long #29
+shot uncached-context card=messages-parity-search-context
+tap Next match
+expect Long #28
+shot next-match
+tap Previous match
+expect Long #29
+tap Earlier context
+wait 1000
+expect Long #29
+shot earlier-context
+tap Results
+expect 11 results
+expect Long #29
+tap Done searching
+expect SEARCH-PARENT-DRAFT
+expect Long #120
+shot parent-preserved-after-search
+tap Search
+tap Search in conversation
+type Long #
+tap Find
+expect 50 results
+expect More results
+shot paged-results
+tap More results
+expect 100 results
+tap More results
+expect 119 results
+absent More results
+shot all-history-results
+tap Clear search
+expect "Search this conversation"
+tap Search in conversation
+type NO-MATCH-IN-HISTORY
+tap Find
+expect No results
+shot search-no-results card=messages-parity-search-empty
+tap Clear search
+expect Search messages
+shot search-cleared
+tap Done searching
+expect SEARCH-PARENT-DRAFT
+closeime
+key BACK
+expect Messages

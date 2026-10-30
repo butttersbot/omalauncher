@@ -19,10 +19,12 @@ data class Left(
     val offset: Int = 0,
     val count: Int = 0,
     val anchor: String? = null,
+    /** Exact server part ID; independent of the display quote and retained across restart. */
+    val replyTo: String? = null,
 ) {
     val hasPlace get() = index >= 0
     fun indexIn(messages: List<Message>): Int = anchor?.let { key -> messages.indexOfFirst { it.renderKey == key }.takeIf { it >= 0 } } ?: index.coerceIn(0, maxOf(0, messages.size - 1))
-    val isEmpty get() = draft.isBlank() && quote == null && !hasPlace
+    val isEmpty get() = draft.isBlank() && quote == null && replyTo == null && !hasPlace
 
     companion object {
         fun toJson(all: Map<String, Left>): String =
@@ -32,7 +34,7 @@ data class Left(
                     "left",
                     JSONObject().apply {
                         all.filterValues { !it.isEmpty }.forEach { (id, l) ->
-                            put(id, JSONObject().put("draft", l.draft).put("index", l.index).put("offset", l.offset).put("count", l.count).apply { l.quote?.let { put("quote", it) }; l.anchor?.let { put("anchor", it) } })
+                            put(id, JSONObject().put("draft", l.draft).put("index", l.index).put("offset", l.offset).put("count", l.count).apply { l.quote?.let { put("quote", it) }; l.anchor?.let { put("anchor", it) }; l.replyTo?.let { put("replyTo", it) } })
                         }
                     },
                 ).toString()
@@ -43,7 +45,7 @@ data class Left(
                 val left = JSONObject(text).getJSONObject("left")
                 left.keys().asSequence().associateWith { id ->
                     val l = left.getJSONObject(id)
-                    Left(l.optString("draft"), l.optString("quote").ifEmpty { null }, l.optInt("index", -1), l.optInt("offset"), l.optInt("count"), l.optString("anchor").ifEmpty { null })
+                    Left(l.optString("draft"), l.optString("quote").ifEmpty { null }, l.optInt("index", -1), l.optInt("offset"), l.optInt("count"), l.optString("anchor").ifEmpty { null }, l.optString("replyTo").ifEmpty { null })
                 }
             }.getOrDefault(emptyMap())
     }

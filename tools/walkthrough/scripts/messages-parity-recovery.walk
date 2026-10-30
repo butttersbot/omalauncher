@@ -1,0 +1,99 @@
+# canvas-app: soma-messages
+# Demo-only parity UI, with native rich-link fixtures from the isolated API branch.
+# Soma Messages linked to the Mac's iMessage service (0.6+). Against the service's DEMO on the Mac Pro: sample
+# chats only, nothing of Boss's; every send gets a fake reply 2 s later. The harness must inject its ephemeral port/token; the checked-in endpoint fails closed.
+shell cmd statusbar collapse
+key HOME
+# A clean start: not linked yet, no contacts answer.
+shell pm clear dev.omalauncher.messages
+# Contacts allowed ahead, so Android's prompt (whose title also says Allow) doesn't cover the inbox.
+shell pm grant dev.omalauncher.messages android.permission.READ_CONTACTS
+# 0.7+ asks for notifications when linked; granted here so its prompt does not cover the inbox.
+shell pm grant dev.omalauncher.messages android.permission.POST_NOTIFICATIONS
+shell pm grant dev.omalauncher.messages android.permission.RECORD_AUDIO
+# Quoted twice: walk.py hands the line to the phone's shell, which would split the link at '&'.
+shell am start -a android.intent.action.VIEW -d "'soma-messages://link?url=http%3A%2F%2F127.0.0.1%3A1&token=INJECT_EPHEMERAL_DEMO_TOKEN'" dev.omalauncher.messages
+wait 2500
+# The owner says yes to the Mac by name before anything goes to it.
+expect Get your iMessages from 100.120.219.46?
+shot link-dialog
+tap Link
+wait 1500
+# Names come from the phone's contacts; the Mac's names stand in when the phone has none.
+wait 4000
+expect Weekend
+expect Ana Demo
+absent OpenBubbles
+shot inbox-from-the-mac
+# Guarded mutations on fresh synthetic own messages. The harness checks counts/history and rejects a sixth edit.
+# Requires own DEMO fault proxy: first edit/replies/search request returns 503.
+tap Ana Demo
+tap Message
+type RECOVER3-EDIT-ORIGINAL
+key ENTER
+wait 3000
+expect RECOVER3-EDIT-ORIGINAL
+closeime
+doubletap RECOVER3-EDIT-ORIGINAL
+shot eligible-message-actions card=messages-parity-edit-actions
+tap Edit
+replace "Edit message" RECOVER3-EDIT-RETRY
+shot inline-edit card=messages-parity-inline-edit
+tap Save edit
+expect Injected DEMO edit refusal
+expectexact RECOVER3-EDIT-RETRY
+shot edit-failed-draft-kept card=messages-parity-edit-recovery
+tap Save edit
+expectexact RECOVER3-EDIT-RETRY
+expect Edited
+closeime
+shot edit-retry-confirmed
+tap Edit history for: RECOVER3-EDIT-RETRY
+expect Edit history
+expect RECOVER3-EDIT-ORIGINAL
+expectexact RECOVER3-EDIT-RETRY
+shot latest-edit-history card=messages-parity-edit-history
+tap Done
+tap Message
+type RECOVER3-UNSEND-LATEST
+key ENTER
+wait 2500
+closeime
+doubletap RECOVER3-UNSEND-LATEST
+tap Undo Send
+expect You unsent a message
+absentexact RECOVER3-UNSEND-LATEST
+shot latest-unsent-notice card=messages-parity-unsent-notice
+doubletap Demo reply to: RECOVER3-UNSEND-LATEST
+tap Show replies
+expect Injected DEMO replies refusal
+shot thread-load-failed card=messages-parity-thread-recovery
+tap Retry
+expect Replies
+expect Demo reply to: RECOVER3-UNSEND-LATEST
+shot thread-retry-confirmed
+key BACK
+tap Message
+type RECOVERY-PARENT-DRAFT
+closeime
+tap Search
+tap Search in conversation
+type RECOVER3
+tap Find
+expect Injected DEMO search refusal
+keyboard hidden
+shot search-failed card=messages-parity-search-recovery
+tap Retry
+expectexact RECOVER3-EDIT-RETRY
+keyboard hidden
+shot search-retry-confirmed
+tap Clear search
+tap Search in conversation
+type needle
+tap Find
+expect 🧑🏽‍💻 café needle
+keyboard hidden
+shot unicode-search-result
+tap Done searching
+expect RECOVERY-PARENT-DRAFT
+shot recovery-parent-preserved

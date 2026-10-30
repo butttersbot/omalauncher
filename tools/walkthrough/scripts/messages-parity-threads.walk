@@ -1,0 +1,114 @@
+# canvas-app: soma-messages
+# Demo-only parity UI, with native rich-link fixtures from the isolated API branch.
+# Soma Messages linked to the Mac's iMessage service (0.6+). Against the service's DEMO on the Mac Pro: sample
+# chats only, nothing of Boss's; every send gets a fake reply 2 s later. The harness must inject its ephemeral port/token; the checked-in endpoint fails closed.
+shell cmd statusbar collapse
+key HOME
+# A clean start: not linked yet, no contacts answer.
+shell pm clear dev.omalauncher.messages
+# Contacts allowed ahead, so Android's prompt (whose title also says Allow) doesn't cover the inbox.
+shell pm grant dev.omalauncher.messages android.permission.READ_CONTACTS
+# 0.7+ asks for notifications when linked; granted here so its prompt does not cover the inbox.
+shell pm grant dev.omalauncher.messages android.permission.POST_NOTIFICATIONS
+shell pm grant dev.omalauncher.messages android.permission.RECORD_AUDIO
+# Quoted twice: walk.py hands the line to the phone's shell, which would split the link at '&'.
+shell am start -a android.intent.action.VIEW -d "'soma-messages://link?url=http%3A%2F%2F127.0.0.1%3A1&token=INJECT_EPHEMERAL_DEMO_TOKEN'" dev.omalauncher.messages
+wait 2500
+# The owner says yes to the Mac by name before anything goes to it.
+expect Get your iMessages from 100.120.219.46?
+shot link-dialog
+tap Link
+wait 1500
+# Names come from the phone's contacts; the Mac's names stand in when the phone has none.
+wait 4000
+expect Weekend
+expect Ana Demo
+absent OpenBubbles
+shot inbox-from-the-mac
+# Structured replies, separate thread drafts and uncached context. DEMO only.
+tap Ana Demo
+tap Message
+type PARENT-DRAFT
+closeime
+keyboard hidden
+shot parent-before-thread
+tap Open reply context
+expect Replies
+expect Yes! 7pm
+expect Perfect, see you there
+shot focused-replies card=messages-parity-thread-context
+tap Message
+type THREAD-DRAFT
+closeime
+keyboard hidden
+expect THREAD-DRAFT
+shot thread-draft card=messages-parity-thread-draft
+key BACK
+expect PARENT-DRAFT
+absent THREAD-DRAFT
+shot parent-draft-kept
+tap Open reply context
+expect THREAD-DRAFT
+tap Message
+key ENTER
+wait 3200
+expect THREAD-DRAFT
+absent Demo reply to: THREAD-DRAFT
+shot thread-send
+closeime
+key BACK
+expect PARENT-DRAFT
+key BACK
+tap Long thread
+expect Long #120
+tap Open reply context
+expect Long #5
+expect Long #119
+expect Long #120
+absent Long #118
+shot unloaded-root-and-nested card=messages-parity-thread-context
+tap Message
+type RESTORE-THREAD-DRAFT
+closeime
+key BACK
+shell am force-stop dev.omalauncher.messages
+shell am start -n dev.omalauncher.messages/.MainActivity
+tap Long thread
+tap Open reply context
+expect RESTORE-THREAD-DRAFT
+shot restored-thread-draft card=messages-parity-thread-draft
+tap Message
+key ENTER
+wait 3200
+expect RESTORE-THREAD-DRAFT
+closeime
+key BACK
+key BACK
+tap Sideways
+doubletap Photo
+expect Show replies
+tap Show replies
+expect Replies
+expect Photo
+shot photo-thread card=messages-parity-thread-context
+tap Message
+type PHOTO-THREAD-REPLY
+key ENTER
+wait 3200
+expect PHOTO-THREAD-REPLY
+closeime
+expect Replies
+expect Record a voice message
+tap Record a voice message
+wait 2500
+tap Stop recording
+expect Send voice message
+tap Send voice message
+wait 3500
+expect Voice message, tap to play
+shot voice-in-thread
+closeime
+key BACK
+key BACK
+expect Messages
+# The harness separately checks SSE exact replyTo IDs for text and voice; a quote alone cannot prove it.

@@ -37,6 +37,19 @@ class FakeRecorder(
 
 /** The composer's rules and state, without drawing it. */
 class ComposerRulesTest {
+    @Test fun rejectedVoiceHandOffRestoresReviewWithoutOverwritingANewDraft() {
+        val state = ComposerState(); val mic = FakeRecorder()
+        state.startVoice(mic, 0, held = false); state.stopVoice(mic, 3_000)
+        val sent = state.takeVoice(mic)!!
+        assertEquals(VoiceStage.Off, state.stage)
+        state.restoreVoice(sent)
+        assertEquals(sent, (state.stage as VoiceStage.Review).clip)
+        state.takeVoice(mic); state.text = "new draft"
+        state.restoreVoice(sent)
+        assertEquals(VoiceStage.Off, state.stage)
+        assertEquals("new draft", state.text)
+    }
+
     private fun action(
         text: String = "",
         attached: Boolean = false,

@@ -80,8 +80,10 @@ class MacWireTest {
     }
 
     @Test
-    fun unsentAndGroupChangesShowNothing() {
-        assertTrue(MacWire.toMessages(MacWire.msg(JSONObject("""{"id":"u","chatId":"c","fromMe":true,"text":"oops","at":1,"unsent":true}"""))).isEmpty())
+    fun unsentKeepsATranscriptNoticeAndGroupChangesStayHidden() {
+        val notice = MacWire.toMessages(MacWire.msg(JSONObject("""{"id":"u","chatId":"c","fromMe":true,"text":"oops","at":1,"unsent":true}"""))).single()
+        assertTrue(notice.unsent)
+        assertEquals("You unsent a message", notice.text)
         assertTrue(MacWire.toMessages(MacWire.msg(JSONObject("""{"id":"s","chatId":"c","fromMe":false,"text":"Ana named the chat","at":1,"system":true}"""))).isEmpty())
     }
 

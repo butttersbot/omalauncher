@@ -35,6 +35,9 @@ enum class Sent {
 
     /** No reply action is known for the conversation (nothing has arrived since this app started): open OpenBubbles. */
     NoReplyPath,
+
+    /** A saved display quote cannot silently become an unthreaded message. */
+    MissingReplyTarget,
 }
 
 /**
@@ -69,6 +72,11 @@ object Messages {
     private var real = ConversationBook()
     private data class ReadIntent(val before: Int, val target: Int, var arrivals: Int = 0)
     private val readIntents = mutableMapOf<String, ReadIntent>()
+    /** Facts for remote context windows; distant updates must not create holes in cached history. */
+    val liveUpdates = MutableStateFlow<Map<String, List<Message>>>(emptyMap())
+    val deleted = MutableStateFlow<Map<String, Set<String>>>(emptyMap())
+    val pendingChanges = MutableStateFlow<Map<String, PendingMessageChange>>(emptyMap())
+    fun changeKey(chat: String, message: String) = chat + "\u0000" + message.removeSuffix("#a")
     fun changingRead(id: String) = synchronized(this) { id in readIntents }
 
     @Synchronized fun setUnread(id: String, unread: Boolean) {
@@ -134,6 +142,7 @@ object Messages {
             handles.clear()
             publish(ConversationBook())
         }
+        if (mac.value != at) { liveUpdates.value = emptyMap(); deleted.value = emptyMap(); pendingChanges.value = emptyMap() }
         mac.value = at
         MacLink.start(context, at)
     }
@@ -157,15 +166,33 @@ object Messages {
         unread: Int? = null,
         counting: Boolean = true,
         notify: Boolean = false,
+        transientUpdate: Boolean = false,
     ) {
         val before = real[id]?.messages?.size ?: 0
         val known = real[id]?.messages.orEmpty().mapNotNull { it.id }.toSet()
-        var next = real.fromMac(id, title, isGroup, incoming, unread, counting)
+        if (transientUpdate) {
+            val facts = ThreadSlice.merge(liveUpdates.value[id].orEmpty(), incoming).takeLast(512)
+            liveUpdates.value = (liveUpdates.value + (id to facts)).entries.toList().takeLast(64).associate { it.toPair() }
+        }
+        val oldest = real[id]?.messages?.firstOrNull()?.time
+        val refreshed = ThreadSlice.merge(incoming, liveUpdates.value[id].orEmpty().filter { fact ->
+            incoming.any { it.id?.removeSuffix("#a") == fact.id?.removeSuffix("#a") }
+        })
+        val contiguous = if (!transientUpdate || oldest == null) refreshed else refreshed.filter { m ->
+            m.time >= oldest || m.id in known || m.id?.let { "$it#a" in known } == true
+        }
+        var next = real.fromMac(id, title, isGroup, contiguous, unread, counting)
+        // Quoted children can live in cache even when their changed parent does not.
+        if (transientUpdate) next = next.quoteFacts(id, refreshed)
         readIntents[id]?.let { intent ->
             if (counting) intent.arrivals += incoming.filter { !it.fromMe && it.id !in known }.map { it.id }.distinct().size
             next = next.unreadCount(id, intent.target + intent.arrivals)
         }
         publish(next)
+        val confirmed = pendingChanges.value.filter { (key, pending) ->
+            key.startsWith(id + "\u0000") && incoming.any(pending::confirmedBy)
+        }.keys
+        if (confirmed.isNotEmpty()) pendingChanges.value = pendingChanges.value - confirmed
         readIfLooking(id)
         // A new message from someone else, live: its conversation's notification, unless it is open on screen.
         val c = real[id] ?: return
@@ -177,13 +204,24 @@ object Messages {
     fun removed(
         id: String,
         ids: Collection<String>,
-    ) = publish(real.removed(id, ids))
+    ) {
+        deleted.value = (deleted.value + (id to (deleted.value[id].orEmpty() + ids).toList().takeLast(512).toSet()))
+            .entries.toList().takeLast(64).associate { it.toPair() }
+        liveUpdates.value = liveUpdates.value + (id to liveUpdates.value[id].orEmpty().filter { it.id?.removeSuffix("#a") !in ids })
+        publish(real.removed(id, ids))
+    }
 
-    /**
-     * The message each conversation's waiting quote is of, by the Mac's id, so a reply through the Mac is a real
-     * threaded reply. Set with the quote; used and forgotten by the next send.
-     */
-    val quoting = ConcurrentHashMap<String, String>()
+    private fun replyTarget(id: String, target: String?): String? =
+        Replies.target(target, real[id]?.messages.orEmpty())
+
+    private fun missingReply(id: String, quote: String?, target: String?, requested: Boolean = false): Boolean {
+        if (!Replies.missing(quote, target) && !(requested && target == null)) return false
+        warn(id, "This reply has no message target yet. Choose Reply again, wait for the Mac to accept the target, or remove the quote.")
+        return true
+    }
+
+    @Synchronized fun replyReady(id: String, quote: String?, target: String?): Boolean =
+        !missingReply(id, quote, replyTarget(id, target), requested = target != null)
 
     private fun markEntrance(id: String, clientId: String) {
         if (Alerts.front && Alerts.looking == id && picked == id) SendMotion.mark(clientId)
@@ -245,19 +283,21 @@ object Messages {
         text: String,
         quote: String? = null,
         hiddenLinks: Set<String> = emptySet(),
+        replyTo: String? = null,
     ): Sent {
         if (samples.value) {
             _book.value = _book.value.sent(id, text, System.currentTimeMillis(), quote)
             return Sent.Sent
         }
         if (linked) {
+            val target = replyTarget(id, replyTo)
+            if (missingReply(id, quote, target, requested = replyTo != null)) return Sent.MissingReplyTarget
             // A new try: the last one's error is old news.
             clearNotice(id)
             val clientId = java.util.UUID.randomUUID().toString()
             markEntrance(id, clientId)
-            publish(real.waiting(id, clientId, text, System.currentTimeMillis(), quote, Parts.links(text).mapNotNull { MacLink.previews.value[Parts.openable(it)]?.takeUnless { r -> r.url in hiddenLinks } }, hiddenLinks))
-            val replyTo = quoting.remove(id)?.takeIf { quote != null }?.removeSuffix("#a")
-            MacLink.send(id, text, replyTo, clientId, onAccepted = { accepted(id, clientId) }) { why ->
+            publish(real.waiting(id, clientId, text, System.currentTimeMillis(), quote, Parts.links(text).mapNotNull { MacLink.previews.value[Parts.openable(it)]?.takeUnless { r -> r.url in hiddenLinks } }, hiddenLinks, target))
+            MacLink.send(id, text, target, clientId, onAccepted = { accepted(id, clientId) }) { why ->
                 failed(id, clientId)
                 warn(id, "Not sent: $why")
             }
@@ -345,9 +385,11 @@ object Messages {
         text: String,
         summaries: List<String>,
         quote: String?,
-    ) {
+        replyTo: String? = null,
+    ): Boolean {
+        val target = replyTarget(id, replyTo)
+        if (missingReply(id, quote, target, requested = replyTo != null)) return false
         val now = System.currentTimeMillis()
-        quoting.remove(id)
         clearNotice(id)
         // Each photo, and the words, go on their own: one the Mac can't take doesn't stop the rest. Until the Mac shows a
         // photo back, the picked one stands for it.
@@ -355,9 +397,9 @@ object Messages {
             val clientId = java.util.UUID.randomUUID().toString()
             val type = context.contentResolver.getType(uri) ?: "image/jpeg"
             markEntrance(id, clientId)
-            val waiting = real.waiting(id, clientId, summaries.getOrElse(i) { "1 Photo" }, now + i, if (i == 0) quote else null)
+            val waiting = real.waiting(id, clientId, summaries.getOrElse(i) { "1 Photo" }, now + i, if (i == 0) quote else null, replyTo = target)
             publish(waiting.withFiles(id, "c:$clientId", listOf("local:$uri|$type")))
-            MacLink.sendFile(context, id, uri, clientId, onAccepted = { accepted(id, clientId) }) { why ->
+            MacLink.sendFile(context, id, uri, clientId, replyTo = target, onAccepted = { accepted(id, clientId) }) { why ->
                 failed(id, clientId)
                 warn(id, "Photo not sent: $why")
             }
@@ -365,12 +407,13 @@ object Messages {
         if (text.isNotBlank()) {
             val clientId = java.util.UUID.randomUUID().toString()
             markEntrance(id, clientId)
-            publish(real.waiting(id, clientId, text, now + photos.size))
-            MacLink.send(id, text, null, clientId, onAccepted = { accepted(id, clientId) }) { why ->
+            publish(real.waiting(id, clientId, text, now + photos.size, replyTo = target))
+            MacLink.send(id, text, target, clientId, onAccepted = { accepted(id, clientId) }) { why ->
                 failed(id, clientId)
                 warn(id, "Not sent: $why")
             }
         }
+        return true
     }
 
     /**
@@ -383,7 +426,10 @@ object Messages {
         id: String,
         ogg: java.io.File,
         quote: String?,
+        replyTo: String? = null,
     ): Boolean {
+        val target = replyTarget(id, replyTo)
+        if (missingReply(id, quote, target, requested = replyTo != null)) return false
         val dir = java.io.File(context.filesDir, "voice").apply { mkdirs() }
         val clientId = java.util.UUID.randomUUID().toString()
         val kept = java.io.File(dir, "$clientId.ogg")
@@ -394,9 +440,8 @@ object Messages {
             warn(id, "That voice message couldn't be made ready to send.")
             return false
         }
-        quoting.remove(id)
         clearNotice(id)
-        sendVoiceFile(id, clientId, kept, caf, quote)
+        sendVoiceFile(id, clientId, kept, caf, quote, target)
         return true
     }
 
@@ -406,13 +451,14 @@ object Messages {
         ogg: java.io.File,
         caf: java.io.File,
         quote: String?,
+        replyTo: String? = null,
     ) {
         synchronized(this) {
             markEntrance(id, clientId)
-            val waiting = real.waiting(id, clientId, VOICE, System.currentTimeMillis(), quote)
+            val waiting = real.waiting(id, clientId, VOICE, System.currentTimeMillis(), quote, replyTo = replyTo)
             publish(waiting.withFiles(id, "c:$clientId", listOf("local:${ogg.path}|$VOICE_MIME")))
         }
-        MacLink.sendVoice(id, caf, clientId, onAccepted = { accepted(id, clientId) }) { why ->
+        MacLink.sendVoice(id, caf, clientId, replyTo = replyTo, onAccepted = { accepted(id, clientId) }) { why ->
             failed(id, clientId)
             warn(id, "Voice message not sent: $why")
         }
@@ -453,6 +499,40 @@ object Messages {
         if (id == null || noticeFor == id) {
             notice.value = ""
             noticeFor = null
+        }
+    }
+
+    @Synchronized fun changeMessage(id: String, message: Message, text: String?, onDone: (String?) -> Unit = {}) {
+        fun reject(why: String) { warn(id, why); onDone(why) }
+        val target = Replies.target(message.id) ?: return reject("The Mac hasn't accepted this message yet.")
+        val current = real[id]?.messages?.firstOrNull { it.id?.removeSuffix("#a") == target } ?: message
+        val key = changeKey(id, target)
+        if (key in pendingChanges.value) return reject("A change is already waiting for confirmation.")
+        if (text != null && text.isBlank()) return reject("Type the edited message first.")
+        val now = System.currentTimeMillis()
+        if (!linked || !MacLink.messageActionsSupported || !current.fromMe || current.unsent ||
+            (if (text == null) !current.changes.canUnsend(now) else !current.changes.canEdit(now))) {
+            return reject("This message can't be changed now. Reload it to check its current status.")
+        }
+        clearNotice(id)
+        val pending = PendingMessageChange(target, text)
+        pendingChanges.value = pendingChanges.value + (key to pending)
+        MacLink.changeMessage(id, target, text) { failure ->
+            val confirmed = synchronized(this) {
+                val found = key !in pendingChanges.value
+                if (!found) pendingChanges.value = if (failure == null) pendingChanges.value + (key to pending.copy(accepted = true)) else pendingChanges.value - key
+                found
+            }
+            if (failure != null && !confirmed) warn(id, failure)
+            if (failure == null && !confirmed) reloadChange(id, target)
+            onDone(if (confirmed) null else failure)
+        }
+    }
+
+    fun reloadChange(id: String, target: String) {
+        MacLink.messageContext(id, target) { result ->
+            result.fold(onSuccess = { fromMac(id, null, null, it, counting = false, transientUpdate = true) },
+                onFailure = { warn(id, it.message ?: "Message status couldn't be reloaded.") })
         }
     }
 
@@ -499,6 +579,8 @@ object Messages {
         id: String,
         message: Message,
     ) {
+        val target = replyTarget(id, message.replyTo)
+        if (linked && missingReply(id, message.quote, target, requested = message.replyTo != null)) return
         publish(real.without(id, message))
         val local = message.files.firstOrNull { it.startsWith("local:") }
         // A voice message recorded here: the same recording, rewrapped again.
@@ -509,16 +591,16 @@ object Messages {
                 val clientId = java.util.UUID.randomUUID().toString()
                 val o = java.io.File(ogg.parentFile, "$clientId.ogg").also { ogg.renameTo(it) }
                 val c = java.io.File(ogg.parentFile, "$clientId.caf").also { caf.renameTo(it) }
-                sendVoiceFile(id, clientId, o, c, message.quote)
+                sendVoiceFile(id, clientId, o, c, message.quote, target)
             }
             return
         }
         if (local != null) {
             val uri = android.net.Uri.parse(local.removePrefix("local:").substringBeforeLast('|'))
-            sendPhotos(context, id, listOf(uri), "", listOf(message.text), message.quote)
+            sendPhotos(context, id, listOf(uri), "", listOf(message.text), message.quote, target)
             return
         }
-        send(context, id, message.text, message.quote)
+        send(context, id, message.text, message.quote, replyTo = target)
     }
 
     /** Notes in [id] what was handed to OpenBubbles to send, so the conversation shows it waiting there. */

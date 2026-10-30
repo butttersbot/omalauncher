@@ -97,6 +97,11 @@ object MacLink {
         }
     }
     @Volatile private var knownNames: Map<String, String> = emptyMap()
+    @Volatile var searchSupported: Boolean = false
+    @Volatile var threadsSupported: Boolean = false
+        private set
+    @Volatile var messageActionsSupported: Boolean = false
+        private set
     @Volatile private var ownHandles: Set<String> = emptySet()
     private fun normalized(handle: String) = handle.removePrefix("tel:").removePrefix("mailto:").lowercase()
 
@@ -133,7 +138,7 @@ object MacLink {
         to: MacAddress,
     ) {
         app = context.applicationContext
-        if (address != to) { previews.value = emptyMap(); previewAt.clear(); richLinksSupported = false; ownHandles = emptySet(); knownNames = emptyMap(); typing.value = TypingState() }
+        if (address != to) { previews.value = emptyMap(); previewAt.clear(); richLinksSupported = false; threadsSupported = false; searchSupported = false; messageActionsSupported = false; ownHandles = emptySet(); knownNames = emptyMap(); typing.value = TypingState() }
         address = to
         if (running) return
         running = true
@@ -239,7 +244,7 @@ object MacLink {
             m,
             nameOf = ::nameOf,
             quoteOf = { id ->
-                page.firstOrNull { it.id == id }?.let { q -> (if (q.fromMe) "You" else q.senderName ?: q.sender.orEmpty()) + ": " + q.text.take(90) }
+                page.firstOrNull { it.id == id }?.let { q -> (if (q.fromMe) "You" else q.sender?.let(::nameOf) ?: q.senderName ?: q.sender.orEmpty()) + ": " + MacWire.quoteText(q) }
                     ?: book?.messages?.lastOrNull { it.id == id || it.id == "$id#a" }?.let { q -> (if (q.fromMe) "You" else q.sender) + ": " + q.text.take(90) }
             },
         )
@@ -254,6 +259,9 @@ object MacLink {
         runCatching {
             val health = JSONObject(get(at, "/v1/health"))
             richLinksSupported = health.optJSONObject("capabilities")?.optBoolean("richLinks") == true
+            searchSupported = health.optJSONObject("capabilities")?.optBoolean("conversationSearch") == true
+            threadsSupported = health.optJSONObject("capabilities")?.optString("replyThreads") == "paged-history-scan"
+            messageActionsSupported = health.optJSONObject("capabilities")?.optBoolean("guardedMessageActions") == true && health.optBoolean("sendReady")
             val handles = health.optJSONObject("account")?.optJSONArray("handles")
             ownHandles = if (handles == null) emptySet() else (0 until handles.length()).map { normalized(handles.optString(it)) }.toSet()
         }
@@ -323,11 +331,9 @@ object MacLink {
                 val m = MacWire.msg(JSONObject(e.data))
                 if (!m.fromMe) { synchronized(this) { typing.value = typing.value.copy(people = typing.value.people.filterNot { it.chat == m.chatId && (m.sender == null || normalized(it.sender) == normalized(m.sender)) }) } }
                 val known = Messages.book.value[m.chatId] != null
-                if (m.unsent) {
-                    Messages.removed(m.chatId, listOf(m.id))
-                } else {
-                    Messages.fromMac(m.chatId, null, null, messagesOf(m), counting = e.type == "message.new", notify = e.type == "message.new")
-                }
+                Messages.fromMac(m.chatId, null, null, messagesOf(m), counting = e.type == "message.new" && !m.unsent && !m.edited,
+                    notify = e.type == "message.new" && !m.unsent && !m.edited,
+                    transientUpdate = e.type == "message.updated" || m.unsent || m.edited)
                 // A conversation not seen before: its name and people come with the chat list.
                 if (!known) io.execute { runCatching { sync(at) } }
             }
@@ -373,10 +379,13 @@ object MacLink {
         chat: String,
         photo: Uri,
         clientId: String,
+        replyTo: String? = null,
         onAccepted: () -> Unit = {},
         onFail: (String) -> Unit,
     ) {
         val at = address ?: return onFail("Not linked to a Mac.")
+        val target = Replies.target(replyTo)
+        if (replyTo != null && target == null) return onFail("Reply target is not ready.")
         val resolver = context.contentResolver
         sends.execute {
             runCatching {
@@ -390,6 +399,7 @@ object MacLink {
                     c.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
                     c.outputStream.buffered().use { out ->
                         out.write("--$boundary\r\nContent-Disposition: form-data; name=\"clientId\"\r\n\r\n$clientId\r\n".toByteArray())
+                        target?.let { out.write("--$boundary\r\nContent-Disposition: form-data; name=\"replyTo\"\r\n\r\n$it\r\n".toByteArray()) }
                         out.write("--$boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"photo.$ext\"\r\nContent-Type: $type\r\n\r\n".toByteArray())
                         resolver.openInputStream(photo)!!.use { it.copyTo(out) }
                         out.write("\r\n--$boundary--\r\n".toByteArray())
@@ -416,10 +426,13 @@ object MacLink {
         chat: String,
         caf: java.io.File,
         clientId: String,
+        replyTo: String? = null,
         onAccepted: () -> Unit = {},
         onFail: (String) -> Unit,
     ) {
         val at = address ?: return onFail("Not linked to a Mac.")
+        val target = Replies.target(replyTo)
+        if (replyTo != null && target == null) return onFail("Reply target is not ready.")
         sends.execute {
             runCatching {
                 val boundary = "soma" + System.nanoTime()
@@ -430,6 +443,7 @@ object MacLink {
                     c.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
                     c.outputStream.buffered().use { out ->
                         out.write("--$boundary\r\nContent-Disposition: form-data; name=\"clientId\"\r\n\r\n$clientId\r\n".toByteArray())
+                        target?.let { out.write("--$boundary\r\nContent-Disposition: form-data; name=\"replyTo\"\r\n\r\n$it\r\n".toByteArray()) }
                         out.write("--$boundary\r\nContent-Disposition: form-data; name=\"voiceNote\"\r\n\r\n1\r\n".toByteArray())
                         out.write("--$boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"Audio Message.caf\"\r\nContent-Type: audio/x-caf\r\n\r\n".toByteArray())
                         caf.inputStream().use { it.copyTo(out) }
@@ -480,6 +494,69 @@ object MacLink {
         actions.execute {
             val failure = runCatching { post(at, "/v1/chats/${path(chat)}/${if (read) "read" else "unread"}", timeout = 10_000) }.exceptionOrNull()
             onDone(failure?.let { it.message ?: "Your Mac did not take the action." })
+        }
+    }
+
+    /** Dedicated normalized read; never a local-only filter or raw debug API. */
+    fun replyThread(chat: String, root: String, cursor: String? = null, onDone: (Result<ThreadSlice>) -> Unit) {
+        val at = address ?: return onDone(Result.failure(IllegalStateException("Not linked to a Mac.")))
+        if (!threadsSupported) return onDone(Result.failure(IllegalStateException("Thread viewing isn't available from this Mac yet.")))
+        io.execute {
+            val result = runCatching {
+                val query = cursor?.let { "&cursor=${path(it)}" }.orEmpty()
+                ThreadSlice.read(JSONObject(get(at, "/v1/chats/${path(chat)}/threads/${path(root)}?limit=50$query")), ::messagesOf)
+            }.recoverCatching { throw IllegalStateException(conversationProblem(reason(at, it))) }
+            onDone(result)
+        }
+    }
+
+    fun search(chat: String, query: String, cursor: String?, onDone: (Result<SearchPage>) -> Unit) {
+        val at = address ?: return onDone(Result.failure(IllegalStateException("Not linked to a Mac.")))
+        if (!searchSupported) return onDone(Result.failure(IllegalStateException("Conversation search isn't available from this Mac yet.")))
+        io.execute {
+            onDone(runCatching {
+                SearchPage.read(JSONObject(get(at, "/v1/chats/${path(chat)}/search?q=${path(query)}&limit=50" +
+                    cursor?.let { "&cursor=${path(it)}" }.orEmpty())))
+            }.recoverCatching { throw IllegalStateException(conversationProblem(reason(at, it))) })
+        }
+    }
+
+    fun contextWindow(chat: String, message: String, onDone: (Result<ContextWindow>) -> Unit) {
+        val at = address ?: return onDone(Result.failure(IllegalStateException("Not linked to a Mac.")))
+        if (!threadsSupported) return onDone(Result.failure(IllegalStateException("Message context isn't available from this Mac yet.")))
+        io.execute {
+            onDone(runCatching {
+                val response = JSONObject(get(at, "/v1/messages/${path(message)}/context?chatId=${path(chat)}&limit=40"))
+                val records = response.getJSONArray("messages").let { a -> (0 until a.length()).map { MacWire.msg(a.getJSONObject(it)) } }
+                ContextWindow(records.flatMap { messagesOf(it, records) }, response.optBoolean("hasOlder"), response.optBoolean("hasNewer"))
+            }.recoverCatching { throw IllegalStateException(conversationProblem(reason(at, it))) })
+        }
+    }
+
+    fun messageContext(chat: String, message: String, onDone: (Result<List<Message>>) -> Unit) {
+        val at = address ?: return onDone(Result.failure(IllegalStateException("Not linked to a Mac.")))
+        if (!threadsSupported) return onDone(Result.failure(IllegalStateException("Message context isn't available from this Mac yet.")))
+        io.execute {
+            val result = runCatching {
+                val response = JSONObject(get(at, "/v1/messages/${path(message)}/context?chatId=${path(chat)}&limit=40"))
+                val records = response.getJSONArray("messages").let { a -> (0 until a.length()).map { MacWire.msg(a.getJSONObject(it)) } }
+                records.flatMap { messagesOf(it, records) }
+            }.recoverCatching { throw IllegalStateException(conversationProblem(reason(at, it))) }
+            onDone(result)
+        }
+    }
+
+    /** No fallback to the old unguarded endpoint: an old Mac must refuse rather than silently downgrade. */
+    fun changeMessage(chat: String, message: String, text: String?, onDone: (String?) -> Unit) {
+        val at = address ?: return onDone("Not linked to a Mac.")
+        if (!messageActionsSupported) return onDone("Message changes aren't available from this Mac yet.")
+        actions.execute {
+            val result = runCatching {
+                val body = JSONObject().put("chatId", chat)
+                text?.let { body.put("text", it) }
+                post(at, "/v1/messages/${path(message)}/actions/${if (text == null) "unsend" else "edit"}", body, timeout = 10_000)
+            }
+            onDone(result.exceptionOrNull()?.let { conversationProblem(reason(at, it)) })
         }
     }
 

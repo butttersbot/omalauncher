@@ -1,0 +1,100 @@
+# canvas-app: soma-messages
+# Demo-only parity UI, with native rich-link fixtures from the isolated API branch.
+# Soma Messages linked to the Mac's iMessage service (0.6+). Against the service's DEMO on the Mac Pro: sample
+# chats only, nothing of Boss's; every send gets a fake reply 2 s later. The harness must inject its ephemeral port/token; the checked-in endpoint fails closed.
+shell cmd statusbar collapse
+key HOME
+# A clean start: not linked yet, no contacts answer.
+shell pm clear dev.omalauncher.messages
+# Contacts allowed ahead, so Android's prompt (whose title also says Allow) doesn't cover the inbox.
+shell pm grant dev.omalauncher.messages android.permission.READ_CONTACTS
+# 0.7+ asks for notifications when linked; granted here so its prompt does not cover the inbox.
+shell pm grant dev.omalauncher.messages android.permission.POST_NOTIFICATIONS
+shell pm grant dev.omalauncher.messages android.permission.RECORD_AUDIO
+# Quoted twice: walk.py hands the line to the phone's shell, which would split the link at '&'.
+shell am start -a android.intent.action.VIEW -d "'soma-messages://link?url=http%3A%2F%2F127.0.0.1%3A1&token=INJECT_EPHEMERAL_DEMO_TOKEN'" dev.omalauncher.messages
+wait 2500
+# The owner says yes to the Mac by name before anything goes to it.
+expect Get your iMessages from 100.120.219.46?
+shot link-dialog
+tap Link
+wait 1500
+# Names come from the phone's contacts; the Mac's names stand in when the phone has none.
+wait 4000
+expect Weekend
+expect Ana Demo
+absent OpenBubbles
+shot inbox-from-the-mac
+# Guarded mutations on fresh synthetic own messages. The harness checks counts/history and rejects a sixth edit.
+tap Ana Demo
+doubletap Undo this demo message
+expect Undo Send
+shot eligible-message-actions card=messages-parity-edit-actions
+tap Undo Send
+wait 1000
+expect You unsent a message
+absent Undo this demo message
+shot unsent-notice card=messages-parity-unsent
+doubletap Edit this demo message
+expect Edit
+tap Edit
+expect Edit message
+replace "Edit message" CANCELLED-EDIT
+shot inline-edit-cancel card=messages-parity-inline-edit
+tap Cancel edit
+absent CANCELLED-EDIT
+expect Edit this demo message
+doubletap Edit this demo message
+tap Edit
+replace "Edit message" EDIT-ONE
+tap Save edit
+expect EDIT-ONE
+expect Edited
+shot first-edit card=messages-parity-inline-edit
+doubletap EDIT-ONE
+tap Edit
+replace "Edit message" EDIT-TWO
+tap Save edit
+expect EDIT-TWO
+doubletap EDIT-TWO
+tap Edit
+replace "Edit message" EDIT-THREE
+tap Save edit
+expect EDIT-THREE
+doubletap EDIT-THREE
+tap Edit
+replace "Edit message" EDIT-FOUR
+tap Save edit
+expect EDIT-FOUR
+doubletap EDIT-FOUR
+tap Edit
+replace "Edit message" EDIT-FIVE
+tap Save edit
+expect EDIT-FIVE
+doubletap EDIT-FIVE
+expect Show replies
+absentexact Edit
+shot fifth-edit-menu card=messages-parity-edit-actions
+key BACK
+tap Edit history for: EDIT-FIVE
+expect Edit history
+expect Current
+expect Edit this demo message
+expect EDIT-ONE
+expect EDIT-FOUR
+expect EDIT-FIVE
+shot five-edit-history card=messages-parity-edit-history
+tap Done
+expect EDIT-FIVE
+shell am force-stop dev.omalauncher.messages
+shell am start -n dev.omalauncher.messages/.MainActivity
+tap Ana Demo
+expect EDIT-FIVE
+expect You unsent a message
+tap Edit history for: EDIT-FIVE
+expect EDIT-ONE
+expect EDIT-FOUR
+shot history-after-restart card=messages-parity-edit-history
+tap Done
+key BACK
+expect Messages

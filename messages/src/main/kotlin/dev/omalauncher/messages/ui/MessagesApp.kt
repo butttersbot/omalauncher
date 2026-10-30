@@ -71,7 +71,7 @@ fun MessagesApp(resumed: Int) {
     // Each conversation keeps its own draft, kept on the phone (Desk) so it outlasts the app.
     val drafts = remember { HashMap<String, ComposerState>() }
     // And its quoted reply and attachments, waiting with it.
-    val pending = remember { Pending().apply { Desk.left.value.forEach { (id, l) -> l.quote?.let { quotes[id] = it } } } }
+    val pending = remember { Pending().apply { Desk.left.value.forEach { (id, l) -> l.quote?.let { quotes[id] = it }; l.replyTo?.let { replyTo[id] = it } } } }
     fun draft(id: String) = drafts.getOrPut(id) { ComposerState(Desk[id].draft) }
     // The unfolded workspace's panel and what it shows, kept here so folding and unfolding again doesn't lose them.
     val desk = remember { WorkspaceState() }
