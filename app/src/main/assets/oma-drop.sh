@@ -72,7 +72,10 @@ connect() {
     port=$(cat "$port_file" 2>/dev/null)
     if [[ $port =~ ^[0-9]+$ ]]; then
       at=127.0.0.1:$port
-      adb_call connect "$at" >/dev/null 2>&1 || return 1
+      # A refused connect is a stale port, looked for again on the next try; only a hung adb (timeout's 124, or 137
+      # once killed) gives up on adb here and leaves receiving to Oma.
+      adb_call connect "$at" >/dev/null 2>&1
+      [ $? -ge 124 ] && return 1
       [ "$(adb_call -s "$at" get-state 2>/dev/null)" = device ] && return
     fi
   done

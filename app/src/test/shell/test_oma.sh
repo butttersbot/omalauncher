@@ -101,7 +101,9 @@ cat >"$root/fake/adb" <<'FAKE'
 printf 'adb %s\n' "$*" >>"$CALLS"
 online="127.0.0.1:$(cat "$PHONE/port")"
 case $1 in
-  start-server | connect) exit 0 ;;
+  start-server) exit 0 ;;
+  # As real adb does, a port nothing listens on is refused (exit 1): a stale port, which is looked for again.
+  connect) [ "$2" = "$online" ] || { echo "failed to connect to '$2'"; exit 1; }; exit 0 ;;
   -s) [ "$2" = "$online" ] || { echo "error: device '$2' not found" >&2; exit 1; } ;;
   *) exit 1 ;;
 esac
@@ -118,6 +120,9 @@ cat >"$root/fake/oma-dev" <<'FAKE'
 echo "oma-dev $*" >>"$CALLS"
 cp "$PHONE/port" "$HOME/.config/oma-development/install-port"
 FAKE
+# The port finder oma drop prefers, where it is installed (the Fold has one in /usr/local/bin): stood in for too, as the
+# same oma-dev stand-in, so the suite asks the stand-ins and never the real one, on whatever machine it runs.
+printf '#!/bin/sh\nexec oma-dev --status\n' >"$root/fake/oma-adb"
 cat >"$root/fake/curl" <<'FAKE'
 #!/bin/bash
 printf 'curl %s\n' "$*" >>"$CALLS"
