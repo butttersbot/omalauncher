@@ -505,7 +505,10 @@ class Records(Base):
         self.assertEqual(by['tailscaled']['restart'].get('blocked_reason'), 'owner_verified_control_broker_unavailable')
         saved_helper, S.helper_installed = S.helper_installed, lambda: True
         self.addCleanup(lambda: setattr(S, 'helper_installed', saved_helper))
-        self.assertTrue({s['id']: s for s in self.control.inventory()['services']}['tailscaled']['restart']['supported'])
+        with_helper = {s['id']: s for s in self.control.inventory()['services']}
+        if S.placement('whisper')[2] == 'privileged':
+            self.assertTrue(with_helper['whisper']['restart']['supported'])
+        self.assertFalse(with_helper['tailscaled']['restart']['supported'])  # never through the helper: see its table
         S.helper_installed = saved_helper
         self.assertTrue(by['canvas']['restart']['supported'])
         self.assertNotIn('nonce', json.dumps(inv))
@@ -1398,9 +1401,9 @@ class PrivilegedHelper(unittest.TestCase):
         self.assertEqual(stat.S_IMODE(os.stat(self.dir / 'used-approvals').st_mode), 0o700)
 
     def test_unsigned_or_self_asserted_calls_are_refused(self):
-        unsigned = self.proof('tailscaled')
+        unsigned = self.proof('whisper')
         del unsigned['owner_signature']
-        for body in (unsigned, {'service': 'tailscaled', 'owner': True}, {'service': 'tailscaled'}, {**self.proof('tailscaled'), 'owner_signature': sign(owner_key()[0], 'x')}):
+        for body in (unsigned, {'service': 'whisper', 'owner': True}, {'service': 'whisper'}, {**self.proof('whisper'), 'owner_signature': sign(owner_key()[0], 'x')}):
             r = self.run_helper(body)
             self.assertEqual(r.returncode, 65, body.keys())
             self.assertEqual(r.stdout, '')
@@ -1408,7 +1411,7 @@ class PrivilegedHelper(unittest.TestCase):
 
     def test_the_signature_binds_service_host_expiry_and_key(self):
         cases = {
-            'bad_signature': self.proof('tailscaled', sign_service='herd'),
+            'bad_signature': self.proof('whisper', sign_service='herd'),
             'wrong_host': self.proof('herd', host='other-mac'),
             'expired': self.proof('herd', expires=int(time.time() * 1000) - 1),
             'expired ': self.proof('herd', expires=int(time.time() * 1000) + 3_600_000),  # far-future expiry is refused too
@@ -1442,10 +1445,15 @@ class PrivilegedHelper(unittest.TestCase):
         trust['keys'][0]['revoked'] = False
         (self.dir / 'connections-owner-keys.json').write_text(json.dumps(trust))
         # Wrong service: a signature for one service on a request for another, a service the helper doesn't have, and its own request edited.
-        self.assertEqual(self.run_helper(self.proof('tailscaled', sign_service='embeddings')).stderr.strip(), 'refused: bad_signature')
-        for service in ('canvas', 'runner', 'soma', '../../bin/sh', 'herd; reboot'):
+        self.assertEqual(self.run_helper(self.proof('whisper', sign_service='embeddings')).stderr.strip(), 'refused: bad_signature')
+        for service in ('canvas', 'runner', 'soma', 'tailscaled', '../../bin/sh', 'herd; reboot'):
             r = self.run_helper(self.proof(service))
             self.assertEqual((r.returncode, r.stdout, r.stderr.strip()), (65, '', 'refused: bad_request'), service)
+        # A trailing newline doesn't slip past the shape checks, signed or not.
+        for over in ('approval', 'nonce'):
+            body = self.proof('herd')
+            body[over] += '\n'
+            self.assertEqual(self.run_helper(body).stderr.strip(), 'refused: bad_request', over)
         # Replayed: the same one, alone and from inside a signed plan; and each entry of a plan only for itself.
         body = self.proof('herd')
         self.assertEqual(self.run_helper(body).returncode, 0)
@@ -1456,7 +1464,7 @@ class PrivilegedHelper(unittest.TestCase):
         self.assertEqual((r.returncode, r.stdout, r.stderr.strip()), (65, '', 'refused: approval_already_used'))
         # A plan's signature doesn't stretch to a restart that isn't in it, however it is dressed.
         extra = self.proof('whisper', plan=[])
-        outsider = base64.b64encode(S.canonical_payload('svc-' + 'b' * 32, 'm' * 32, 'tailscaled', 'jacks-mac-pro', extra['expires_at']).encode()).decode()
+        outsider = base64.b64encode(S.canonical_payload('svc-' + 'b' * 32, 'm' * 32, 'herd', 'jacks-mac-pro', extra['expires_at']).encode()).decode()
         r = self.run_helper({**extra, 'owner_payloads': extra['owner_payloads'] + [outsider]})
         self.assertEqual((r.returncode, r.stderr.strip()), (65, 'refused: bad_signature'))
 
@@ -1522,7 +1530,8 @@ class PrivilegedHelper(unittest.TestCase):
     def test_the_helper_table_is_exactly_the_privileged_allowlist(self):
         import re
         table = dict(re.findall(r'^    "([a-z-]+)": "([A-Za-z0-9.-]+)",$', self.source.read_text(), re.M))
-        self.assertEqual(table, {k: v[1] for k, v in S.SERVICES.items() if v[2] == 'privileged'})
+        self.assertEqual(table, {k: v[1] for k, v in S.SERVICES.items() if k in S.HELPER_SERVICES})
+        self.assertEqual(S.HELPER_SERVICES, {k for k, v in S.SERVICES.items() if v[2] == 'privileged'} - {'tailscaled'})
 
 class HelperInstaller(unittest.TestCase):
     """Run for real in a test's own folder, with no root: everything but the ownership and the sudo smoke test."""
@@ -1545,7 +1554,7 @@ class HelperInstaller(unittest.TestCase):
         return subprocess.run(['/bin/sh', str(self.installer), *args], capture_output=True, text=True, timeout=300, env=env)
 
     def test_install_lays_out_a_build_with_no_test_mode_the_one_rule_and_a_key_the_runner_accepts(self):
-        r = self.run_it('install', 'jacks-mac-pro', str(self.dir / 'key.json'), self.sha)
+        r = self.run_it('install', 'jacks-mac-pro', str(self.dir / 'key.json'), self.key_id, self.sha)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn(self.key_id, r.stdout)
         rule = (self.root / 'etc/sudoers.d/soma-service-helper').read_text()
@@ -1561,6 +1570,8 @@ class HelperInstaller(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertFalse(binary.exists() or (self.root / 'etc/sudoers.d/soma-service-helper').exists())
         self.assertTrue((support / 'connections-owner-keys.json').exists())
+        self.assertEqual(self.run_it('untrust').returncode, 0)
+        self.assertFalse((support / 'connections-owner-keys.json').exists())
 
     def owned_ok(self, path):  # above the test's own folder, /tmp's folders are not this user's: only the file's own rules are tested here
         info = os.lstat(path)
@@ -1569,20 +1580,27 @@ class HelperInstaller(unittest.TestCase):
         return os.lstat('/usr')
 
     def test_nothing_is_installed_from_a_changed_source_or_a_bad_key(self):
-        r = self.run_it('install', 'jacks-mac-pro', str(self.dir / 'key.json'), '0' * 64)
+        r = self.run_it('install', 'jacks-mac-pro', str(self.dir / 'key.json'), self.key_id, '0' * 64)
         self.assertEqual(r.returncode, 65)
         self.assertIn("isn't the reviewed one", r.stderr)
         self.assertFalse(self.root.exists())
         for name, key in (('wrong id', {**self.key, 'key_id': 'a' * 64}), ('json in the key', {**self.key, 'public_key': 'abc", "revoked": true, "x": "'}),
                           ('another algorithm', {**self.key, 'algorithm': 'rsa'}), ('no key', {'schema': 1})):
-            r = self.run_it('trust', str(self.dir / 'key.json'), key=key)
+            r = self.run_it('trust', str(self.dir / 'key.json'), self.key_id, key=key)
             self.assertEqual(r.returncode, 65, name)
             self.assertFalse((self.root / 'Library/Application Support/Soma/connections-owner-keys.json').exists(), name)
+        # A swapped key: sound in itself, and not the one he read on the phone.
+        r = self.run_it('install', 'jacks-mac-pro', str(self.dir / 'key.json'), 'a' * 64, self.sha)
+        self.assertEqual(r.returncode, 65)
+        self.assertIn("isn't the one you named", r.stderr)
+        self.assertFalse(self.root.exists() and (self.root / 'Library/Application Support/Soma/connections-owner-keys.json').exists())
+        self.assertFalse((self.root / 'etc/sudoers.d/soma-service-helper').exists())
 
     def test_it_needs_root_a_plain_user_and_a_plain_host(self):
-        self.assertEqual(self.run_it('trust', str(self.dir / 'key.json'), root=False).returncode, 77)
-        self.assertEqual(self.run_it('install', 'Bad Host', str(self.dir / 'key.json'), self.sha).returncode, 64)
-        self.assertEqual(self.run_it('install', 'jacks-mac-pro', str(self.dir / 'key.json'), self.sha, user='root').returncode, 64)
+        self.assertEqual(self.run_it('trust', str(self.dir / 'key.json'), self.key_id, root=False).returncode, 77)
+        self.assertEqual(self.run_it('trust', str(self.dir / 'key.json')).returncode, 64)  # the id he read is not optional
+        self.assertEqual(self.run_it('install', 'Bad Host', str(self.dir / 'key.json'), self.key_id, self.sha).returncode, 64)
+        self.assertEqual(self.run_it('install', 'jacks-mac-pro', str(self.dir / 'key.json'), self.key_id, self.sha, user='root').returncode, 64)
         self.assertEqual(self.run_it('remove', 'x').returncode, 64)
         r = self.run_it('print-sudoers', 'jackkim', root=False)
         self.assertEqual(r.stdout, 'jackkim ALL=(root) NOPASSWD: /Library/PrivilegedHelperTools/soma-service-helper ""\n')
@@ -1608,6 +1626,9 @@ class LiveBackendAndTheHelper(unittest.TestCase):
         def run(argv, input=None, **k):
             asked.append((argv, input))
             return Fake(returncode=0, stdout='', stderr='')
+        with self.assertRaises(S.Blocked):
+            S.LiveBackend().privileged('tailscaled', {}, run=run)
+        self.assertEqual(asked, [])
         S.LiveBackend().privileged('herd', {'owner_signature': 'SIG'}, run=run)
         self.assertEqual(asked, [(['/usr/bin/sudo', '-n', '/Library/PrivilegedHelperTools/soma-service-helper'], '{"owner_signature": "SIG"}')])
         refused = lambda argv, **k: Fake(returncode=65, stdout='', stderr='refused: approval_already_used\n')

@@ -28,6 +28,7 @@ KEEP_RECORDS = 200
 LAUNCHCTL = '/bin/launchctl'
 PRIVILEGED_HELPER = pathlib.Path('/Library/PrivilegedHelperTools/soma-service-helper')  # install-service-helper.sh, Boss, by hand
 SUDO = '/usr/bin/sudo'
+HELPER_SERVICES = {'tailshare-serve', 'tailshare-receive', 'herd', 'embeddings', 'whisper'}  # soma-service-helper.swift's table, which says why not tailscaled
 
 
 def now_ms():
@@ -519,7 +520,7 @@ class LiveBackend:
 
     def privileged(self, service, proof, run=subprocess.run):
         # The helper checks the owner's signature itself and takes the proof on stdin only, so it's in no argv or log.
-        if not helper_installed():
+        if not helper_installed() or service not in HELPER_SERVICES:
             raise Blocked('privileged_helper_missing')
         r = run([SUDO, '-n', str(PRIVILEGED_HELPER)], input=json.dumps(proof), capture_output=True, text=True, timeout=30, check=False)
         if r.returncode == 0:
@@ -1277,7 +1278,7 @@ class Controller:
             blocked = None
             if not installed(service):
                 blocked = 'not_installed'
-            elif mode == 'privileged' and not helper_installed():
+            elif mode == 'privileged' and not (helper_installed() and service in HELPER_SERVICES):
                 blocked = 'owner_verified_control_broker_unavailable'
             elif not verifiable(service):
                 blocked = 'incomplete_capability_proof' if MISSING_EVIDENCE.get(service) else 'no_capability_probe'

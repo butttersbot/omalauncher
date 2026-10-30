@@ -108,4 +108,15 @@ class AgentTroubleTest {
         assertEquals("Confirmed · mac: soma. Real traffic has passed since the restart.", repairAfterTraffic(line, ConnectionsSnapshot(listOf(confirmed), now)))
         assertEquals("Other words", repairAfterTraffic("Other words", ConnectionsSnapshot(listOf(confirmed), now)))
     }
+    @Test fun aRunnerCantCallItselfAnotherMacAndASmallClockDifferenceIsFine() {
+        assertNull(runnerHostProblem(null, "jacks-mac-pro", emptySet()))
+        assertNull(runnerHostProblem("jacks-mac-pro", "jacks-mac-pro", emptySet()))
+        assertNotNull(runnerHostProblem("macbook", "jacks-mac-pro", emptySet()))
+        assertNotNull(runnerHostProblem(null, "jacks-mac-pro", setOf("jacks-mac-pro")))
+        assertTrue(ServiceApproval("a", "", "herd", "h", now + 125_000).fresh(now))
+        assertFalse(ServiceApproval("a", "", "herd", "h", now + 131_000).fresh(now))
+        val ahead = JSONObject().put("id", "canvas").put("state", "running").put("restart", JSONObject().put("supported", true))
+            .put("probe", JSONObject().put("checks", JSONArray().put(JSONObject().put("check", "c").put("result", "fail"))).put("checked_at", now + 5_000))
+        assertTrue(restoreTriage(ahead, "mac", now).restart)
+    }
 }

@@ -1,10 +1,13 @@
 #!/bin/sh
 # Installs what lets the phone's Restore work on this Mac. Boss runs it himself, with sudo; no agent ever does.
-#   sudo sh install-service-helper.sh trust KEY.json            the owner's public key, for any Restore on this Mac
-#   sudo sh install-service-helper.sh install HOST KEY.json SHA256    that, and the root helper for this Mac's system services
-#   sudo sh install-service-helper.sh remove                    takes the helper's sudo rule and binary away; the key stays
-#   sh install-service-helper.sh print-sudoers USER             shows the one sudo rule
-# KEY.json is the phone's export (owner-public-key.json); SHA256 is soma-service-helper.swift's, as the reviewed commit has it.
+#   sudo sh install-service-helper.sh trust KEY.json KEY_ID                 the owner's public key, for any Restore on this Mac
+#   sudo sh install-service-helper.sh install HOST KEY.json KEY_ID SHA256    that, and the root helper for this Mac's system services
+#   sudo sh install-service-helper.sh remove                                 takes the helper's sudo rule and binary away; the key stays
+#   sudo sh install-service-helper.sh untrust                                takes the owner's key away: no Restore on this Mac
+#   sh install-service-helper.sh print-sudoers USER                          shows the one sudo rule
+# KEY.json is the phone's export (owner-public-key.json), KEY_ID the fingerprint Boss read on the phone, SHA256
+# soma-service-helper.swift's in the reviewed commit. Agents can write this folder and the key file's folder: run a root-owned
+# copy of this script, after comparing its hash, and let the KEY_ID refuse a key that isn't the phone's.
 # The sudo rule allows the helper with no arguments and nothing else, and the helper does nothing without the owner's
 # signature for that exact restart. So nothing here gives this user any power of its own.
 set -eu
@@ -40,12 +43,12 @@ install_trust() {
     case "$id" in *[!0-9a-f]*) die "the key id is not plain hex" ;; esac
     worked=$(printf '%s' "$public" | base64 -D | shasum -a 256 | cut -d' ' -f1)
     [ "$worked" = "$id" ] || die "the key id doesn't match the key"
+    [ "$id" = "$2" ] || die "this key isn't the one you named; nothing was installed"
     file="$WORK/keys.json"
     printf '{"version": 1, "keys": [{"key_id": "%s", "algorithm": "ecdsa-p256-sha256", "public_key": "%s", "label": "Fold", "device": "fold", "added_at": %s000, "revoked": false}]}\n' \
         "$id" "$public" "$(date +%s)" > "$file"
     place 0644 "$file" "$SUPPORT/connections-owner-keys.json"
-    echo "Owner key installed. Compare this with the phone before going on:"
-    echo "  $id"
+    echo "Owner key installed: $id"
 }
 
 fresh_work() {
@@ -60,24 +63,25 @@ case "$mode" in
     [ $# = 2 ] || die "usage: print-sudoers USER" 64
     plain_user "$2"; rule_for "$2" ;;
   trust)
-    [ $# = 2 ] || die "usage: trust KEY.json" 64
+    [ $# = 3 ] || die "usage: trust KEY.json KEY_ID" 64
     need_root; fresh_work
-    install_trust "$2" ;;
+    install_trust "$2" "$3" ;;
   install)
-    [ $# = 4 ] || die "usage: install HOST KEY.json SHA256" 64
+    [ $# = 5 ] || die "usage: install HOST KEY.json KEY_ID SHA256" 64
     need_root; fresh_work
     user=${SUDO_USER:-${SOMA_INSTALL_TEST_USER:-}}
     plain_user "$user"
     host=$2
     case "$host" in ''|*[!a-z0-9-]*) die "HOST is this Mac's name as its runner says it" 64 ;; esac
     # The very bytes that were hashed are the ones built.
+    [ -f "$HERE/soma-service-helper.swift" ] && [ ! -L "$HERE/soma-service-helper.swift" ] || die "no soma-service-helper.swift beside this script"
     cp "$HERE/soma-service-helper.swift" "$WORK/helper.swift"
-    [ "$(shasum -a 256 "$WORK/helper.swift" | cut -d' ' -f1)" = "$4" ] || die "soma-service-helper.swift isn't the reviewed one; nothing was installed"
+    [ "$(shasum -a 256 "$WORK/helper.swift" | cut -d' ' -f1)" = "$5" ] || die "soma-service-helper.swift isn't the reviewed one; nothing was installed"
     (cd "$WORK" && env -i PATH=/usr/bin:/bin HOME="$WORK" /usr/bin/swiftc -O helper.swift -o helper) || die "the helper didn't build; nothing was installed"
     printf '{"version": 1, "host": "%s"}\n' "$host" > "$WORK/helper.json"
     rule_for "$user" > "$WORK/rule"
     visudo -cf "$WORK/rule" >/dev/null || die "the sudo rule didn't check out; nothing was installed"
-    install_trust "$3"
+    install_trust "$3" "$4"
     place 0644 "$WORK/helper.json" "$SUPPORT/helper.json"
     place 0755 "$WORK/helper" "$HELPER"
     # The rule goes in last: until then nothing can be asked for.
@@ -93,5 +97,10 @@ case "$mode" in
     need_root
     rm -f "$ROOT$RULE" "$ROOT$HELPER" "$ROOT$SUPPORT/helper.json"
     echo "Helper and its sudo rule removed. The owner key stays: Restore of this Mac's own user services still needs it." ;;
-  *) die "usage: install-service-helper.sh trust KEY.json | install HOST KEY.json SHA256 | remove | print-sudoers USER" 64 ;;
+  untrust)
+    [ $# = 1 ] || die "usage: untrust" 64
+    need_root
+    rm -f "$ROOT$SUPPORT/connections-owner-keys.json"
+    echo "Owner key removed. No Restore can run on this Mac until one is installed again." ;;
+  *) die "usage: install-service-helper.sh trust KEY.json KEY_ID | install HOST KEY.json KEY_ID SHA256 | remove | untrust | print-sudoers USER" 64 ;;
 esac

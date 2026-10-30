@@ -23,8 +23,9 @@ let services: [String: String] = [
     "herd": "dev.herd.node",
     "embeddings": "dev.omalauncher.embed-server",
     "whisper": "dev.omalauncher.whisper-server",
-    "tailscaled": "homebrew.mxcl.tailscale",
 ]
+// Not tailscaled: every service here runs as the runner's own user, but Homebrew's tailscaled runs as root from a binary that user
+// owns, so restarting it would run whatever is there as root. And a Mac without it can't be reached to be asked.
 let payloadTag = "soma-service-restart-v1"
 let planTag = "soma-service-restart-plan-v1"
 let maxPlan = 16, maxPayload = 2048, maxKeys = 8, maxInput = 65_536
@@ -84,10 +85,10 @@ let input = FileHandle.standardInput.readData(ofLength: maxInput + 1)
 alarm(0)
 if input.count > maxInput { fail("too_large") }
 let proof = object(input)
-guard let approval = proof["approval"] as? String, approval.range(of: "^svc-[0-9a-f]{32}$", options: .regularExpression) != nil,
-      let nonce = proof["nonce"] as? String, nonce.range(of: "^[A-Za-z0-9_-]{16,64}$", options: .regularExpression) != nil,
+guard let approval = proof["approval"] as? String, approval.range(of: "\\Asvc-[0-9a-f]{32}\\z", options: .regularExpression) != nil,
+      let nonce = proof["nonce"] as? String, nonce.range(of: "\\A[A-Za-z0-9_-]{16,64}\\z", options: .regularExpression) != nil,
       let service = proof["service"] as? String, let label = services[service],
-      let host = proof["host"] as? String, host.range(of: "^[a-z0-9-]{1,63}$", options: .regularExpression) != nil,
+      let host = proof["host"] as? String, host.range(of: "\\A[a-z0-9-]{1,63}\\z", options: .regularExpression) != nil,
       let expires = (proof["expires_at"] as? NSNumber)?.int64Value,
       let keyId = proof["owner_key_id"] as? String, let signatureB64 = proof["owner_signature"] as? String,
       let signatureDer = Data(base64Encoded: signatureB64)

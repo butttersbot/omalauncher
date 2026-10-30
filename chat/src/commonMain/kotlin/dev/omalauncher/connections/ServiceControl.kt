@@ -6,11 +6,14 @@ import java.net.HttpURLConnection
 import java.net.URI
 import java.util.Base64
 
+/** How far apart the phone's clock and a Mac's may be, as the root helper allows: challenges are stamped by the Mac. */
+const val SERVICE_CLOCK_SKEW_MS = 10_000L
+
 val CONNECTION_SERVICE_IDS = setOf("runner", "tailshare-serve", "tailshare-receive", "herd", "embeddings", "whisper", "soma", "canvas", "imessage-api", "imessage-transport", "syncthing", "tailscaled")
 
 data class ServiceApproval(val id: String, val nonce: String, val service: String, val host: String, val expiresAt: Long) {
     val payload: String get() = listOf("soma-service-restart-v1", id, nonce, service, host, expiresAt.toString()).joinToString("\n")
-    fun fresh(now: Long) = expiresAt > now && expiresAt - now <= 120_000
+    fun fresh(now: Long) = expiresAt > now && expiresAt - now <= 120_000 + SERVICE_CLOCK_SKEW_MS
     companion object {
         fun parse(json: JSONObject, expectedService: String, expectedHost: String, now: Long): ServiceApproval {
             val result = ServiceApproval(json.getString("id"), json.getString("nonce"), json.getString("service"), json.getString("host"), json.getLong("expires_at"))
@@ -118,6 +121,16 @@ data class ServiceOperation(val id: String, val approval: String, val service: S
     }
 }
 
+/**
+ * What a runner says its host is decides what the owner's signature names, so it can't change: another Mac's runner calling itself
+ * this Mac could get a restart signed for it. [pinned] is what this paired runner first said; [seen] the hosts already asked this round.
+ */
+fun runnerHostProblem(pinned: String?, host: String, seen: Set<String>): String? = when {
+    pinned != null && pinned != host -> "This runner called itself $pinned before and $host now; no repair inferred."
+    host in seen -> "Two runners call themselves $host; no repair inferred."
+    else -> null
+}
+
 /** What a Restore does with one service of a Mac's inventory: only a service that is really down is restarted. */
 data class RestoreTriage(val restart: Boolean, val blocked: List<ConnectionCheck> = emptyList())
 fun restoreTriage(service: JSONObject, host: String, now: Long): RestoreTriage {
@@ -126,7 +139,7 @@ fun restoreTriage(service: JSONObject, host: String, now: Long): RestoreTriage {
         return RestoreTriage(false, listOf(ConnectionCheck(id, host, result = "unverified", fields = mapOf("reason" to "Managed service is not installed on this host; no restart inferred."))))
     val probe = service.optJSONObject("probe")
     val proofAge = now - (probe?.optLong("checked_at", 0) ?: 0)
-    if (probe == null || proofAge !in 0..30_000)
+    if (probe == null || proofAge !in -SERVICE_CLOCK_SKEW_MS..30_000)
         return RestoreTriage(false, listOf(ConnectionCheck(id, host, result = "unverified", fields = mapOf("reason" to "Service proof is absent or stale; no repair inferred."))))
     val wire = probe.optJSONArray("checks") ?: JSONArray()
     // A scoped row (a build tool, an agent's error) isn't this service being down, and a restart wouldn't change it. A quiet

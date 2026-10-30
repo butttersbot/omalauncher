@@ -17,7 +17,7 @@ internal class ConnectionRestorer(private val context: Context, private val runt
     private val main = Handler(Looper.getMainLooper())
     private val busy = AtomicBoolean(false)
     private val prefs = context.getSharedPreferences("connections-operations", Context.MODE_PRIVATE)
-    private data class Target(val machine: String, val client: ServiceControlClient, val approval: ServiceApproval)
+    private data class Target(val machine: String, val name: String, val client: ServiceControlClient, val approval: ServiceApproval)
     private fun publish(summary: String, record: JSONObject? = null) = main.post {
         ConnectionsSource.repair = summary
         record?.let { ConnectionsSource.diagnostic = it.toString(2) }
@@ -47,6 +47,7 @@ internal class ConnectionRestorer(private val context: Context, private val runt
                 val key = ConnectionOwnerKey.exportPublic(runtime.proot.home)
                 val targets = mutableListOf<Target>()
                 val blocked = mutableListOf<ConnectionCheck>()
+                val hosts = mutableSetOf<String>()
                 for (machine in readMacMachines(runtime.proot.launcherConfig)) {
                     val client = ServiceControlClient(ConnectionEndpoint(machine.config.url, machine.config.key))
                     val reply = client.inventory()
@@ -57,9 +58,17 @@ internal class ConnectionRestorer(private val context: Context, private val runt
                     val inventory = JSONObject(reply.text)
                     require(inventory.optBoolean("ok")) { "Service inventory schema unverified" }
                     val age = System.currentTimeMillis() - inventory.getLong("checked_at")
-                    require(age in 0..30_000) { "Service inventory is stale or clock differs" }
+                    require(age in -SERVICE_CLOCK_SKEW_MS..30_000) { "Service inventory is stale or clock differs" }
                     val host = inventory.getString("host")
                     if (!host.matches(Regex("[A-Za-z0-9._-]{1,100}"))) error("Invalid runner identity")
+                    val pin = "host:" + machine.id
+                    val problem = runnerHostProblem(prefs.getString(pin, null), host, hosts)
+                    if (problem != null) {
+                        blocked += ConnectionCheck("runner_host", machine.id, result = "blocked", fields = mapOf("reason" to problem))
+                        continue
+                    }
+                    hosts += host
+                    prefs.edit().putString(pin, host).apply()
                     val trust = inventory.optJSONObject("owner_trust")?.optString("state")
                     if (trust != "ready") {
                         blocked += ConnectionCheck("owner_trust", host, reply.code, trust ?: "unknown",
@@ -81,7 +90,7 @@ internal class ConnectionRestorer(private val context: Context, private val runt
                         val response = client.challenge(id)
                         require(response.code == 202) { "Service approval unavailable (HTTP ${response.code})" }
                         val approval = ServiceApproval.parse(JSONObject(response.text).getJSONObject("approval"), id, host, System.currentTimeMillis())
-                        targets += Target(machine.id, client, approval)
+                        targets += Target(machine.id, machine.name, client, approval)
                     }
                 }
                 val phoneRecovery = ConnectionPhoneRecovery(context, runtime)
@@ -89,11 +98,13 @@ internal class ConnectionRestorer(private val context: Context, private val runt
                 blocked += phoneRecovery.guardEvidence()
                 if (targets.isEmpty() && phoneTargets.isEmpty()) {
                     val entry = record("restore", "paired-services", "blocked", "No failed service has a verified, owner-trusted repair route.", blocked)
-                    publish("No verified repair available.", entry)
+                    // The one place he can read this phone's key, to compare with the Mac's installer.
+                    val fingerprint = if (blocked.any { it.name == "owner_trust" }) " Owner key on this phone: ${key.getString("key_id").take(16)}" else ""
+                    publish("No verified repair available.$fingerprint", entry)
                     busy.set(false); return@execute
                 }
                 val plan = OwnerServicePlan(targets.map { it.approval } + phoneTargets.map { it.approval })
-                val description = (targets.map { "${it.approval.host}: ${it.approval.service}" } + phoneTargets.map {
+                val description = (targets.map { "${it.name}: ${it.approval.service}" } + phoneTargets.map {
                     if (it.action == ConnectionPhoneRecovery.Action.Keeper) "phone: start missing keeper (no jobs terminated)"
                     else "phone: start missing background watcher; use existing wireless-debugging heal"
                 }).joinToString("\n")
