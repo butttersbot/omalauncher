@@ -8,6 +8,8 @@ point of having an approved design if the agents keep handing back work that doe
 Trigger case: Connections v6 was approved in chat on 2026-10-28 (handoff, not on Canvas), built into launcher 175, and
 shipped looking different (colours, type, rules, incident block). Nobody's tooling noticed; Boss did.
 
+**Existing screens (Boss, 2026-10-30):** whatever is shipped is approved. New work on an existing screen starts from its Shipped card on Canvas and changes only what the feature adds; keep header, pills, sizes, placement and type as shipped. If he has a problem with the shipped design, he will say.
+
 ## 1. Approvals only on Canvas (no more approvals that Canvas doesn't know about)
 
 - A design is approved when, and only when, its Canvas card has an Approved state (Boss's owner tap). Chat "looks
