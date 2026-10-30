@@ -12,12 +12,19 @@ enum class Capability(val title: String, val band: String? = null) {
     Activity("Device activity"), Files("Files & deliveries"), Builds("Builds & installs"),
     Voice("Voice"), Search("Search"), Messages("Messages"), Canvas("Design Canvas", "Canvas"), Optional("Optional tools")
 }
+/**
+ * How far ahead of this device a computer's clock may stand with its stamp still counting as fresh. A probe stamped by a
+ * computer reads a little ahead of the phone the moment its reply lands (28-174 ms measured on all three, 2026-10-30), and
+ * every fresh check showed Stale; a stamp further ahead than this is a wrong clock, and stays Stale.
+ */
+private const val CLOCK_TOLERANCE_MS = 10_000L
+
 data class ConnectionReading(
     val capability: Capability, val state: ConnectionState, val detail: String,
     val checkedAt: Long, val root: String? = null, val host: String = "", val sourceHost: String = "", val checks: List<ConnectionCheck> = emptyList(),
 ) {
     fun current(now: Long): ConnectionReading = if (state !in setOf(ConnectionState.Disabled, ConnectionState.Paused) &&
-        (checkedAt <= 0 || now < checkedAt || now - checkedAt > 90_000)) copy(state = ConnectionState.Stale, detail = "Last check is no longer current. $detail") else this
+        (checkedAt <= 0 || checkedAt - now > CLOCK_TOLERANCE_MS || now - checkedAt > 90_000)) copy(state = ConnectionState.Stale, detail = "Last check is no longer current. $detail") else this
 }
 data class ConnectionIncident(val key: String, val readings: List<ConnectionReading>)
 data class ConnectionsSnapshot(val readings: List<ConnectionReading> = emptyList(), val checkedAt: Long = 0) {

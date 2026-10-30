@@ -46,6 +46,18 @@ class ConnectionsTest {
         ledger.pending["runner:mac"] = ConnectionAlerts.Pending(150_000, false)
         assertTrue(ledger.update(failed, 100_000, false).isEmpty())
     }
+    /** Boss, 2026-10-30: everything showed Stale, because the computers' clocks stand a little ahead of the phone's. */
+    @Test fun aStampSlightlyAheadIsFreshAndOneFarAheadOrOldIsStale() {
+        val at = 1_000_000L
+        fun state(now: Long) = ConnectionReading(Capability.Builds, ConnectionState.Ready, "checked", at).current(now).state
+        assertEquals("174 ms ahead, as measured", ConnectionState.Ready, state(at - 174))
+        assertEquals("just inside the tolerance", ConnectionState.Ready, state(at - 10_000))
+        assertEquals("a wrong clock", ConnectionState.Stale, state(at - 10_001))
+        assertEquals(ConnectionState.Ready, state(at))
+        assertEquals("the 90 s limit stays", ConnectionState.Ready, state(at + 90_000))
+        assertEquals(ConnectionState.Stale, state(at + 90_001))
+    }
+
     @Test fun partialSuccessNeverMasksMissingSubchecksOrStaleness() {
         val snapshot = ConnectionsSnapshot(listOf(row(Capability.Canvas, ConnectionState.Ready), row(Capability.Canvas, ConnectionState.Unknown)))
         assertEquals(12, snapshot.rows(100_000).size)
