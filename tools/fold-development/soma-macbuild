@@ -169,19 +169,25 @@ walk_report() {
 walks=()
 if [ -f tools/walkthrough/walk.py ]; then
   trailer=$(git log -1 --format='%(trailers:key=Walk,valueonly,separator=%x2C)' "$commit" | tr ',' '\n' | sed 's/^ *//; s/ *$//; s/\.walk$//' | sed '/^$/d')
-  # SOMA_WALKS=all (a promote) walks everything even when the commit names its walks: 169 (e56f09b4c, Walk: phone-d)
+  # SOMA_WALKS=all walks everything even when the commit names its walks: 169 (e56f09b4c, Walk: phone-d)
   # was asked for all of them and walked phone-d alone.
   if [ -n "$trailer" ] && [ "${SOMA_WALKS:-}" != all ]; then
     while read -r w; do walks+=("$w"); done <<< "$trailer"
-  elif [ "${SOMA_WALKS:-}" = all ] || [ ! -s "$state/walked-commit" ] ||
-       ! git merge-base --is-ancestor "$(cat "$state/walked-commit")" "$commit" 2>/dev/null; then
-    # Everything: asked for (SOMA_WALKS=all, as before a promote), or nothing walked here yet to compare with.
+  elif [ "${SOMA_WALKS:-}" = all ]; then
+    # Everything only when asked: a deliberate choice (a refactor, a code review), overnight (Boss, 2026-10-30).
     for f in tools/walkthrough/scripts/*.walk; do [ -e "$f" ] && walks+=("$(basename "$f" .walk)"); done
   else
     # Only the walks what changed since the last walked commit can touch (Boss, 2026-10-26: "do we really need to do
     # these walks after every little change"; all 24 took ~35 minutes for a change to a tool script). Tools, docs and
     # Markdown walk nothing; a walk script that changed walks itself; app code walks the walks for its part.
-    changed=$(git diff --name-only "$(cat "$state/walked-commit")" "$commit")
+    # With no record to compare with (none yet, or not an ancestor of this commit), what this commit itself changed: never
+    # the full set by default. The record then starts here, even if that walks nothing.
+    base=$(cat "$state/walked-commit" 2>/dev/null || true)
+    if [ -z "$base" ] || ! git merge-base --is-ancestor "$base" "$commit" 2>/dev/null; then
+      base="$commit^"
+      echo "$commit" > "$state/walked-commit"
+    fi
+    changed=$(git diff --name-only "$base" "$commit")
     pick() { for w in "$@"; do [ -e "tools/walkthrough/scripts/$w.walk" ] && walks+=("$w"); done; }
     while IFS= read -r f; do
       case $f in
@@ -204,7 +210,7 @@ if [ -f tools/walkthrough/walk.py ]; then
     if [ ${#walks[@]} -gt 0 ]; then
       uniq=(); while IFS= read -r w; do uniq+=("$w"); done < <(printf '%s\n' "${walks[@]}" | sort -u); walks=("${uniq[@]}")
     fi
-    [ ${#walks[@]} -gt 0 ] || echo "Walks: none needed (nothing since $(cut -c1-9 "$state/walked-commit") reaches the app's screens)."
+    [ ${#walks[@]} -gt 0 ] || echo "Walks: none needed (nothing since $(git rev-parse --short=9 "$base") reaches the app's screens)."
   fi
 fi
 # The Mac has one emulator for walks, so lanes walk one at a time (the app is already on its way to the phone).
