@@ -1037,7 +1037,10 @@ def _probe(service, fetch=http_json, run=subprocess.run, state=None, keys=None):
                 return [mkcheck('imessage_health', service, 'no_token', 'unverified', {'missing': 'the iMessage service token file'})]
             status, data = fetch('http://%s:%d/v1/health' % endpoint(service, run), headers={'Authorization': 'Bearer ' + token})
             fields = {k: data.get(k) for k in ('ok', 'sendReady', 'messagesAccess', 'watching', 'readOnly') if isinstance(data.get(k), (bool, str))}
-            return [check('imessage_health', 'not_ready', status == 200 and data.get('ok') is True and data.get('sendReady') is True,
+            # An API that is up but can't send because of the transport, or because it was set read-only, is not down: restarting
+            # it would be restarting a healthy service. transport_traversal reports the transport itself.
+            not_its_fault = data.get('ok') is True and (data.get('readOnly') is True or data.get('sendTransport') == 'rustpush')
+            return [check('imessage_health', 'not_ready', status == 200 and (data.get('sendReady') is True or not_its_fault) and data.get('ok') is True,
                           {'http_status': status, **fields})]
         if service == 'imessage-transport':
             # A running process with its socket; transport_traversal is what crosses that socket.
@@ -1062,13 +1065,11 @@ def _probe(service, fetch=http_json, run=subprocess.run, state=None, keys=None):
 # check in every probe, so identity, health or process evidence alone never reads as Ready or Restored, and a restart is
 # refused before it starts (nothing is restarted that could only be half-verified). Remove an entry only with a real probe.
 # A check of the same name from evidence_checks or the service's probe replaces the placeholder in readings; the entry itself
-# still holds its restart: the first three only read past traffic, and the last two are held until Boss wants them unlocked.
+# still holds its restart: these only read past traffic, so nothing can show a restart worked until the next real delivery.
 MISSING_EVIDENCE = {
     'soma': [('soma_sync', 'a sync made after the restart; the record only shows the last one')],
     'tailshare-serve': [('tailshare_delivery', 'a delivery made after the restart; the mail folder only shows the last one')],
     'tailshare-receive': [('receive_freshness', 'a file received after the restart; the worker has no endpoint and no test file is sent')],
-    'embeddings': [('embed_inference', 'the owner turning on restarts for this service; its model answer is probed but restarts stay held')],
-    'imessage-transport': [('transport_traversal', 'the owner turning on restarts for this service; its traversal is probed but restarts stay held')],
 }
 
 

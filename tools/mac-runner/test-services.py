@@ -729,7 +729,7 @@ class MissingEvidence(Base):
         S.MISSING_EVIDENCE = self.saved_missing
 
     def test_identity_or_process_only_services_carry_required_unverified_checks(self):
-        for service in ('soma', 'tailshare-serve', 'tailshare-receive', 'embeddings', 'imessage-transport'):
+        for service in ('soma', 'tailshare-serve', 'tailshare-receive'):
             extra = S.missing_checks(service)
             self.assertTrue(extra, service)
             self.assertTrue(all(c['result'] == 'unverified' and c['fields']['required'] is True and c['fields']['missing'] for c in extra), service)
@@ -751,8 +751,38 @@ class MissingEvidence(Base):
         self.assertEqual(got[-1]['code'], 'evidence_missing')
 
     def test_real_evidence_does_not_unlock_a_restart(self):
-        for service in ('soma', 'tailshare-serve', 'tailshare-receive', 'embeddings', 'imessage-transport'):
+        for service in ('soma', 'tailshare-serve', 'tailshare-receive'):
             self.assertFalse(S.verifiable(service), service)
+
+    def test_embeddings_and_the_transport_restart_only_when_down_and_only_on_the_owners_signature(self):
+        for service in ('embeddings', 'imessage-transport'):
+            self.assertTrue(S.verifiable(service), service)
+        # No signature: refused, nothing restarted.
+        challenge = self.control.request('imessage-transport')
+        with self.assertRaises(S.Refused):
+            self.control.approve('imessage-transport', {**self.approve_body(challenge), 'owner_signature': 'bm90IGhpcw=='})
+        self.assertEqual(self.backend.calls, [])
+        # Healthy: signed or not, left alone.
+        self.up_before = True
+        op = self.op(self.control.approve('imessage-transport', self.approve_body(self.control.request('imessage-transport'))))
+        self.assertEqual((op['stage'], op['restarted'], self.backend.calls), ('restored', False, []))
+        # Down, and signed: restarted, and only that one.
+        self.up_before = False
+        op = self.op(self.control.approve('imessage-transport', self.approve_body(self.control.request('imessage-transport'))))
+        self.assertEqual((op['stage'], self.backend.calls), ('restored', [('gui', 'imessage-transport')]))
+
+    def test_an_imessage_api_that_is_only_waiting_on_its_transport_is_not_down(self):
+        saved_token, saved_endpoint = S.IMESSAGE_TOKEN, S.endpoint
+        self.addCleanup(lambda: (setattr(S, 'IMESSAGE_TOKEN', saved_token), setattr(S, 'endpoint', saved_endpoint)))
+        S.IMESSAGE_TOKEN, S.endpoint = self.dir / 'token', lambda service, run=None, load=None: ('127.0.0.1', 8799)
+        S.IMESSAGE_TOKEN.write_text('im-SECRET')
+        def api(**reply):
+            return S._probe('imessage-api', fetch=lambda url, **k: (200, reply))[0]['result']
+        self.assertEqual(api(ok=True, sendReady=True, sendTransport='rustpush'), 'pass')
+        self.assertEqual(api(ok=True, sendReady=False, sendTransport='rustpush'), 'pass')  # the transport's check says it, on its own row
+        self.assertEqual(api(ok=True, sendReady=False, readOnly=True), 'pass')
+        self.assertEqual(api(ok=True, sendReady=False, sendTransport='other'), 'fail')
+        self.assertEqual(api(ok=False, sendReady=True, sendTransport='rustpush'), 'fail')
 
     def test_a_service_not_installed_here_is_refused_and_listed_separately(self):
         S.installed = lambda service: service != 'herd'
