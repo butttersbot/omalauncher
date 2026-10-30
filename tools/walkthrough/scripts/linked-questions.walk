@@ -1,0 +1,55 @@
+# Linked questions (Boss, 2026-10-29): the same decision came to him as two cards, from Phone A and from the MacBook
+# thread t1703ae4f; he answered one and the other kept waiting. Fictional fixture: Phone A and a Mac thread "Skills
+# cleanup" ask "Restore the 3 deleted skills or leave them deleted?". No agent, runner or Mac is reached.
+# touchVouches: the walk's taps count as his finger, as a real one does in Soma.
+# 1. Linked (Phone A's question names t1703ae4f): answering it answers the Mac thread's too, as his.
+fold folded
+shell am force-stop dev.omalauncher.artifactpreview
+shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es waitingQuestion linked --ez touchVouches true
+clearlog
+expect Questions waiting
+expect Same question waiting in Skills cleanup (linked)
+shot linked-question-card-cover
+tap answer questions
+expect Restore the 3 deleted skills or leave them deleted?
+tap Leave deleted
+log fixture phone answered
+log fixture mac answered
+shot linked-question-answered-cover
+# On the Oma tab, where the Mac thread's card was: nothing waits any more.
+shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es waitingQuestion linked --es startTab oma --ez touchVouches true
+wait 1500
+absent Questions waiting
+absent Restore the 3 deleted skills
+shot linked-question-mac-cleared-cover
+# 2. Not linked, only alike: his answer stays where he gave it; the other card says so and offers it with one tap.
+shell am force-stop dev.omalauncher.artifactpreview
+shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es waitingQuestion alike --ez touchVouches true
+clearlog
+expect Questions waiting
+expect Same question waiting in Skills cleanup
+absent (linked)
+tap answer questions
+tap Leave deleted
+log fixture phone answered
+nolog fixture mac answered
+shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es waitingQuestion alike --es startTab oma --ez touchVouches true
+wait 1500
+expect Questions waiting
+expect You answered this in Phone A: Leave deleted
+expect answer here too
+nolog fixture mac answered
+shot alike-question-offer-cover
+tap answer here too
+log fixture mac answered
+wait 1500
+absent Questions waiting
+shot alike-question-answered-cover
+fold unfolded
+shell am force-stop dev.omalauncher.artifactpreview
+shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es waitingQuestion linked --ez touchVouches true
+clearlog
+expect Same question waiting in Skills cleanup (linked)
+shot linked-question-card-unfolded
+[phone] After the bundle: Phone A asks a harmless AskUserQuestion with metadata {"source": "link:THREAD"} naming a Mac thread that waits on the same harmless question. Boss answers on the phone: both threads continue, the Mac one's tool result has his choice, both receipts (oma receipt) are his, the second "answered in Phone A". Same from the Soma desktop app.
+[phone] Two alike questions with no link: answering one leaves the other waiting with "You answered this in …" and [ answer here too ]; nothing is sent there until he taps it. A question whose answer can't be carried (text not allowed there) stays waiting.

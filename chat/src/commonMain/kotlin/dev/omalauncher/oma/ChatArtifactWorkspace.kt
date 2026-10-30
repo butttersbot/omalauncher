@@ -177,6 +177,7 @@ internal fun ChatArtifactWorkspace(
                 CompositionLocalProvider(
                     LocalArtifactOpen provides open,
                     LocalQuestionDraftStore provides questionDrafts,
+                    LocalQuestionHint provides { key -> host.questionHint(key) },
                     LocalQuestionOpen provides { questionSelection = listOf(it.key, it.title, it.input); expanded = false; fileLists = fileLists - tab },
                     LocalMarkdownArtifactOpen provides { link ->
                         val target = artifactPath(link) ?: link

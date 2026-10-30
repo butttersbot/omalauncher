@@ -1236,6 +1236,16 @@ private fun ApprovalBox(
     card.question?.let { question ->
         Column(Modifier.fillMaxWidth().padding(12.dp)) {
             BasicText("Questions waiting", style = Pack.body(color = Pack.accent))
+            // The same question elsewhere (Boss, 2026-10-29): linked ones get his answer by themselves; a much-alike one
+            // only says so, and one he already answered offers that answer here with one tap.
+            val hint = LocalQuestionHint.current?.invoke(question.key)
+            if (hint != null && !draft.sent) {
+                if (hint.pendingIn.isNotEmpty()) BasicText("Same question waiting in ${hint.pendingIn.joinToString(", ")}", style = Pack.mono(Pack.size.small, Pack.muted))
+                hint.answeredIn?.let { where ->
+                    BasicText("You answered this in $where: ${hint.answeredWith}", style = Pack.mono(Pack.size.small, Pack.muted), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    hint.answerThereToo?.let { BracketAction("answer here too", Pack.accent, onClick = it) }
+                }
+            }
             val store = LocalQuestionDraftStore.current
             val draft = remember(question.key, store) { store?.get(question.key) ?: WaitingQuestionDraft() }
             // [ skip ] sits beside [ answer questions ], where a tap meant for the form can land: it asks first

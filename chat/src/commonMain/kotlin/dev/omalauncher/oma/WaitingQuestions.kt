@@ -85,16 +85,65 @@ internal class WaitingQuestionDrafts {
     }
 }
 
-/** Re-resolve a saved form's nonce rather than retaining an Activity or an old host callback. */
+/** Every question form waiting for him that this device can answer: the Macs' threads' and the phone builders'. */
+internal fun ChatHost.pendingQuestions(): List<dev.omalauncher.assist.QuestionMember> =
+    macPending().filter { questionInput(it.request.tool, it.request.input) }.mapNotNull { p ->
+        runCatching { dev.omalauncher.assist.QuestionMember(p.ticket, p.threadName, p.threadId, JSONObject(p.request.input)) }.getOrNull()
+    } + builders().flatMap { (builder, state) ->
+        state.pending.filter { questionInput(it.approval.tool, it.approval.input.toString()) }
+            .map { dev.omalauncher.assist.QuestionMember(it.nonce, "Phone ${builder.letter}", "phone:${builder.letter}", it.approval.input) }
+    }
+
+/**
+ * Re-resolve a saved form's nonce rather than retaining an Activity or an old host callback. Once his own answer is
+ * delivered, the forms linked to this one (dev.omalauncher.assist.linkedQuestions) get it too, as his, "answered in"
+ * this one's thread; a skip, or an answer his finger didn't send, goes nowhere else.
+ */
 internal fun ChatHost.sendWaitingAnswers(key: String, answers: JSONObject, done: (String?) -> Unit) {
+    // Whether his finger sent these is decided now, as he sends: a Mac's answer may come back seconds later.
+    val vouched = BossTouch.mayVouch()
+    val waiting = runCatching { pendingQuestions() }.getOrDefault(emptyList())
+    val me = waiting.firstOrNull { it.key == key }
+    deliverWaitingAnswers(key, answers, vouched, null) { failure ->
+        done(failure)
+        if (failure != null || me == null || !vouched || dev.omalauncher.assist.questionAnswersSkipped(answers)) return@deliverWaitingAnswers
+        dev.omalauncher.assist.GivenAnswers.add(dev.omalauncher.assist.GivenAnswer(me, answers, System.currentTimeMillis()))
+        for (other in dev.omalauncher.assist.linkedQuestions(me, waiting)) {
+            val mapped = dev.omalauncher.assist.mapQuestionAnswers(me.input, answers, other.input, me.where) ?: continue
+            deliverWaitingAnswers(other.key, mapped, vouched, me.where) {}
+        }
+    }
+}
+
+/** What a waiting form shows of the same question elsewhere: waiting there too, or answered there already. */
+internal data class QuestionHint(val pendingIn: List<String>, val answeredIn: String?, val answeredWith: String = "", val answerThereToo: (() -> Unit)? = null)
+internal val LocalQuestionHint = staticCompositionLocalOf<((String) -> QuestionHint?)?> { null }
+
+internal fun ChatHost.questionHint(key: String): QuestionHint? {
+    val waiting = runCatching { pendingQuestions() }.getOrDefault(emptyList())
+    val me = waiting.firstOrNull { it.key == key } ?: return null
+    val linked = dev.omalauncher.assist.linkedQuestions(me, waiting).map { it.key }.toSet()
+    val alike = dev.omalauncher.assist.similarElsewhere(me, waiting).filter { it.key !in linked }.map { it.where }.distinct()
+    val given = dev.omalauncher.assist.GivenAnswers.alike(me)
+    val mapped = given?.let { dev.omalauncher.assist.mapQuestionAnswers(it.member.input, it.answers, me.input, it.member.where) }
+    val answeredWhere = given?.member?.where.orEmpty()
+    if (alike.isEmpty() && mapped == null && linked.isEmpty()) return null
+    return QuestionHint(
+        pendingIn = (alike + waiting.filter { it.key in linked }.map { it.where + " (linked)" }).distinct(),
+        answeredIn = answeredWhere.takeIf { mapped != null },
+        answeredWith = mapped?.let { m -> m.keys().asSequence().joinToString(" · ") { k -> m.opt(k).let { v -> if (v is JSONArray) (0 until v.length()).joinToString(", ") { v.optString(it) } else v.toString() } } }.orEmpty(),
+        // His tap here answers this one with what he answered there: his finger, so his receipt.
+        answerThereToo = mapped?.let { answers -> { deliverWaitingAnswers(key, answers, BossTouch.mayVouch(), answeredWhere) {} } },
+    )
+}
+
+private fun ChatHost.deliverWaitingAnswers(key: String, answers: JSONObject, vouched: Boolean, answeredIn: String?, done: (String?) -> Unit) {
     // His answers, once delivered, are signed as his (BossReceipt): a skip is no answer of his and isn't.
     // What he was asked, as the card showed it: each question's text, one per line.
     fun asked(input: String) = runCatching {
         val qs = JSONObject(input).getJSONArray("questions")
         (0 until qs.length()).joinToString("\n") { qs.getJSONObject(it).optString("question") }
-    }.getOrDefault("")
-    // Whether his finger sent these is decided now, as he sends: a Mac's answer may come back seconds later.
-    val vouched = BossTouch.mayVouch()
+    }.getOrDefault("") + (answeredIn?.let { "\n(answered in $it)" } ?: "")
     // The card as he saw it (its questions, headers and options), which is what his answer replies to.
     fun card(input: String) = runCatching { CanvasReceipt.canonical(JSONObject(input)) }.getOrDefault("")
     fun said(conversation: String, question: String, input: String) {
