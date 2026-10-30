@@ -119,8 +119,6 @@ object MacRequests {
         JSONObject().put("card", card).put("answers", answers).put("where", where).put("local", false).put("candidates", candidates).toString(),
     )
 
-    fun clearCommands(threadId: String) = MacRequest("POST", "/threads/${part(threadId)}/command-approvals/clear", "{}")
-
     /**
      * Which questions waiting on this runner are the same decision as [card], his [answers] given in [where] (linked
      * questions by meaning; the runner asks its model once). [thread]/[approval]: the one he answered, if it waits here.

@@ -1,7 +1,9 @@
 # Linked questions (Boss, 2026-10-29): the same decision came to him as two cards, from Phone A and from the MacBook
 # thread t1703ae4f; he answered one and the other kept waiting. Fictional fixture: Phone A and a Mac thread "Skills
 # cleanup" ask "Restore the 3 deleted skills or leave them deleted?". No agent, runner or Mac is reached.
-# touchVouches: the walk's taps count as his finger, as a real one does in Soma.
+# touchVouches: the walk's taps count as his finger, as a real one does in Soma. The Oma-tab relaunches use
+# --activity-clear-top: the activity is made anew with startTab (a plain am start only brings the old one to the front),
+# while the process, and with it the fixture's answered state, lives on.
 # 1. Linked (Phone A's question names t1703ae4f): answering it answers the Mac thread's too, as his.
 fold folded
 shell am force-stop dev.omalauncher.artifactpreview
@@ -17,7 +19,7 @@ log fixture phone answered
 log fixture mac answered
 shot linked-question-answered-cover
 # On the Oma tab, where the Mac thread's card was: nothing waits any more.
-shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es waitingQuestion linked --es startTab oma --ez touchVouches true
+shell am start -W --activity-clear-top -n dev.omalauncher.artifactpreview/.PreviewActivity --es waitingQuestion linked --es startTab oma --ez touchVouches true
 wait 1500
 absent Questions waiting
 absent Restore the 3 deleted skills
@@ -33,7 +35,7 @@ tap answer questions
 tap Leave deleted
 log fixture phone answered
 nolog fixture mac answered
-shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es waitingQuestion alike --es startTab oma --ez touchVouches true
+shell am start -W --activity-clear-top -n dev.omalauncher.artifactpreview/.PreviewActivity --es waitingQuestion alike --es startTab oma --ez touchVouches true
 wait 1500
 expect Questions waiting
 expect You answered this in Phone A: Leave deleted
@@ -57,7 +59,7 @@ tap Restore them
 log fixture phone answered
 log fixture mac pro match asked from Phone A, 1 candidate
 log Put them back from the backup
-shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es waitingQuestion meaning --es startTab oma --ez touchVouches true
+shell am start -W --activity-clear-top -n dev.omalauncher.artifactpreview/.PreviewActivity --es waitingQuestion meaning --es startTab oma --ez touchVouches true
 wait 1500
 absent Questions waiting
 expect answered in Phone A: Restore them
