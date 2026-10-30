@@ -70,6 +70,9 @@ object BossTouch {
     /** Any phone-control command that changes the screen (PhoneService), and any injected or virtual input seen. */
     fun agentActed(now: Long = now()) { lastAgentAction = now }
 
+    /** Back to no touch and no agent action: for tests, which share this one process-wide state. */
+    internal fun forget() { lastRealTouch = Long.MIN_VALUE / 2; lastAgentAction = Long.MIN_VALUE / 2 }
+
     /** Whether Soma may vouch, at [now], that what was just sent came from Boss's own hand. */
     fun mayVouch(now: Long = now(), realTouch: Long = lastRealTouch, agentAction: Long = lastAgentAction): Boolean =
         now - realTouch in 0..TOUCH_WINDOW_MS && now - agentAction > AGENT_QUIET_MS

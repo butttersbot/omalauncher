@@ -28,6 +28,9 @@ import org.junit.Test
 class BossReceiptTest : ChatScreenTestBase() {
     private val device = "ab".repeat(32)
 
+    // BossTouch is process-wide: each test starts from no touch and no agent action, whatever ran before it.
+    @org.junit.Before fun forgetTouches() = BossTouch.forget()
+
     @Test fun aChatReceiptCarriesHisWordsTheirHashAndWhereTheyWent() {
         val words = BossWords.chat("phone:A", "approve all", vouched = true)
         val r = BossReceipt.receipt(device, 1_793_317_000_000, "n-1", words)!!

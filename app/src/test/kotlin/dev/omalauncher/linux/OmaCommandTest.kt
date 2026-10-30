@@ -29,7 +29,7 @@ class OmaCommandTest {
         val tools = omaTools(rootfs, { asset(OMA_ASSET) }, { asset(DROP_ASSET) }, { asset(MSG_ASSET) }, { asset(GROKBOT_ASSET) }, { asset(CONNECTIONS_ASSET) })
         // `oma drop` was never a command of its own, so it has no old name; its script is installed with `oma`.
         assertEquals(
-            listOf("usr/local/bin/oma", "usr/local/bin/oma-thread", "usr/local/bin/oma-keep", "usr/local/bin/oma-agents", "usr/local/lib/oma/drop", "usr/local/lib/oma/msg", "usr/local/lib/oma/connections", "usr/local/lib/oma/front", "usr/local/bin/grokbot"),
+            listOf("usr/local/bin/oma", "usr/local/bin/oma-thread", "usr/local/bin/oma-keep", "usr/local/bin/oma-agents", "usr/local/lib/oma/drop", "usr/local/lib/oma/msg", "usr/local/lib/oma/connections", "usr/local/lib/oma/front", "usr/local/lib/oma/receipt", "usr/local/bin/grokbot"),
             tools.map { it.file.relativeTo(rootfs).path },
         )
         assertTrue(tools.all { it.policy == Policy.Owned && it.executable })
