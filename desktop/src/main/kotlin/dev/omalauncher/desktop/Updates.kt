@@ -40,8 +40,14 @@ data class SomaBuild(val commit: String, val committed: Long) {
 /** One file of a published build, as its record names it. */
 data class ReleaseFile(val file: String, val sha256: String, val size: Long)
 
+/**
+ * The HTML engine the release offers (tools/soma-release/engine.json): Chromium for HTML artifacts, a component of its own,
+ * published only when its pinned version moves; [natives] by platform key, each file pinned by its sha256.
+ */
+data class EngineRelease(val version: String, val tag: String, val natives: Map<String, ReleaseFile>)
+
 /** The published desktop build, as [runner] (the runner it was read from) serves it at GET /release. */
-data class Release(val commit: String, val committed: Long, val notes: List<String>, val artifacts: Map<String, ReleaseFile>, val runner: String) {
+data class Release(val commit: String, val committed: Long, val notes: List<String>, val artifacts: Map<String, ReleaseFile>, val runner: String, val engine: EngineRelease? = null) {
     companion object {
         private val COMMIT = Regex("[0-9a-f]{7,40}")
         private val FILE = Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,120}")
@@ -57,7 +63,17 @@ data class Release(val commit: String, val committed: Long, val notes: List<Stri
                 ReleaseFile(a.getString("file").takeIf { FILE.matches(it) } ?: return null, a.getString("sha256").takeIf { SHA.matches(it) } ?: return null, a.getLong("size"))
             }
             val notes = r.optJSONArray("notes")?.let { n -> (0 until n.length()).map { n.getString(it) } }.orEmpty()
-            Release(commit, r.getLong("committed"), notes, artifacts, runner)
+            Release(commit, r.getLong("committed"), notes, artifacts, runner, r.optJSONObject("engine")?.let(::engine))
+        }.getOrNull()
+
+        /** The record's engine, or null for one that isn't whole (the app update is still offered without it). */
+        private fun engine(e: org.json.JSONObject): EngineRelease? = runCatching {
+            val files = e.getJSONObject("natives")
+            val natives = files.keySet().associateWith { key ->
+                val a = files.getJSONObject(key)
+                ReleaseFile(a.getString("file").takeIf { FILE.matches(it) } ?: return null, a.getString("sha256").takeIf { SHA.matches(it) } ?: return null, a.getLong("size"))
+            }
+            EngineRelease(e.getString("version").takeIf { Regex("[0-9][0-9.]{0,30}").matches(it) } ?: return null, e.getString("tag"), natives)
         }.getOrNull()
     }
 }
@@ -118,6 +134,9 @@ interface UpdateHands {
     /** [file] of [release], fetched into [into]. */
     fun fetch(release: Release, file: ReleaseFile, into: File): String?
 
+    /** One of [release]'s engine files (GET /release/engine/NAME), fetched into [into]. */
+    fun fetchEngine(release: Release, file: ReleaseFile, into: File): String? = "this Soma can't fetch the HTML engine"
+
     /**
      * This computer's runner held for the update (POST /update/hold: no new turn starts, agent mail waits) and the names of
      * the chats with work still in it; empty when it can restart with nothing cut off. Null when it can't be asked.
@@ -161,6 +180,10 @@ class Updater(
     var state by mutableStateOf<UpdateState>(UpdateState.None)
         private set
 
+    /** The published build the last check read (newer or not): the engine's offer comes from the same record. */
+    @Volatile var latest: Release? = null
+        private set
+
     /** Whether the sheet (what changed, or how it went) is open. */
     var open by mutableStateOf(false)
 
@@ -172,6 +195,7 @@ class Updater(
     fun check() {
         if (busy) return
         val release = newest(hands.latest())
+        latest = release
         val now = state
         if (now is UpdateState.Waiting || now is UpdateState.Updating || now is UpdateState.Updated) return
         // "didn't update" stays until he tries again; one about the runner and app apart takes the build to try with.

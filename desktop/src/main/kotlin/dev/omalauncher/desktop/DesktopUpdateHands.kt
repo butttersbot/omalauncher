@@ -40,12 +40,17 @@ class DesktopUpdateHands(
         if (code == 200) Release.parse(body, m.id) else null
     }
 
-    override fun fetch(release: Release, file: ReleaseFile, into: File): String? {
+    override fun fetch(release: Release, file: ReleaseFile, into: File): String? = fetchFrom("files", release, file, into)
+
+    override fun fetchEngine(release: Release, file: ReleaseFile, into: File): String? = fetchFrom("engine", release, file, into)
+
+    /** GET /release/[kind]/NAME from the runner that served [release], into [into] (through a .part file, renamed when whole). */
+    private fun fetchFrom(kind: String, release: Release, file: ReleaseFile, into: File): String? {
         val m = machines().firstOrNull { it.id == release.runner } ?: return "Soma has no key for ${release.runner}'s runner any more"
         val target = File(into, file.file)
         val part = File(into, file.file + ".part")
         return runCatching {
-            val c = URI("${base(m)}/release/files/${file.file}").toURL().openConnection() as HttpURLConnection
+            val c = URI("${base(m)}/release/$kind/${file.file}").toURL().openConnection() as HttpURLConnection
             c.connectTimeout = 4_000; c.readTimeout = 60_000
             c.setRequestProperty("Authorization", "Bearer ${m.config.key}")
             if (c.responseCode != 200) return "its runner answered ${c.responseCode} for ${file.file}"

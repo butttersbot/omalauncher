@@ -38,9 +38,18 @@ import dev.omalauncher.ui.framed
  * -sheet, -states). The pill sits in the top bar before [ artifacts ]; up to date, there is no pill at all.
  */
 
-/** The pill's words for [state], and whether it is filled (an offer, or a failure to read) or outlined (in progress, done). */
-internal fun pillLabel(state: UpdateState): Pair<String, Boolean>? = when (state) {
-    UpdateState.None -> null
+/**
+ * The pill's words for [state], and whether it is filled (an offer, or a failure to read) or outlined (in progress, done). The
+ * app's update speaks first; with none, the HTML engine's ([engine]) does.
+ */
+internal fun pillLabel(state: UpdateState, engine: EngineState = EngineState.None): Pair<String, Boolean>? = when (state) {
+    UpdateState.None -> when (engine) {
+        EngineState.None -> null
+        is EngineState.Offer -> "install html engine" to true
+        is EngineState.Installing -> "installing engine" to false
+        EngineState.Installed -> "engine installed" to false
+        is EngineState.Failed -> "engine didn't install" to true
+    }
     is UpdateState.Offer -> "update soma · ${state.release.commit}" to true
     is UpdateState.Waiting -> "waiting" to false
     is UpdateState.Updating -> "updating" to false
@@ -53,21 +62,22 @@ internal fun pillLabel(state: UpdateState): Pair<String, Boolean>? = when (state
  * or Escape). Tests lay the sheet out themselves.
  */
 @Composable
-fun UpdatePill(updater: Updater, withSheet: Boolean = true) {
-    val (label, filled) = pillLabel(updater.state) ?: return
+fun UpdatePill(updater: Updater, engine: EngineInstaller? = null, withSheet: Boolean = true) {
+    val (label, filled) = pillLabel(updater.state, engine?.state ?: EngineState.None) ?: return
     val shape = RoundedCornerShape(999.dp)
+    val close = { updater.close(); engine?.close(); Unit }
     Box {
         Box(
             Modifier.padding(horizontal = 6.dp)
                 .then(if (filled) Modifier.background(Pack.accent, shape) else Modifier.border(Pack.hair, Pack.border, shape))
-                .clickable { if (updater.open) updater.close() else updater.open = true }
+                .clickable { if (updater.open) close() else updater.open = true }
                 .padding(horizontal = 12.dp, vertical = 6.dp),
         ) {
             BasicText(Pack.caption(label), style = Pack.mono(Pack.size.small, if (filled) Pack.background else Pack.foreground), maxLines = 1, softWrap = false)
         }
         if (withSheet && updater.open) {
-            Popup(alignment = Alignment.TopEnd, offset = IntOffset(0, with(LocalDensity.current) { 34.dp.roundToPx() }), onDismissRequest = updater::close, properties = PopupProperties(focusable = true)) {
-                UpdateSheet(updater, Modifier.widthIn(min = 320.dp))
+            Popup(alignment = Alignment.TopEnd, offset = IntOffset(0, with(LocalDensity.current) { 34.dp.roundToPx() }), onDismissRequest = close, properties = PopupProperties(focusable = true)) {
+                UpdateSheet(updater, Modifier.widthIn(min = 320.dp), engine)
             }
         }
     }
@@ -75,15 +85,17 @@ fun UpdatePill(updater: Updater, withSheet: Boolean = true) {
 
 /** The sheet the pill opens: what changed, then how the update goes. Shown over the window's top-right corner. */
 @Composable
-fun UpdateSheet(updater: Updater, modifier: Modifier = Modifier) {
+fun UpdateSheet(updater: Updater, modifier: Modifier = Modifier, engine: EngineInstaller? = null) {
     if (!updater.open) return
     val state = updater.state
-    if (state == UpdateState.None) return
-    BackHandler { updater.close() }
+    val engineState = engine?.state ?: EngineState.None
+    if (state == UpdateState.None && engineState == EngineState.None) return
+    BackHandler { updater.close(); engine?.close() }
     Column(
         modifier.widthIn(max = 460.dp).framed(Pack.hair, Pack.border, Pack.surface).padding(14.dp).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
+        if (engine != null && engineState != EngineState.None) EngineSection(engine, engineState, separated = state != UpdateState.None)
         when (state) {
             is UpdateState.Offer -> {
                 val r = state.release
@@ -136,6 +148,52 @@ fun UpdateSheet(updater: Updater, modifier: Modifier = Modifier) {
             UpdateState.None -> Unit
         }
     }
+}
+
+/** The engine's part of the sheet: its offer, its install's steps, or how it went. Above the app's update, when both show. */
+@Composable
+private fun EngineSection(engine: EngineInstaller, state: EngineState, separated: Boolean) {
+    val clipboard = LocalClipboardManager.current
+    when (state) {
+        is EngineState.Offer -> {
+            BasicText("HTML engine", style = Pack.display(Pack.size.title, Pack.accent))
+            Caption("chromium ${state.release.engine?.version} · ${(state.file.size + 500_000) / 1_000_000} MB · once")
+            Body("Runs HTML artifacts in the side panel, as on the Fold: mockups you can click, not their source.")
+            Body("Fetched once from ${state.release.runner}'s runner and checked against its pinned sha256. App updates don't fetch it again.", Pack.muted)
+            Actions {
+                BracketAction("install html engine", Pack.accent) { engine.start(state.release, state.file) }
+                if (!separated) BracketAction("later", Pack.muted) { engine.close() }
+            }
+        }
+        is EngineState.Installing -> {
+            StatePill("installing engine", false)
+            ENGINE_STEPS.forEachIndexed { i, step ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Body(step, modifier = Modifier.weight(1f, fill = false))
+                    val (word, color) = when {
+                        i < state.step -> "done" to Pack.green
+                        i == state.step -> "now" to Pack.foreground
+                        else -> "next" to Pack.muted
+                    }
+                    BasicText(Pack.caption(word), style = Pack.mono(Pack.size.small, color), maxLines = 1, softWrap = false, modifier = Modifier.padding(start = 12.dp))
+                }
+            }
+        }
+        EngineState.Installed -> {
+            StatePill("engine installed", false)
+            Body("HTML artifacts now run in the side panel. Nothing to restart.")
+        }
+        is EngineState.Failed -> {
+            StatePill("engine didn't install", true)
+            Body("Nothing changed: ${state.reason}.")
+            Actions {
+                if (state.release != null && state.file != null) BracketAction("try again", Pack.accent) { engine.start(state.release, state.file) }
+                BracketAction("copy details for an agent", Pack.muted) { clipboard.setText(AnnotatedString(state.details)) }
+            }
+        }
+        EngineState.None -> Unit
+    }
+    if (separated) Box(Modifier.fillMaxWidth().padding(vertical = 6.dp).border(Pack.hair, Pack.border))
 }
 
 @Composable

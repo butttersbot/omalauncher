@@ -106,12 +106,12 @@ internal actual fun ArtifactWeb(url: String?, html: String?, modifier: Modifier,
                         }
                     }
                     if (url != null) loadUrl(url)
-                    else loadDataWithBaseURL("https://soma-artifact.invalid/", isolatedArtifactHtml(html.orEmpty()), "text/html", "UTF-8", null).also { loaded[0] = html.orEmpty() }
+                    else loadDataWithBaseURL(ARTIFACT_ORIGIN, isolatedArtifactHtml(html.orEmpty()), "text/html", "UTF-8", null).also { loaded[0] = html.orEmpty() }
                 }
             }, update = { view ->
                 if (url == null && html != null && loaded[0] != html) {
                     loaded[0] = html
-                    view.loadDataWithBaseURL("https://soma-artifact.invalid/", isolatedArtifactHtml(html), "text/html", "UTF-8", null)
+                    view.loadDataWithBaseURL(ARTIFACT_ORIGIN, isolatedArtifactHtml(html), "text/html", "UTF-8", null)
                 }
             }, modifier = Modifier.fillMaxSize().clipToBounds(), onRelease = { it.stopLoading(); it.destroy(); if (owned === it) owned = null })
         }
@@ -168,11 +168,4 @@ internal actual fun ArtifactImage(bytes: ByteArray, description: String, modifie
     }
     if (image != null) Image(image, description, modifier, contentScale = ContentScale.Fit)
     else BasicText("This image could not be decoded.", modifier.padding(16.dp), style = Pack.body())
-}
-
-private fun isolatedArtifactHtml(html: String): String {
-    val policy = """<meta http-equiv="Content-Security-Policy" content="frame-src 'none'; object-src 'none'">"""
-    val head = Regex("""<head\b[^>]*>""", RegexOption.IGNORE_CASE).find(html)
-    val offset = head?.range?.last?.plus(1) ?: Regex("<!doctype[^>]*>", RegexOption.IGNORE_CASE).find(html)?.range?.last?.plus(1) ?: 0
-    return html.substring(0, offset) + policy + html.substring(offset)
 }
