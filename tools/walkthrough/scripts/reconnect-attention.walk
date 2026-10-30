@@ -5,8 +5,8 @@
 # 1. Dropped mid-request: needs attention, on the entry and in All chats.
 fold folded
 shell am force-stop dev.omalauncher.artifactpreview
-shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es reconnect dropped
 clearlog
+shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es reconnect dropped
 log fixture reconnect dropped: [Failed]
 expect Fictional long job
 expect needs attention
@@ -16,8 +16,8 @@ expect Reconnect test
 shot reconnect-dropped-tab-cover
 # 2. The agent is back and working: the request runs again; no red anywhere.
 shell am force-stop dev.omalauncher.artifactpreview
-shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es reconnect back
 clearlog
+shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es reconnect back
 log fixture reconnect back: [Running]
 expect Fictional long job
 absent needs attention
@@ -35,8 +35,8 @@ shot reconnect-back-all-chats-cover
 key BACK
 # 3. It answered: done, at rest, still no red.
 shell am force-stop dev.omalauncher.artifactpreview
-shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es reconnect done
 clearlog
+shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es reconnect done
 log fixture reconnect done: [Done]
 expect Fictional job finished after the reconnect.
 absent needs attention
