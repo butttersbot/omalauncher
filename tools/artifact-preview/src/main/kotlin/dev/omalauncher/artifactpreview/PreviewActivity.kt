@@ -70,6 +70,10 @@ class PreviewActivity : ComponentActivity() {
                     val updates = remember { intent.getStringExtra("updates")?.let(::updatesFixture) }
                     if (updates != null) androidx.compose.runtime.CompositionLocalProvider(dev.omalauncher.oma.LocalTopBarExtra provides { dev.omalauncher.updates.PhoneUpdatePill(updates) }) {
                         OmaChatScreen(host, null, {}, start, {})
+                    } else if (intent.getBooleanExtra("tabWidth", false)) {
+                        // The tab walk opens tabs by tapping them, so this fixture keeps the open tab.
+                        var open by remember { mutableStateOf(start) }
+                        OmaChatScreen(host, null, {}, open, { open = it })
                     } else OmaChatScreen(host, null, {}, start, {})
                     }
                 }
@@ -222,6 +226,13 @@ Open the preview to try the layout. We can keep talking while you look at it.
         override fun frontReady() = true
         override fun threads() = if (reconnect != null) listOf(
             dev.omalauncher.assist.macThreadNow(reconnectThread, RECONNECT_ID, reconnectTasks, emptyList(), true),
+        ) else if ((context as? android.app.Activity)?.intent?.getBooleanExtra("tabWidth", false) == true) listOf(
+            // Tab widths and the header's device label: a phone thread, Mac threads on two machines (one with a very long name), one with no machine.
+            AgentThread(PHONE_THREAD, "Phone", ThreadState.Working, "running the tests", "working", worked = now),
+            AgentThread("mac:fixture-long", "Rework the whole notification settings page so every switch explains itself in plain words", ThreadState.Idle, "", "idle", worked = now - 1000, machine = "Mac Pro"),
+            AgentThread("mac:fixture-mg1", "Skills cleanup", ThreadState.Idle, "", "idle", worked = now - 2000, machine = "MG1"),
+            AgentThread("mac:fixture-short", "Release notes", ThreadState.Idle, "", "idle", worked = now - 3000, machine = "Mac Pro"),
+            AgentThread("mac:fixture-tail", "Last tab to scroll to", ThreadState.Idle, "", "idle", worked = now - 4000, machine = "MacBook"),
         ) else if (rankedSessions) listOf(
             AgentThread(PHONE_THREAD, "Newer working", ThreadState.Working, "Working on a fictional task", "working", worked = now, since = now),
             AgentThread("mac:fixture-question", "Question second", ThreadState.NeedsOk, "Fictional question needs your answer", "needs your answer", worked = now - 300000, requestedAt = now - 2000),

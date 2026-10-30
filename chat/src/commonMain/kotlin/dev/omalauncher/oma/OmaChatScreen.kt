@@ -479,7 +479,12 @@ private fun ChatScreen(
             // The open tab's name at the left; at the right, a dot for each thread in its state's colour, close together
             // as in the mock-up, and the arrow that drops the tabs down.
             Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                BasicText(Pack.heading(tabTitle(tab, threads)), Modifier.weight(1f), style = Pack.display(color = Pack.accent), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                // The title gives way first: the device label after it keeps its width, quieter than the title.
+                val onMachine = threads.firstOrNull { it.key == tab }?.machine.orEmpty()
+                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                    BasicText(Pack.heading(tabTitle(tab, threads)), Modifier.weight(1f, fill = false), style = Pack.display(color = Pack.accent), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (onMachine.isNotEmpty()) BasicText(Pack.caption(onMachine), Modifier.padding(horizontal = 8.dp), style = Pack.mono(Pack.size.small, Pack.muted), maxLines = 1, softWrap = false)
+                }
                 Row(Modifier.widthIn(max = DOTS_WIDTH).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
                     for (thread in threads) {
                         Box(
@@ -964,6 +969,8 @@ private fun TabStrip(
                     .spans(key)
                     .padding(end = 6.dp)
                     .fillMaxHeight()
+                    // The tab no longer shows its machine, so a screen reader still hears the name and where it runs.
+                    .semantics { contentDescription = "${tabTitle(key, threads)}${if (thread?.machine.isNullOrEmpty()) "" else " on the ${thread!!.machine}"}" }
                     // A bot's tab has round ends, so bots read apart from sessions at a glance.
                     .framed(Pack.hair, if (on) Pack.foreground else Pack.border, if (on) Pack.foreground else Pack.surface, radius = if (thread?.bot != null) 50.dp else 6.dp)
                     .combinedClickable(
@@ -979,16 +986,8 @@ private fun TabStrip(
                     ThreadDot(thread.state, if (on) Pack.background else Pack.muted)
                     Spacer(Modifier.width(6.dp))
                 }
-                BasicText(Pack.caption(tabTitle(key, threads)), style = Pack.mono(Pack.size.small, if (on) Pack.background else Pack.foreground), maxLines = 1)
-                // With two Macs each Mac thread's tab says which it is on, quieter than its name.
-                if (!thread?.machine.isNullOrEmpty()) {
-                    BasicText(
-                        Pack.caption(thread!!.machine),
-                        Modifier.padding(start = 6.dp),
-                        style = Pack.mono(Pack.size.small, if (on) Pack.background else Pack.muted),
-                        maxLines = 1,
-                    )
-                }
+                // A long name stops at TAB_NAME_MAX with an ellipsis; the machine is in the header, not here.
+                BasicText(Pack.caption(tabTitle(key, threads)), Modifier.widthIn(max = TAB_NAME_MAX), style = Pack.mono(Pack.size.small, if (on) Pack.background else Pack.foreground), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
         // As tall as the tabs and as wide as it is tall.
@@ -1018,6 +1017,9 @@ private fun TabStrip(
 
 /** The room left beside the open tab when it is scrolled into view: the strip's own padding, which its tabs are measured inside of. */
 private val STRIP_MARGIN = 6.dp
+
+/** The widest a tab's name grows before it ends in an ellipsis (Boss, 2026-10-30). */
+private val TAB_NAME_MAX = 160.dp
 
 /** How far apart the header's dots stand, centre to centre: the 9 dp dot with the mock-up's 7 dp between. */
 private val DOT_PITCH = 16.dp

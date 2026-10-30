@@ -1,0 +1,41 @@
+# Chat tabs (Boss, 2026-10-30): the device label moves from the tab to the header, after the title and quieter than it
+# (the title gives way first); a tab's name stops at 160 dp with an ellipsis. Fictional fixture: a phone thread, Mac
+# threads on Mac Pro / MG1 / MacBook, one with a very long name. No agent or Mac is reached.
+# canvas-app: soma-chat
+fold folded
+rotate portrait
+shell am force-stop dev.omalauncher.artifactpreview
+shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --ez tabWidth true
+tap Show the tabs
+expect Release notes
+expect Last tab to scroll to
+shot tab-width-strip-cover
+# A thread with no machine shows no label.
+tap 0.24 0.197
+wait 500
+shot tab-width-phone-cover card=soma-chat-chat-cover
+# Mac thread with a long name: header shows the title (ellipsis) and the device label stays.
+tap 0.55 0.197
+wait 500
+shot tab-width-long-name-cover card=soma-chat-chat-cover
+# A Mac thread on another machine.
+tap 0.80 0.197
+wait 500
+shot tab-width-mg1-cover card=soma-chat-chat-cover
+# The last tab, past the strip's edge, is scrolled into view when opened.
+swipe 0.85 0.21 0.05 0.21 500
+tap 0.68 0.197
+wait 500
+shot tab-width-open-tab-in-view-cover
+fold open
+rotate landscape
+wait 800
+shot tab-width-strip-unfolded
+tap 0.05 0.224
+wait 500
+shot tab-width-phone-unfolded card=soma-chat-chat
+tap 0.28 0.224
+wait 500
+shot tab-width-long-name-unfolded card=soma-chat-chat
+fold folded
+rotate portrait
