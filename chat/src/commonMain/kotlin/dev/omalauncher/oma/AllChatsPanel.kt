@@ -2,7 +2,7 @@ package dev.omalauncher.oma
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
+import dev.omalauncher.kit.pressable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -82,7 +82,7 @@ internal fun AllChatsPanel(
                     BasicText(
                         if (place.isEmpty()) "all" else place,
                         Modifier.framed(Pack.hair, Pack.border, if (on) Pack.foreground else Pack.background)
-                            .combinedClickable(onClick = { where = place }).padding(horizontal = 8.dp, vertical = 3.dp),
+                            .pressable(onClick = { where = place }).padding(horizontal = 8.dp, vertical = 3.dp),
                         style = Pack.mono(Pack.size.small, if (on) Pack.background else Pack.foreground),
                     )
                 }
@@ -119,7 +119,7 @@ private fun AllChatItem(row: AllChatRow, line: String, query: String, now: Long,
         Modifier.fillMaxWidth()
             // A right-click is its menu, as a long press is.
             .onSecondaryClick(row.key) { onMenu(row.key) }
-            .combinedClickable(onClick = { onOpen(row) }, onLongClick = { onMenu(row.key) })
+            .pressable(onLongClick = { onMenu(row.key) }) { onOpen(row) }
             .padding(horizontal = 12.dp, vertical = 8.dp)
             .semantics { contentDescription = "Open ${row.name}" },
     ) {

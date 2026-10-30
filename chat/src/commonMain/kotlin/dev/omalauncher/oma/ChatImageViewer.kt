@@ -3,6 +3,8 @@ package dev.omalauncher.oma
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
+import dev.omalauncher.kit.overlayEntrance
+import dev.omalauncher.kit.rememberOverlayEntrance
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -48,9 +50,11 @@ fun ChatImageViewer(
     var zoom by remember { mutableFloatStateOf(1f) }
     var pan by remember { mutableStateOf(Offset.Zero) }
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        val entrance = rememberOverlayEntrance()
         Box(
             Modifier
                 .fillMaxSize()
+                .overlayEntrance { entrance.value }
                 .background(Color.Black)
                 .pointerInput(file) {
                     detectTapGestures(

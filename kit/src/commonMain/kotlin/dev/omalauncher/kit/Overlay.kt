@@ -1,6 +1,7 @@
 package dev.omalauncher.kit
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -47,13 +48,20 @@ fun KitOverlay(
     val keyboard = LocalSoftwareKeyboardController.current
     LaunchedEffect(Unit) { hostFocus.clearFocus(); keyboard?.hide() }
     ModalWindow(onDismiss, lightBars) {
-        val entrance = remember { Animatable(if (enterMillis > 0 && !Motion.reduced) 0f else 1f) }
-        LaunchedEffect(Unit) { entrance.moveTo(1f, Motion.timed(enterMillis, Motion.easing)) }
+        val entrance = rememberOverlayEntrance(enterMillis)
         Box(Modifier.fillMaxSize().background(ink?.copy(alpha = Feel.SCRIM_ALPHA * entrance.value) ?: Color.Transparent)
             .then(if (dismissOnOutside) Modifier.clickable(onClick = onDismiss) else Modifier)) {
             Box(Modifier.fillMaxSize().overlayEntrance { entrance.value }, contentAlignment = Alignment.Center, content = content)
         }
     }
+}
+
+/** How far in an overlay is, from 0 to 1 over [millis]: at rest from the start with none, or with animations off. */
+@Composable
+fun rememberOverlayEntrance(millis: Int = Feel.OVERLAY_MS): Animatable<Float, AnimationVector1D> {
+    val entrance = remember { Animatable(if (millis > 0 && !Motion.reduced) 0f else 1f) }
+    LaunchedEffect(Unit) { entrance.moveTo(1f, Motion.timed(millis, Motion.easing)) }
+    return entrance
 }
 
 /** What's in an overlay coming in: faded and a touch small at 0, as it is at 1. A layer only. */

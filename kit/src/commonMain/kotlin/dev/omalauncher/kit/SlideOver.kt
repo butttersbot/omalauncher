@@ -54,20 +54,25 @@ fun SlideOver(
 ) {
     var modal by remember { mutableStateOf(false) }
     val modalChanged: (Boolean) -> Unit = remember { { value -> modal = value } }
-    val x = remember { Animatable(widthPx) }
+    val x = remember { Animatable(if (Motion.reduced) 0f else widthPx) }
     val scope = rememberCoroutineScope()
     LaunchedEffect(Unit) { x.moveTo(0f, Feel.open) }
+    // Gone, it is back in place, in the same frame: if something else stays in this screen, that shows instead of nothing.
+    fun gone() {
+        onGone()
+        scope.launch { x.snapTo(0f) }
+    }
     val back: () -> Unit = {
         scope.launch {
             x.moveTo(widthPx, Feel.close)
-            onGone()
+            gone()
         }
     }
     PredictiveBack(enabled = !modal) { progress ->
         try {
             progress.collect { p -> x.snapTo(p * widthPx) }
             x.moveTo(widthPx, Motion.spatial)
-            onGone()
+            gone()
         } catch (e: CancellationException) {
             // The finger let go early: the screen goes back where it was, outside the cancelled gesture.
             scope.launch { x.moveTo(0f, Motion.spatial) }
@@ -93,7 +98,7 @@ fun SlideOver(
                         scope.launch {
                             if (slidesAway(x.value / widthPx, v, fling)) {
                                 x.moveTo(widthPx, Motion.spatial)
-                                onGone()
+                                gone()
                             } else {
                                 x.moveTo(0f, Motion.spatial)
                             }

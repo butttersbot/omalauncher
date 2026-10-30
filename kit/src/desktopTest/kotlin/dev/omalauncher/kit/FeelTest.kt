@@ -30,6 +30,15 @@ class FeelTest {
         assertEquals(0.3f, Feel.PULL_GIVE)
     }
 
+    @Test fun anItemIsNewOnce() {
+        val mark = NewerThan(100)
+        assertFalse(mark.take(100))
+        assertTrue(mark.take(200))
+        assertFalse(mark.take(200))
+        assertFalse(mark.take(150))
+        assertTrue(mark.take(201))
+    }
+
     @Test fun aPullIsOneToOneThenStiff() {
         assertEquals(50f, pulled(50f, 100f))
         assertEquals(130f, pulled(130f, 100f))

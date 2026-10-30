@@ -24,6 +24,10 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.omalauncher.kit.SlideOver
+import kotlin.math.roundToInt
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.graphics.graphicsLayer
 import dev.omalauncher.ui.BackHandler
 import dev.omalauncher.ui.BracketAction
 import dev.omalauncher.ui.Pack
@@ -211,18 +215,21 @@ internal fun ChatArtifactWorkspace(
             }
         }
         if (overlay) {
-            Box(Modifier.fillMaxSize().background(Pack.background)) {
+            val panel: @Composable (() -> Unit) -> Unit = { leave ->
                 CompositionLocalProvider(LocalArtifactLive provides live, LocalArtifactWhere provides where) {
-                    if (allChatsOpen) allChats(close)
-                    else if (question != null) WaitingQuestionPanel(question, questionDrafts.get(question.key), close)
-                        else if (listing) ArtifactFiles(artifacts, close, open)
-                    else if (selected != null) ArtifactPanel(host, selected, opens, artifacts, wide, canSplit = wide, if (wide) ({ expanded = false }) else null, close, open,
+                    if (allChatsOpen) allChats(leave)
+                    else if (question != null) WaitingQuestionPanel(question, questionDrafts.get(question.key), leave)
+                        else if (listing) ArtifactFiles(artifacts, leave, open)
+                    else if (selected != null) ArtifactPanel(host, selected, opens, artifacts, wide, canSplit = wide, if (wide) ({ expanded = false }) else null, leave, open,
                         onDiscuss = {
                             onDiscuss(it)
-                            if (!wide) close() else expanded = false
+                            if (!wide) leave() else expanded = false
                         }, onShown = { shownVersion = it }, onLatest = { v -> if (selected.version != v) opened = opened + (tab to selected.copy(version = v)) })
                 }
             }
+            // On a narrow screen it comes over the chat as Messages' conversation does, and Back or a drag takes it away with the finger.
+            if (wide) Box(Modifier.fillMaxSize().background(Pack.background)) { panel(close) }
+            else SlideOver(constraints.maxWidth.toFloat(), close, Modifier.background(Pack.background)) { back, _ -> panel(back) }
         }
     }
 }
@@ -233,13 +240,13 @@ private fun ArtifactPeek(shown: ArtifactLive, onView: () -> Unit) {
     val editing = shown.editing != null
     val label = shown.name.substringBeforeLast('.')
     val words = if (editing) "${shown.agent.ifBlank { "The agent" }} is editing $label · v${shown.editing}" else "$label · v${shown.version} is ready"
-    val blink by rememberInfiniteTransition().animateFloat(1f, 0f, infiniteRepeatable(tween(500, easing = LinearEasing), RepeatMode.Reverse))
+    val blink = rememberInfiniteTransition().animateFloat(1f, 0f, infiniteRepeatable(tween(500, easing = LinearEasing), RepeatMode.Reverse))
     Row(
         Modifier.fillMaxWidth().padding(bottom = 8.dp).framed(Pack.hair * 1.4f, Pack.red, Pack.background).clickable(onClick = onView).padding(start = 10.dp)
             .semantics { contentDescription = words },
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.size(8.dp).alpha(if (editing) blink else 1f).background(if (editing) Pack.red else Pack.green))
+        Box(Modifier.size(8.dp).graphicsLayer { alpha = if (editing) blink.value else 1f }.background(if (editing) Pack.red else Pack.green))
         BasicText(words, Modifier.weight(1f).padding(horizontal = 8.dp), style = Pack.body(Pack.size.small), maxLines = 1, overflow = TextOverflow.Ellipsis)
         BracketAction("view", Pack.accent, onView)
     }
@@ -422,12 +429,12 @@ private fun ArtifactPanel(
 /** The red strip over the preview while an agent works on the next version, with a line that keeps moving under it. */
 @Composable
 private fun ArtifactEditingStrip(words: String) {
-    val moving by rememberInfiniteTransition().animateFloat(0f, 1f, infiniteRepeatable(tween(1300, easing = LinearEasing), RepeatMode.Reverse))
+    val moving = rememberInfiniteTransition().animateFloat(0f, 1f, infiniteRepeatable(tween(1300, easing = LinearEasing), RepeatMode.Reverse))
     Column(Modifier.fillMaxWidth().semantics { contentDescription = words }) {
         BasicText(Pack.caption(words).uppercase(), Modifier.fillMaxWidth().background(Pack.red).padding(horizontal = 12.dp, vertical = 6.dp),
             style = Pack.mono(Pack.size.small, Pack.background), maxLines = 1, overflow = TextOverflow.Ellipsis)
         BoxWithConstraints(Modifier.fillMaxWidth().height(3.dp)) {
-            Box(Modifier.fillMaxHeight().width(maxWidth * .3f).offset(x = maxWidth * .7f * moving).background(Pack.foreground))
+            Box(Modifier.fillMaxHeight().width(maxWidth * .3f).offset { IntOffset(((maxWidth * .7f).toPx() * moving.value).roundToInt(), 0) }.background(Pack.foreground))
         }
     }
 }

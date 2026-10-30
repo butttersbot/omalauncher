@@ -2,6 +2,7 @@ package dev.omalauncher.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import dev.omalauncher.kit.pressable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -113,7 +114,7 @@ fun BracketAction(
     color: Color,
     onClick: () -> Unit,
 ) {
-    Box(Modifier.clickable(onClick = onClick).padding(horizontal = 8.dp, vertical = 6.dp)) {
+    Box(Modifier.pressable(onClick = onClick).padding(horizontal = 8.dp, vertical = 6.dp)) {
         BasicText("[ $label ]", style = Pack.body(color = color))
     }
 }

@@ -4,6 +4,10 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import dev.omalauncher.kit.NewerThan
+import dev.omalauncher.kit.Reveal
+import dev.omalauncher.kit.arriving
+import dev.omalauncher.kit.pressable
 import dev.omalauncher.ui.BackHandler
 import dev.omalauncher.assist.MAC_CLAUDE
 import dev.omalauncher.assist.MAC_KINDS
@@ -18,7 +22,6 @@ import dev.omalauncher.ui.MenuTitle
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -48,6 +51,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
@@ -550,7 +554,7 @@ private fun ChatScreen(
                         Box(
                             Modifier
                                 .semantics { contentDescription = "${thread.name}${if (thread.machine.isEmpty()) "" else " on the ${thread.machine}"}: ${thread.label}" }
-                                .clickable { pick(dotTap(tab, thread.key, host.somaTab)) }
+                                .pressable { pick(dotTap(tab, thread.key, host.somaTab)) }
                                 .padding(vertical = 12.dp)
                                 .width(DOT_PITCH),
                             contentAlignment = Alignment.Center,
@@ -559,7 +563,7 @@ private fun ChatScreen(
                 }
                 BasicText(
                     if (tabsOpen) "▴" else "▾",
-                    Modifier.semantics { contentDescription = if (tabsOpen) "Hide the tabs" else "Show the tabs" }.clickable { tabsOpen = !tabsOpen }.padding(horizontal = 10.dp, vertical = 6.dp),
+                    Modifier.semantics { contentDescription = if (tabsOpen) "Hide the tabs" else "Show the tabs" }.pressable { tabsOpen = !tabsOpen }.padding(horizontal = 10.dp, vertical = 6.dp),
                     style = Pack.body(Pack.size.large),
                 )
             }
@@ -569,7 +573,7 @@ private fun ChatScreen(
                 BasicText(botInfoLine(bot, model), Modifier.padding(horizontal = 6.dp, vertical = 2.dp), style = Pack.mono(Pack.size.small, Pack.muted), maxLines = 2, overflow = TextOverflow.Ellipsis)
                 if (bot.problem.isNotBlank()) BasicText(bot.problem, Modifier.padding(horizontal = 6.dp, vertical = 2.dp), style = Pack.body(Pack.size.small, Pack.red))
             }
-            if (tabsOpen) {
+            Reveal(tabsOpen) {
                 TabStrip(
                     threads, tab, ::pick,
                     soma = host.somaTab,
@@ -591,11 +595,17 @@ private fun ChatScreen(
             }
             // Newest at the bottom. A list keeps what is in view where it is when something is added, which would leave
             // a message just sent below the edge, under the field and the keyboard: so a new one is scrolled to.
-            val thread = rememberLazyListState()
+            // Each tab has its own, made where it opens (the newest entry), so its first frame is already right.
+            val thread = key(tab) { rememberLazyListState() }
             val entries = tabEntries(tasks, tab, book)
             val newest = entries.lastOrNull()?.time
-            // A tab just opened shows its newest entry too.
-            LaunchedEffect(newest, tab) { if (newest != null) thread.scrollToItem(0) }
+            // From near the newest it slides there with the new one's arrival; from far back it's there at once.
+            LaunchedEffect(newest) {
+                if (newest != null) {
+                    if (thread.firstVisibleItemIndex <= NEAR_NEWEST && !Motion.reduced) thread.animateScrollToItem(0) else thread.scrollToItem(0)
+                }
+            }
+            val arrivals = remember(tab) { NewerThan(newest ?: 0L) }
             LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 6.dp), state = thread, reverseLayout = true) {
                 if (entries.isEmpty() && earlier.isEmpty()) {
                     // Where its thread will be made and who runs it, picked before the first words (cockpit slice 5). First,
@@ -644,7 +654,7 @@ private fun ChatScreen(
                 }
                 items(entries.asReversed(), key = { it.time }) { task ->
                     val front = frontWorking && task.time == frontTime
-                    when {
+                    Box(Modifier.arriving(task.time, end = true) { arrivals.take(task.time) }) { when {
                         // The Mac does this one: its answer is in the entry as it arrives, and only its own thread's requests show under it.
                         task.mac -> TaskEntry(
                             task, task.status == TaskStatus.Running, host.macLabel(task), task.result,
@@ -723,7 +733,7 @@ private fun ChatScreen(
                                 }),
                             )
                         }
-                    }
+                    } }
                 }
                 // Above the oldest entry of a Mac thread's tab: what was done at the Mac itself, or before this phone came in,
                 // from the thread's own record. A thread made for a new chat began here and has its tab's key of its own.
@@ -1032,15 +1042,16 @@ private fun TabStrip(
                     // The tab no longer shows its machine, so a screen reader is told where it runs; a tab with none keeps what it says itself
                     // (a description equal to the name would match the "New chat" button of the same name).
                     .then(if (thread?.machine.isNullOrEmpty()) Modifier else Modifier.semantics { contentDescription = "${tabTitle(key, threads)} on the ${thread!!.machine}" })
-                    // A bot's tab has round ends, so bots read apart from sessions at a glance.
-                    .framed(Pack.hair, if (on) Pack.foreground else Pack.border, if (on) Pack.foreground else Pack.surface, radius = if (thread?.bot != null) 50.dp else 6.dp)
-                    .combinedClickable(
-                        onClick = { onTab(key) },
+                    .pressable(
                         onLongClick = {
                             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                             onMenu(key)
                         },
-                    ).padding(horizontal = 10.dp, vertical = 8.dp),
+                        onClick = { onTab(key) },
+                    )
+                    // A bot's tab has round ends, so bots read apart from sessions at a glance.
+                    .framed(Pack.hair, if (on) Pack.foreground else Pack.border, if (on) Pack.foreground else Pack.surface, radius = if (thread?.bot != null) 50.dp else 6.dp)
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (thread != null) {
@@ -1057,9 +1068,9 @@ private fun TabStrip(
                 .spans(NEW_TAB)
                 .fillMaxHeight()
                 .aspectRatio(1f, matchHeightConstraintsFirst = true)
+                .pressable(onClick = onNew)
                 .framed(Pack.hair, Pack.border, Pack.surface, radius = 6.dp)
-                .semantics { contentDescription = "New chat" }
-                .clickable(onClick = onNew),
+                .semantics { contentDescription = "New chat" },
             contentAlignment = Alignment.Center,
         ) { BasicText("+", style = Pack.mono(Pack.size.body, Pack.foreground)) }
         // Every chat and thread, older ones too, and a search (slice 4).
@@ -1067,14 +1078,17 @@ private fun TabStrip(
             Modifier
                 .padding(start = 6.dp)
                 .fillMaxHeight()
+                .pressable(onClick = onAll)
                 .framed(Pack.hair, Pack.accent, Pack.background, radius = 6.dp)
                 .semantics { contentDescription = "All chats" }
-                .clickable(onClick = onAll)
                 .padding(horizontal = 10.dp),
             contentAlignment = Alignment.Center,
         ) { BasicText("all", style = Pack.mono(Pack.size.body, Pack.accent)) }
     }
 }
+
+/** How far back in the thread the newest entries are still in sight, so a new one slides in rather than jumps. */
+private const val NEAR_NEWEST = 1
 
 /** The room left beside the open tab when it is scrolled into view: the strip's own padding, which its tabs are measured inside of. */
 private val STRIP_MARGIN = 6.dp
@@ -1412,7 +1426,7 @@ private fun TaskEntry(
         }
         // The receipt: where his words went. In the accent as what can be tapped is: it opens that thread's tab.
         if (task.mac && onReceipt != null) {
-            BasicText(task.agent, Modifier.clickable(onClick = onReceipt).padding(top = 4.dp, bottom = 4.dp, end = 12.dp), style = small.copy(color = Pack.accent), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            BasicText(task.agent, Modifier.pressable(onClick = onReceipt).padding(top = 4.dp, bottom = 4.dp, end = 12.dp), style = small.copy(color = Pack.accent), maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         for (step in task.steps) BasicText("· $step", Modifier.padding(top = 4.dp), style = small, maxLines = 1, overflow = TextOverflow.Ellipsis)
         for (approval in task.approvals) {
@@ -1443,8 +1457,8 @@ private fun TaskEntry(
                 BasicText(waiting.text, Modifier.weight(1f, fill = false), style = small.copy(color = Pack.accent), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 // Small and muted, as the other rare ways out under an entry are.
                 // Send now stops the turn ahead, so it reads in the accent, as what acts on the agent does.
-                if (waiting.sendNow && onSendNow != null) BasicText("[ send now ]", Modifier.clickable(onClick = onSendNow).padding(horizontal = 8.dp, vertical = 8.dp), style = small.copy(color = Pack.accent))
-                if (waiting.cancel && onCancel != null) BasicText("[ cancel ]", Modifier.clickable(onClick = onCancel).padding(horizontal = 8.dp, vertical = 8.dp), style = small)
+                if (waiting.sendNow && onSendNow != null) BasicText("[ send now ]", Modifier.pressable(onClick = onSendNow).padding(horizontal = 8.dp, vertical = 8.dp), style = small.copy(color = Pack.accent))
+                if (waiting.cancel && onCancel != null) BasicText("[ cancel ]", Modifier.pressable(onClick = onCancel).padding(horizontal = 8.dp, vertical = 8.dp), style = small)
             }
         }
         // Who wrote the reply, quietly, in the look's mono face as the receipt and the steps are.
@@ -1470,9 +1484,9 @@ private fun TaskEntry(
         if (onBuild != null && !running) {
             // Small and muted: it is there for the rare wrong turn, not something to read past under every answer.
             if (task.sentToBuild) BasicText("sent to build", Modifier.padding(top = 4.dp), style = small)
-            else BasicText("[ send to build ]", Modifier.clickable(onClick = onBuild).padding(vertical = 8.dp), style = small)
+            else BasicText("[ send to build ]", Modifier.pressable(onClick = onBuild).padding(vertical = 8.dp), style = small)
         }
-        if (onAgain != null && task.status == TaskStatus.Dropped) BasicText("[ try again ]", Modifier.clickable(onClick = onAgain).padding(vertical = 8.dp), style = small)
+        if (onAgain != null && task.status == TaskStatus.Dropped) BasicText("[ try again ]", Modifier.pressable(onClick = onAgain).padding(vertical = 8.dp), style = small)
         // What its thread on the Mac said after the answer, between his messages: notes and steps quietly, as the
         // steps above are, and the agent's own report on its background work as an answer is.
         for ((index, said) in task.later.withIndex()) {
