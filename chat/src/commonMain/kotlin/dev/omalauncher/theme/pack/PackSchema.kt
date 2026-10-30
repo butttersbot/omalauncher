@@ -193,12 +193,12 @@ object PackSchema {
             paint("palette.overlay", "background@0.9")
             paint("palette.glass", "background@0.88")
 
-            // Type: Console is monospace throughout, at TextSize's sizes, in JetBrains Mono from Soma Canvas's font store
-            // (Boss, 2026-10-29 20:08: Console's own fonts, the same on every device). A pack that names no file gets
-            // this path in its own folder, finds nothing there, and draws its family as before.
+            // Type: Console is monospace throughout, at TextSize's sizes. Its own faces (JetBrains Mono, from Soma Canvas's
+            // font store) aren't a pack file: they are what Console's monospace is drawn in (ConsolePack.FONT), so a pack
+            // that names no file still draws its family.
             for (role in typeRoles) {
                 choice("type.$role.family", FontGeneric.entries, FontGeneric.Monospace)
-                add(PackToken("type.$role.file", TokenKind.Asset(AssetType.Font), ConsolePack.FONT))
+                add(PackToken("type.$role.file", TokenKind.Asset(AssetType.Font), ""))
                 whole("type.$role.weight", 100, 900, 400)
                 number("type.$role.scale", 0.5f, 2f, 1)
                 flag("type.$role.italic", false)

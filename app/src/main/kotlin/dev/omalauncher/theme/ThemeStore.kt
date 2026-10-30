@@ -213,29 +213,35 @@ class ThemeStore(
         ActivePack.choose(pick)
         reportLook(pick)
         val load = pick.load?.takeIf { !pick.isConsole }
-        // Console (also what draws when a pack can't be loaded) has its own fonts from the store, in its own folder.
+        // Console (also what draws when a pack can't be loaded) draws in its own fonts from the store (assets/fonts).
         val console = load == null
+        val source = (if (console) AssetPackSource(context.assets, "fonts") else packSource(pick.id)) ?: return
         val id = if (console) ConsolePack.ID else pick.id
-        val source = (if (console) AssetPackSource(context.assets, "$PACKS/${ConsolePack.ID}") else packSource(pick.id)) ?: return
         // Fonts and wallpapers arrive after the first frame; until then each font is its system family and the page its paper color.
         scope.launch(Dispatchers.IO) {
-            val type = (load?.pack ?: ConsolePack.pack).type
-            fun fonts() =
-                listOf(type.display, type.body, type.hand, type.mono)
+            fun fonts(): Map<String, FontFamily> {
+                if (console) {
+                    // Every voice is JetBrains Mono; the body has Schibsted Grotesk behind it, and Console's own
+                    // monospace (Palette.mono, most of its text) is drawn in that, the fuller stack.
+                    val mono = packFont(source, id, ConsolePack.FONT) ?: return emptyMap()
+                    val body = packFont(source, id, ConsolePack.FONT, listOf(ConsolePack.BODY_FALLBACK)) ?: mono
+                    return mapOf("display:" to mono, "hand:" to mono, "mono:" to mono, "body:" to body)
+                }
+                val type = load!!.pack.type
+                return listOf(type.display, type.body, type.hand, type.mono)
                     .map { it.file }
                     .filter { it.isNotEmpty() }
                     .distinct()
                     .mapNotNull { path -> packFont(source, id, path)?.let { path to it } }
-                    .toMap() +
-                    // Console's body stack: JetBrains Mono, then Schibsted Grotesk, as the store has it.
-                    (if (console) packFont(source, id, ConsolePack.FONT, listOf(ConsolePack.BODY_FALLBACK))
-                        ?.let { mapOf("body:${ConsolePack.FONT}" to it) }.orEmpty() else emptyMap())
+                    .toMap()
+            }
             val fonts = fonts()
             val wallpapers = load?.pack?.page?.let { page -> PackWallpapers(packImage(source, page.wallpaperCover), packImage(source, page.wallpaperInner)) }
             withContext(Dispatchers.Main) {
                 // Another pack may have been picked meanwhile.
                 if (ActivePack.pick === pick) {
                     ActivePack.fonts = fonts
+                    dev.omalauncher.ui.PlatformFonts.consoleMono = if (console) fonts["body:"] else null
                     if (wallpapers != null) {
                         ActivePack.wallpapers = wallpapers
                         syncLockPaper()
@@ -249,6 +255,7 @@ class ThemeStore(
                 withContext(Dispatchers.Main) {
                     if (ActivePack.pick === pick) {
                         ActivePack.fonts = again
+                        if (console) dev.omalauncher.ui.PlatformFonts.consoleMono = again["body:"]
                         LookWidgets.refresh(context)
                     }
                 }

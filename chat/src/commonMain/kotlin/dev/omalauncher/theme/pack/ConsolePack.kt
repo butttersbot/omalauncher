@@ -9,11 +9,15 @@ package dev.omalauncher.theme.pack
 object ConsolePack {
     const val ID = "console"
 
-    /** Console's face for every voice, as the font store has it (manifest 92235ea631ee): assets/packs/console/fonts. */
-    const val FONT = "fonts/JetBrainsMono.ttf"
+    /**
+     * Console's face, as Soma Canvas's font store has it (manifest 92235ea631ee; Boss, 2026-10-29 20:08): JetBrains Mono
+     * in every voice, the body with Schibsted Grotesk after it, then the store's symbols, emoji and CJK. In the app's
+     * assets/fonts (not a pack file, so packs that name none still draw their family); what Console's monospace is.
+     */
+    const val FONT = "console/JetBrainsMono.ttf"
 
-    /** And after it in the body's stack only, before the store's symbols, emoji and CJK. */
-    const val BODY_FALLBACK = "fonts/SchibstedGrotesk.ttf"
+    /** After [FONT] in the body's stack only. */
+    const val BODY_FALLBACK = "console/SchibstedGrotesk.ttf"
 
     /** Console's own tokens. A value in [PackSchema] that isn't one for its token fails here, and so in the tests. */
     val tokens: PackTokens =

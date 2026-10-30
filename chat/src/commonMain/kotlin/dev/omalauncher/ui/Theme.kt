@@ -52,7 +52,8 @@ class ThemePalette(
     val border = color("muted", 0xFF414868)
     val red = color("red", 0xFFF7768E)
     val green = color("green", 0xFF9ECE6A)
-    val mono = TextStyle(fontFamily = FontFamily.Monospace, fontSize = TextSize.Body, color = foreground)
+    /** Console's text: JetBrains Mono from the font store once ThemeStore has read it ([PlatformFonts.consoleMono]). */
+    val mono: TextStyle get() = TextStyle(fontFamily = PlatformFonts.consoleMono ?: FontFamily.Monospace, fontSize = TextSize.Body, color = foreground)
 }
 
 /**
@@ -249,6 +250,9 @@ val NerdSymbols: FontFamily get() = PlatformFonts.nerdSymbols
  */
 object PlatformFonts {
     @Volatile var nerdSymbols: FontFamily = FontFamily.Default
+
+    /** Console's own font with the store's fallbacks (ThemeStore), while Console is the look; null: the system monospace. */
+    var consoleMono by mutableStateOf<FontFamily?>(null)
 }
 
 /** The Material Design Icons in [NerdSymbols] the launcher draws with [Symbol]. */

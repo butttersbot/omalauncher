@@ -49,12 +49,18 @@ class StoreFontsTest {
         assertNull(StoreFonts.cached(dir, other))
     }
 
-    @Test fun consoleCarriesTheStoreFontsItsVoicesName() {
-        fun asset(p: String) = File("src/main/assets/packs/console/$p").let { if (it.exists()) it else File("app/src/main/assets/packs/console/$p") }
+    @Test fun consoleDrawsInItsStoreFontsWithoutMakingThemPackFiles() {
+        fun asset(p: String) = File("src/main/assets/$p").let { if (it.exists()) it else File("app/src/main/assets/$p") }
         // The store's console set (manifest 92235ea631ee): JetBrains Mono 48715a42…, Schibsted Grotesk 6ceeadf6….
-        assertEquals("48715a42ec242c21e9f02692891e147d022299a52e48d5e413e1a942193ffeda", sha(asset(dev.omalauncher.theme.pack.ConsolePack.FONT).readBytes()))
-        assertEquals("6ceeadf6be8e1fd7687011c7fa38ed0edd1abe967a0b73d97caec183552e823d", sha(asset(dev.omalauncher.theme.pack.ConsolePack.BODY_FALLBACK).readBytes()))
-        assertEquals(4, asset("pack.toml").readText().split("file = \"fonts/JetBrainsMono.ttf\"").size - 1)
+        assertEquals("48715a42ec242c21e9f02692891e147d022299a52e48d5e413e1a942193ffeda", sha(asset("fonts/" + dev.omalauncher.theme.pack.ConsolePack.FONT).readBytes()))
+        assertEquals("6ceeadf6be8e1fd7687011c7fa38ed0edd1abe967a0b73d97caec183552e823d", sha(asset("fonts/" + dev.omalauncher.theme.pack.ConsolePack.BODY_FALLBACK).readBytes()))
+        // Not pack files: Console's pack still names none, so a pack that names none still draws its family (lane C,
+        // 21362fa8: making them the schema's default broke 22 pack tests and the Looks picker).
+        assertEquals(4, asset("packs/console/pack.toml").readText().split("file = \"\"").size - 1)
+        assertFalse(asset("packs/console/fonts").exists())
+        // Console's own text (Palette.mono) is drawn in them while Console is the look.
+        val store = File("src/main/kotlin/dev/omalauncher/theme/ThemeStore.kt").let { if (it.exists()) it else File("app/src/main/kotlin/dev/omalauncher/theme/ThemeStore.kt") }.readText()
+        assertTrue(store.contains("dev.omalauncher.ui.PlatformFonts.consoleMono = if (console) fonts[\"body:\"] else null"))
     }
 
     @Test fun aPinnedNameNeverBecomesAPath() {
