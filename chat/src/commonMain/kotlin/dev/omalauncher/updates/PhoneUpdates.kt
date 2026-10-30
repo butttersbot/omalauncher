@@ -154,8 +154,9 @@ fun PhoneUpdateSheet(u: PhoneUpdates) {
         // card's gap between the panels and the pinned footer.
         BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.Center) {
             val wide = maxWidth >= 600.dp + 28.dp
+            val tall = maxHeight
             Box(Modifier.padding(if (wide) 6.dp else 14.dp), contentAlignment = Alignment.Center) {
-                Column(Modifier.widthIn(max = if (wide) 880.dp else 447.dp).fillMaxWidth().heightIn(max = maxHeight)
+                Column(Modifier.widthIn(max = if (wide) 880.dp else 447.dp).fillMaxWidth().heightIn(max = tall)
                     .background(Pack.background, Pack.shape()).border(Pack.hair, Pack.border, Pack.shape())) {
                     Row(Modifier.fillMaxWidth().heightIn(min = 80.dp).ruleBottom().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Spacer(Modifier.width(44.dp))
