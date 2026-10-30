@@ -110,8 +110,8 @@ class AgentTroubleTest {
     }
     @Test fun aRunnerCantCallItselfAnotherMacAndASmallClockDifferenceIsFine() {
         assertEquals("Mac Pro (jacks-mac-pro): herd", restoreLine("Mac Pro", null, "jacks-mac-pro", "herd"))
-        assertEquals("Mac Pro (jacks-mac-pro): herd", restoreLine("Mac Pro", "jacks-mac-pro", "jacks-mac-pro", "herd"))
-        assertEquals("MacBook (jacks-mac-pro): herd · it called itself macbook before", restoreLine("MacBook", "macbook", "jacks-mac-pro", "herd"))
+        assertEquals("Mac Pro: herd", restoreLine("Mac Pro", "jacks-mac-pro", "jacks-mac-pro", "herd"))
+        assertEquals("MacBook (jacks-mac-pro, was macbook): herd", restoreLine("MacBook", "macbook", "jacks-mac-pro", "herd"))
         // The line a restart waits on stays until something else needs the sheet.
         assertTrue(repairLineStays("Restarted · mac: soma. Can't confirm until real traffic passes.", false))
         assertFalse(repairLineStays("Restarted · mac: soma. Can't confirm until real traffic passes.", true))

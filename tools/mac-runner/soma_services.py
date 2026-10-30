@@ -1382,35 +1382,40 @@ class Controller:
         if service not in TRAFFIC_PROOF:
             return
         with self.lock:
-            notes = self._restart_notes()
-            notes[service] = {'at': self.clock(), 'state': 'unconfirmed'}
+            notes = self._restart_times()
+            notes[service] = {'at': self.clock()}
             _write_private(self.records.root / 'restart-notes.json', notes)
 
-    def _restart_notes(self):
+    def _restart_times(self):
+        """When each traffic-proved service was last restarted, and nothing else: an agent can write this file, so nothing in it is
+        believed beyond that, and whether traffic has passed since is worked out fresh every time."""
         with contextlib.suppress(OSError, ValueError):
             notes = json.loads((self.records.root / 'restart-notes.json').read_text())
-            return {service: note for service, note in notes.items() if service in TRAFFIC_PROOF and isinstance(note, dict)
-                    and note.get('state') in ('unconfirmed', 'confirmed') and isinstance(note.get('at'), int)} if isinstance(notes, dict) else {}
+            if isinstance(notes, dict):
+                return {service: {'at': note['at']} for service, note in notes.items() if service in TRAFFIC_PROOF and isinstance(note, dict)
+                        and type(note.get('at')) is int and note['at'] <= self.clock() + 60_000}
         return {}
 
     def restart_notes(self, rows):
         """Each traffic-proved service's last restart: unconfirmed until real traffic is newer than it, then confirmed for a day."""
         with self.lock:
-            notes, changed = self._restart_notes(), False
-            for service, note in list(notes.items()):
-                if note.get('state') == 'unconfirmed' and service in TRAFFIC_PROOF:
-                    name, field = TRAFFIC_PROOF[service]
-                    check = next((c for c in rows.get(service, {}).get('checks', []) if c.get('check') == name), None)
-                    last = (check or {}).get('fields', {}).get(field)
-                    # A stamp from the future (a clock jump, a file's own date) isn't traffic since the restart.
-                    if isinstance(last, int) and note['at'] < last <= self.clock() + 60_000:
-                        notes[service], changed = {**note, 'state': 'confirmed', 'confirmed_at': last}, True
-                elif note.get('state') == 'confirmed' and self.clock() - note.get('confirmed_at', 0) > CONFIRMED_NOTE_MS:
-                    del notes[service]
-                    changed = True
-            if changed:
-                _write_private(self.records.root / 'restart-notes.json', notes)
-            return notes
+            times, out, expired = self._restart_times(), {}, False
+            for service, note in list(times.items()):
+                name, field = TRAFFIC_PROOF[service]
+                check = next((c for c in rows.get(service, {}).get('checks', []) if c.get('check') == name), None)
+                last = (check or {}).get('fields', {}).get(field)
+                # A stamp from the future (a clock jump, a file's own date) isn't traffic since the restart.
+                if type(last) is int and note['at'] < last <= self.clock() + 60_000:
+                    if self.clock() - last > CONFIRMED_NOTE_MS:
+                        expired = True
+                        del times[service]
+                        continue
+                    out[service] = {'at': note['at'], 'state': 'confirmed', 'confirmed_at': last}
+                else:
+                    out[service] = {'at': note['at'], 'state': 'unconfirmed'}
+            if expired:
+                _write_private(self.records.root / 'restart-notes.json', times)
+            return out
 
     def _probe_now(self, service, keys=None):
         with contextlib.suppress(Exception):

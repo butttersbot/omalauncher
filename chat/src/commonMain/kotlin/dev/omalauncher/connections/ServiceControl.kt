@@ -125,8 +125,11 @@ data class ServiceOperation(val id: String, val approval: String, val service: S
  * The prompt's line for one restart. What a runner calls itself is what the owner's signature names, so he sees that name beside the
  * paired machine, and a change in it (a rename, or another Mac's runner posing as this one) is his to accept or refuse.
  */
-fun restoreLine(machine: String, pinned: String?, host: String, service: String): String =
-    "$machine ($host): $service" + if (pinned != null && pinned != host) " · it called itself $pinned before" else ""
+fun restoreLine(machine: String, pinned: String?, host: String, service: String): String = when {
+    pinned == host -> "$machine: $service"
+    pinned == null -> "$machine (${host.take(40)}): $service"
+    else -> "$machine (${host.take(40)}, was ${pinned.take(40)}): $service"
+}
 
 /** What a Restore does with one service of a Mac's inventory: only a service that is really down is restarted. */
 data class RestoreTriage(val restart: Boolean, val blocked: List<ConnectionCheck> = emptyList())

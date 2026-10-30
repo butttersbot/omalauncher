@@ -852,8 +852,14 @@ class MissingEvidence(Base):
         # A date from the future is not traffic since the restart, and a note file an agent wrote nonsense in breaks nothing.
         future = [S.mkcheck('soma_sync', 'soma', 'x', 'pass', {'last_synced_at': self.clock() + 3_600_000})]
         self.assertEqual(self.control.restart_notes({'soma': {'checks': future}})['soma']['state'], 'unconfirmed')
-        S._write_private(self.control.records.root / 'restart-notes.json', {'soma': 'unconfirmed', 'tailshare-serve': {'state': 'odd', 'at': 1}, 'canvas': {'state': 'unconfirmed', 'at': 1}})
+        notes = self.control.records.root / 'restart-notes.json'
+        S._write_private(notes, {'soma': 'unconfirmed', 'tailshare-serve': {'at': True}, 'canvas': {'state': 'unconfirmed', 'at': 1}, 'tailshare-receive': {'at': self.clock() + 3_600_000}})
         self.assertEqual(self.control.restart_notes({}), {})
+        for odd in ('abc', [1], None, self.clock()):
+            # What the file says about confirmation is not believed, and can't break the list.
+            S._write_private(notes, {'soma': {'state': 'confirmed', 'at': 1, 'confirmed_at': odd}})
+            self.assertEqual(self.control.restart_notes({})['soma']['state'], 'unconfirmed', odd)
+            self.control.inventory(budget=2)
         # Merely unproven is not down: a signed tap still restarts nothing.
         self.up_before = True
         self.probe_result = [S.mkcheck('soma_identity', 'soma', 'x', 'unverified')]
