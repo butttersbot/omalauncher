@@ -1,6 +1,8 @@
 # Phone-builder path, four fictional long-label questions; no Claude session or runner is started.
 fold folded
+# Answers are kept as a draft (a run that stopped midway would leave its own): start with none.
 shell am force-stop dev.omalauncher.artifactpreview
+shell pm clear dev.omalauncher.artifactpreview
 shell am start -n dev.omalauncher.artifactpreview/.PreviewActivity --es waitingQuestion builder
 clearlog
 expect Questions waiting
@@ -34,10 +36,14 @@ scrollto Choice 1:
 tap Choice 1:
 scrollto Choice 2:
 tap Choice 2:
-swipe 0.78 0.55 0.78 0.30 400
+# The form's footer grows with each answer, so the list above it gets shorter, and scrollto's swipes down the middle of
+# the open Fold miss the form's column: long swipes on the column itself, one before each of the last two questions.
+swipe 0.78 0.70 0.78 0.15 500
+wait 500
 scrollto Choice 3:
 tap Choice 3:
-swipe 0.78 0.70 0.78 0.15 500
+swipe 0.78 0.70 0.78 0.30 500
+wait 500
 scrollto Choice 4:
 expect Send answers
 shot builder-question-four-unfolded
