@@ -203,12 +203,19 @@ object MacLink {
         path: String,
         body: JSONObject = JSONObject(),
         timeout: Int = 60_000,
+        once: Boolean = false,
     ): JSONObject {
         val c = open(at, path, "POST", timeout = timeout)
         try {
             c.doOutput = true
             c.setRequestProperty("Content-Type", "application/json")
-            c.outputStream.use { it.write(body.toString().toByteArray()) }
+            val bytes = body.toString().toByteArray()
+            if (once) {
+                // Android's HTTP stack silently posts a buffered body again when a connection dies before the answer,
+                // and the Mac has often sent it by then: a doubled real message. A streamed body is never repeated.
+                c.setFixedLengthStreamingMode(bytes.size)
+            }
+            c.outputStream.use { it.write(bytes) }
             if (c.responseCode !in 200..299) throw IllegalStateException(error(c))
             return answer(c)
         } finally {
@@ -366,7 +373,7 @@ object MacLink {
                 val body = JSONObject().put("text", text).put("clientId", clientId)
                 replyTo?.let { body.put("replyTo", it) }
                 linkPreviewSelection(text, hiddenLinks)?.let { body.put("linkPreview", it) }
-                post(at, "/v1/chats/${path(chat)}/messages", body)
+                post(at, "/v1/chats/${path(chat)}/messages", body, once = true)
                 onAccepted()
             }.onFailure {
                 Log.w(TAG, "sending", it)
