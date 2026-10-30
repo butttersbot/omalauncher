@@ -165,11 +165,15 @@ class Linked(unittest.TestCase):
 
 
 # Tonight's pair (Boss, 2026-10-29): Phone A's card and the MacBook thread's, the same decision worded differently.
-TONIGHT_A = {'questions': [{'question': 'Were those 3 skills removed on purpose?', 'header': 'Skills', 'multiSelect': False,
-                            'options': [{'label': 'Restore', 'description': 'Bring the 3 skills back'}, {'label': 'Keep deleted', 'description': 'They were meant to go'}]}]}
-TONIGHT_MACBOOK = {'questions': [{'question': 'Three skills (code-review, simplify, x-read) are gone from ~/.claude/skills on the MacBook. Bring them back?',
-                                  'header': 'Deleted skills', 'multiSelect': False,
-                                  'options': [{'label': 'Bring them back', 'description': 'Copy them from the Mac Pro'}, {'label': 'Leave them deleted', 'description': 'They stay gone'}]}]}
+TONIGHT_A = {'questions': [{'question': "MacBook skills sync is on, and the theme tool now matches the Mac Pro. But the first sync deleted 3 skills on the MacBook (decision-artifacts, impeccable, layout) because the Mac Pro had them marked as deleted. The MacBook agent paused the folder and has backups of all of them. Were those 3 skills removed on the Mac Pro on purpose?",
+                            'header': 'Skills', 'multiSelect': False,
+                            'options': [{'label': 'Restore them (Recommended)', 'description': ''}, {'label': 'Yes, keep them deleted', 'description': ''}]}]}
+# The MacBook thread's card, verbatim (its Claude Code session, 2026-10-29 ~22:06).
+TONIGHT_MACBOOK = {'questions': [{'question': "The Mac Pro's skills folder has decision-artifacts, impeccable and layout deleted, so joining it removed them here too. Were they removed on the Mac Pro on purpose?",
+                                  'header': '3 skills', 'multiSelect': False,
+                                  'options': [{'label': 'Restore them (Recommended)', 'description': 'Copy the 7 files back from ~/.claude/skills.bak-20261029, clear the leftover conflict copies, then unpause. The three skills come back here and sync back to the Mac Pro too.'},
+                                              {'label': 'Keep them deleted', 'description': "They were retired on purpose. I'll clear the empty folders and conflict copies here, then unpause so the MacBook matches the Mac Pro."},
+                                              {'label': 'Leave it paused', 'description': 'Change nothing for now; the folder stays paused and the backup stays as it is.'}]}]}
 OTHER = {'questions': [{'question': 'Which colour for the Hunch header?', 'header': 'Colour', 'multiSelect': False,
                         'options': [{'label': 'Red', 'description': ''}, {'label': 'Blue', 'description': ''}]}]}
 UNSURE = {'questions': [{'question': 'Move the skills folder somewhere else? (unsure-case)', 'header': 'Folder', 'multiSelect': False,
@@ -195,21 +199,21 @@ class ByMeaning(unittest.TestCase):
         return {m['thread']: m for m in said['matches']}
 
     def test_1_tonightsPairWordedDifferentlyIsAnsweredInTheOthersOwnTerms(self):
-        found = self.match(TONIGHT_A, {'Were those 3 skills removed on purpose?': 'Restore'})
+        found = self.match(TONIGHT_A, {TONIGHT_A['questions'][0]['question']: 'Restore them (Recommended)'})
         m = found[self.macbook]
         self.assertEqual(('meaning', True), (m['match'], m['deliver']))
-        self.assertEqual({TONIGHT_MACBOOK['questions'][0]['question']: 'Bring them back'}, m['answers'])
+        self.assertEqual({TONIGHT_MACBOOK['questions'][0]['question']: 'Restore them (Recommended)'}, m['answers'])
         self.assertNotIn(self.other, found)  # a different decision isn't offered at all
         self.assertEqual(('hint', False), (found[self.unsure]['match'], found[self.unsure]['deliver']))  # unsure: his tap
         # Delivered through the approvals route Soma already answers with: the MacBook's agent hears its own label.
         code, said = call('POST', '/threads/%s/approvals/%s' % (self.macbook, m['approval']), {'decision': 'allow', 'nonce': m['nonce'], 'answers': m['answers']})
         self.assertEqual(200, code, said)
-        self.assertIn('Bring them back', answered(self.macbook)[0])
+        self.assertIn('Restore them (Recommended)', answered(self.macbook)[0])
 
     def test_2_aMappingOntoALabelTheCardDoesntHaveIsNeverOffered(self):
         _, q = asking('Bad map', {'questions': [{'question': 'Remove the skills? (bad-map)', 'header': 'x', 'multiSelect': False,
                                                   'options': [{'label': 'Yes', 'description': ''}, {'label': 'No', 'description': ''}]}]})
-        m = self.match(TONIGHT_A, {'Were those 3 skills removed on purpose?': 'Restore'})[q['thread']]
+        m = self.match(TONIGHT_A, {TONIGHT_A['questions'][0]['question']: 'Restore them (Recommended)'})[q['thread']]
         self.assertFalse(m['deliver'])
         self.assertNotIn('answers', m)
 

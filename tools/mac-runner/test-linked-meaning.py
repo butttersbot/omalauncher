@@ -22,8 +22,8 @@ linked.environment['HOME'] = str(pathlib.Path.home())  # Claude's own sign-in
 
 class RealMeaning(linked.ByMeaning):
     def test_1_tonightsPairWordedDifferentlyIsAnsweredInTheOthersOwnTerms(self):
-        for chose, expect in (('Restore', 'Bring them back'), ('Keep deleted', 'Leave them deleted')):
-            found = self.match(linked.TONIGHT_A, {'Were those 3 skills removed on purpose?': chose})
+        for chose, expect in (('Restore them (Recommended)', 'Restore them (Recommended)'), ('Yes, keep them deleted', 'Keep them deleted')):
+            found = self.match(linked.TONIGHT_A, {linked.TONIGHT_A['questions'][0]['question']: chose})
             m = found[self.macbook]
             print('  %s -> %s' % (chose, m))
             self.assertTrue(m['deliver'], m)
