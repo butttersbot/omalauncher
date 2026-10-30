@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Immutable
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -53,7 +55,16 @@ class ThemePalette(
     val red = color("red", 0xFFF7768E)
     val green = color("green", 0xFF9ECE6A)
     /** Console's text: JetBrains Mono from the font store once ThemeStore has read it ([PlatformFonts.consoleMono]). */
-    val mono: TextStyle get() = TextStyle(fontFamily = PlatformFonts.consoleMono ?: FontFamily.Monospace, fontSize = TextSize.Body, color = foreground)
+    val mono: TextStyle get() = PlatformFonts.consoleMono.let { console ->
+        if (console == null) TextStyle(fontFamily = FontFamily.Monospace, fontSize = TextSize.Body, color = foreground)
+        // JetBrains Mono's lines are taller (1.32 em) than the system monospace's (Droid Sans Mono, 1.164 em) that Console's
+        // fixed-height cards were laid out for; at that line height they hold what they held (lane C, 6becf8a9).
+        else TextStyle(
+            fontFamily = console, fontSize = TextSize.Body, color = foreground,
+            lineHeight = CONSOLE_LINE.em,
+            lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None),
+        )
+    }
 }
 
 /**
@@ -248,6 +259,9 @@ val NerdSymbols: FontFamily get() = PlatformFonts.nerdSymbols
  * The fonts each app bundles its own way, given to the shared code before anything draws: the phone app from its
  * resources (App.onCreate), the desktop app from its jar. Until then, and in unit tests, the default family.
  */
+/** Droid Sans Mono's line height in em ((1901 + 483) / 2048), which Console's cards were laid out for. */
+const val CONSOLE_LINE = 1.164f
+
 object PlatformFonts {
     @Volatile var nerdSymbols: FontFamily = FontFamily.Default
 

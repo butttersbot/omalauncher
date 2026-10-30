@@ -203,6 +203,9 @@ class PackLook(
     /** What a caller's own radius is multiplied by: callers give theirs for Console's 16dp frames. */
     private val radiusScale = pack.shape.radius / CONSOLE_RADIUS
 
+    /** The voices drawn in Console's own font (role keys with no pack file; ThemeStore). */
+    private val consoleRoles: Set<TypeRole> = TypeRole.entries.filter { fonts.containsKey("${it.id}:") }.toSet()
+
     private val families: Map<TypeRole, FontFamily> =
         TypeRole.entries.associateWith { role -> font(role).let { fonts["${role.id}:${it.file}"] ?: fonts[it.file] ?: it.family.family() } }
 
@@ -221,6 +224,9 @@ class PackLook(
         color: Color = foreground,
     ): TextStyle {
         val font = font(role)
+        // Console's voices (JetBrains Mono, role keys with no pack file) keep the system monospace's line height its
+        // fixed-height cards were laid out for (Theme.kt CONSOLE_LINE).
+        val console = role in consoleRoles
         return TextStyle(
             fontFamily = families.getValue(role),
             fontSize = if (font.scale == 1f) size else size * font.scale,
@@ -228,6 +234,9 @@ class PackLook(
             fontWeight = if (font.weight == 400) null else FontWeight(font.weight),
             fontStyle = if (font.italic) FontStyle.Italic else null,
             letterSpacing = if (font.tracking == 0f) TextUnit.Unspecified else font.tracking.em,
+            lineHeight = if (console) CONSOLE_LINE.em else TextUnit.Unspecified,
+            lineHeightStyle = if (console) androidx.compose.ui.text.style.LineHeightStyle(
+                androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center, androidx.compose.ui.text.style.LineHeightStyle.Trim.None) else null,
         )
     }
 
