@@ -366,7 +366,7 @@ class Builder(val id: BuilderId) {
         if (!working && agentMail == null && followUps.waiting.isEmpty()) return start(context, prompt, images, screen, page, queued = null, earlier = earlier, mail = mail, errand = errand)
         check(!working || !stopping) { "The agent is stopping. Send this again in a moment." }
         val agents = (context.applicationContext as App).runtime.agents
-        val agent = builderAgent(id, agents.installed, agents.default)?.agent ?: error("Install and sign in to an agent in Omalauncher first.")
+        val agent = builderAgentFresh(id, { builderAgent(id, agents.installed, agents.default) }, agents::refresh)?.agent ?: error(missingBuilderAgentMessage(id))
         val log = ChatLog.of(context)
         val time = log.stamp(System.currentTimeMillis())
         if (agentMail != null && AgentMailReceipts.seen(context, agentMail)) return
@@ -406,7 +406,7 @@ class Builder(val id: BuilderId) {
     private fun answerModel(context: Context, command: ModelCommand, prompt: String): Unit = synchronized(lock) {
         restore(context)
         val agents = (context.applicationContext as App).runtime.agents
-        val choice = builderAgent(id, agents.installed, agents.default) ?: error("Install and sign in to an agent in Omalauncher first.")
+        val choice = builderAgentFresh(id, { builderAgent(id, agents.installed, agents.default) }, agents::refresh) ?: error(missingBuilderAgentMessage(id))
         val bin = choice.agent.bin
         val reply = modelReply(command, id, choice.agent.name, bin, chosenModel(context, bin), choice.model)
         if (command is ModelCommand.Choose && modelSwitchable(bin)) {
@@ -437,7 +437,7 @@ class Builder(val id: BuilderId) {
         check(!working) { "An agent is already working. Stop it before starting another task." }
         val runtime = (context.applicationContext as App).runtime
         check(runtime.bootstrap.state.value == LinuxState.Installed) { "Open Omalauncher and finish Linux setup first." }
-        val choice = builderAgent(id, runtime.agents.installed, runtime.agents.default) ?: error("Install and sign in to an agent in Omalauncher first.")
+        val choice = builderAgentFresh(id, { builderAgent(id, runtime.agents.installed, runtime.agents.default) }, runtime.agents::refresh) ?: error(missingBuilderAgentMessage(id))
         val agent = choice.agent
         // What he chose with /model for this builder and agent, if anything; an errand keeps its own fast model.
         val model = if (id == BuilderId.D) PHONE_D_CODEX_MODEL else builderModel(if (errand) ERRAND_MODEL else null, chosenModel(context, agent.bin), choice.model)

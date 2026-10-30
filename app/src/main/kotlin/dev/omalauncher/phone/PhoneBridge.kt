@@ -59,7 +59,17 @@ class PhoneBridge(private val context: Context, private val proot: Proot) {
                         if (input.optString("command") == "mail") {
                             val mail = dev.omalauncher.assist.agentMail(input.optJSONObject("mail")?.toString())
                             val result = if (mail == null) JSONObject().put("ok", false).put("error", "Not a mail: version 1, an id, from.device and some text.")
-                            else { dev.omalauncher.assist.AgentMailInbox.deliver(context, mail); JSONObject().put("ok", true).put("id", mail.id) }
+                            else {
+                                // Mail for a builder that cannot start is refused here, where the sender sees it, not "Sent".
+                                val refusal = runCatching {
+                                    val agents = (context.applicationContext as dev.omalauncher.App).runtime.agents
+                                    dev.omalauncher.assist.builderMailRefusal(dev.omalauncher.assist.AgentTasks.addressed(context.applicationContext, mail)) { id ->
+                                        dev.omalauncher.assist.builderAgentFresh(id, { dev.omalauncher.assist.builderAgent(id, agents.installed, agents.default) }, agents::refresh)
+                                    }
+                                }.getOrNull()
+                                if (refusal != null) JSONObject().put("ok", false).put("error", refusal)
+                                else { dev.omalauncher.assist.AgentMailInbox.deliver(context, mail); JSONObject().put("ok", true).put("id", mail.id) }
+                            }
                             PhoneHttp.reply(socket.outputStream, result.toString())
                             return@use
                         }

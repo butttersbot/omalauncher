@@ -26,3 +26,21 @@ fun builderAgent(id: BuilderId, installed: List<Agent>, default: Agent?): Builde
     }
     return default?.let { BuilderAgent(it) }
 }
+
+/**
+ * [builderAgent] for a task about to start: when none is found, [rescan] re-reads the installed list from disk once (an
+ * agent installed from a shell is not seen until Soma restarts) and the look is repeated.
+ */
+fun builderAgentFresh(id: BuilderId, find: () -> BuilderAgent?, rescan: () -> Unit): BuilderAgent? = find() ?: run { rescan(); find() }
+
+/** What is wrong when [builderAgent] finds nothing: the agent that builder needs, by name, not a general sign-in line. */
+fun missingBuilderAgentMessage(id: BuilderId): String = when (id) {
+    BuilderId.D -> "Phone D needs Codex, which isn't installed on the phone."
+    BuilderId.B -> "Phone B needs Codex (or another agent), and none is installed on the phone."
+    BuilderId.C -> "Phone C needs Claude Code (or another agent), and none is installed on the phone."
+    else -> "Install and sign in to an agent in Omalauncher first."
+}
+
+/** Why mail for [builder] cannot start, or null when it can (or is not for a builder): the sender should see this, not "Sent". */
+fun builderMailRefusal(builder: BuilderId?, find: (BuilderId) -> BuilderAgent?): String? =
+    if (builder == null || find(builder) != null) null else missingBuilderAgentMessage(builder)

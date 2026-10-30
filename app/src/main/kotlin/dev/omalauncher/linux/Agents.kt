@@ -109,7 +109,8 @@ class AgentStore(
     var installed by mutableStateOf<List<Agent>>(emptyList())
         private set
 
-    private fun refresh() {
+    /** Reads the shims again: an agent installed from a shell (mise) is found without a restart. */
+    fun refresh() {
         installed = AGENTS.filter { isInstalled(it) }
     }
 

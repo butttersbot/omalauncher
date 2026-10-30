@@ -50,4 +50,32 @@ class BuilderAgentTest {
         assertFalse(backgroundAgentCommand("codex", "test").contains("--dangerously-bypass"))
         assertEquals(backgroundAgentCommand("claude", "test"), backgroundAgentCommand("claude", "test", codexFullAccess = true))
     }
+
+    @Test fun anAgentInstalledFromAShellIsFoundByOneRescanBeforeGivingUp() {
+        var installed = listOf(claude)
+        var rescans = 0
+        val found = builderAgentFresh(BuilderId.D, { builderAgent(BuilderId.D, installed, claude) }) { rescans++; installed = listOf(claude, codex) }
+        assertEquals(BuilderAgent(codex, PHONE_D_CODEX_MODEL), found)
+        assertEquals(1, rescans)
+        // Found at once: no rescan. Still missing after it: null, one rescan only.
+        rescans = 0
+        assertNotNull(builderAgentFresh(BuilderId.D, { builderAgent(BuilderId.D, installed, claude) }) { rescans++ })
+        assertEquals(0, rescans)
+        assertNull(builderAgentFresh(BuilderId.D, { builderAgent(BuilderId.D, listOf(claude), claude) }) { rescans++ })
+        assertEquals(1, rescans)
+    }
+
+    @Test fun theMissingAgentIsNamedForEachBuilder() {
+        assertEquals("Phone D needs Codex, which isn't installed on the phone.", missingBuilderAgentMessage(BuilderId.D))
+        assertTrue(missingBuilderAgentMessage(BuilderId.B).startsWith("Phone B needs Codex"))
+        assertTrue(missingBuilderAgentMessage(BuilderId.C).startsWith("Phone C needs Claude Code"))
+        assertEquals("Install and sign in to an agent in Omalauncher first.", missingBuilderAgentMessage(BuilderId.A))
+    }
+
+    @Test fun mailToABuilderThatCannotStartIsRefusedToItsSender() {
+        val find = { id: BuilderId -> builderAgent(id, listOf(claude), claude) }
+        assertEquals("Phone D needs Codex, which isn't installed on the phone.", builderMailRefusal(BuilderId.D, find))
+        assertNull(builderMailRefusal(BuilderId.B, find))
+        assertNull(builderMailRefusal(null, find))
+    }
 }
