@@ -3057,10 +3057,22 @@ def claude_discovery_start():
 INTERNAL_MARKER = '.soma-internal'
 
 
+TEMP_FOLDERS = ('/tmp', '/private/tmp', '/var/folders', '/private/var/folders')
+
+
+def in_temp_folder(project):
+    """Under the system's temp folders, and not under this user's home (a test's whole home can sit in one)."""
+    path = os.path.realpath(project)
+    home = os.path.realpath(HOME)
+    return any(path == root or path.startswith(root + '/') for root in TEMP_FOLDERS) and not (path == home or path.startswith(home + '/'))
+
+
 def marked_internal(project):
-    """A session found in a folder an agent marked as its own (a test's or a helper's: INTERNAL_MARKER in it) is internal:
-    kept off Boss's tabs from the start (Boss, 2026-10-29). Headless helper calls should rather not be saved at all
-    (claude -p --no-session-persistence); this is for the ones that must be."""
+    """A session found in a temp folder, or in a folder an agent marked as its own (a test's or a helper's: INTERNAL_MARKER in
+    it), is internal: kept off Boss's tabs from the start (Boss, 2026-10-29), and POST /threads/ID/internal can still show it. Headless
+    helper calls should rather not be saved at all (claude -p --no-session-persistence); this is for the ones that must be."""
+    if in_temp_folder(project):
+        return {'internal': True}
     try:
         return {'internal': True} if (pathlib.Path(project) / INTERNAL_MARKER).is_file() else {}
     except OSError:

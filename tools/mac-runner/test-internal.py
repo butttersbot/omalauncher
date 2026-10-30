@@ -81,11 +81,23 @@ class Internal(unittest.TestCase):
     def test_3_aSessionFoundInAFolderMarkedAsAnAgentsOwnIsInternal(self):
         session(work / 'Projects' / 'judge', 'You are checking whether a shipped app screen follows its approved design.')
         session(work / 'Projects' / 'real', 'fix the fold gpu')
+        # A forgotten marker: a test's session in a system temp folder outside this home.
+        scratch = pathlib.Path('/private/tmp' if pathlib.Path('/private/tmp').is_dir() else '/tmp', 'soma-internal-test-%d' % os.getpid())
+        scratch.mkdir(exist_ok=True)
+        session(scratch, 'a leaked test session')
         for _ in range(40):
             every = names('/threads?all=1')
-            if 'fix the fold gpu' in every and any(n.startswith('You are checking') for n in every):
+            if 'fix the fold gpu' in every and 'a leaked test session' in every and any(n.startswith('You are checking') for n in every):
                 break
             time.sleep(0.5)
+        scratch.rmdir()
+        self.assertNotIn('a leaked test session', names())
+        leaked = names('/threads?all=1')['a leaked test session']
+        self.assertTrue(leaked['internal'])
+        # Nothing is lost: it can still be shown.
+        self.assertEqual(False, call('POST', '/threads/%s/internal' % leaked['id'], {'internal': False})[1]['thread']['internal'])
+        self.assertIn('a leaked test session', names())
+        call('POST', '/threads/%s/internal' % leaked['id'], {'internal': True})
         self.assertIn('fix the fold gpu', names())
         self.assertFalse(any(n.startswith('You are checking') for n in names()))
         self.assertTrue(any(n.startswith('You are checking') and t['internal'] for n, t in names('/threads?all=1').items()))
