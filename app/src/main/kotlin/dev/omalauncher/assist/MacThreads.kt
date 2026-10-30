@@ -116,8 +116,6 @@ object MacThreads {
     fun switchTo(context: Context, threadId: String, to: MacPick) = engine(context).switchTo(threadId, to)
 
     fun answerQuestions(context: Context, ticket: String, answers: org.json.JSONObject, told: (MacApprovalOutcome) -> Unit) = engine(context).answerQuestions(ticket, answers, told)
-    fun matchQuestions(context: Context, onThread: String, card: org.json.JSONObject, answers: org.json.JSONObject, where: String,
-                       answeredThread: String?, answeredApproval: String?) = engine(context).matchQuestions(onThread, card, answers, where, answeredThread, answeredApproval)
 
     fun answer(context: Context, ticket: String, allow: Boolean, told: (MacApprovalOutcome) -> Unit) = engine(context).answer(ticket, allow, told)
     fun rememberCommand(context: Context, ticket: String, told: (MacApprovalOutcome) -> Unit) = engine(context).rememberCommand(ticket, told)

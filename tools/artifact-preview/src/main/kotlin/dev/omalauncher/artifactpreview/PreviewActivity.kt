@@ -157,12 +157,10 @@ Open the preview to try the layout. We can keep talking while you look at it.
         private val meaningMacForm = org.json.JSONObject().put("questions", org.json.JSONArray().put(org.json.JSONObject()
             .put("question", "Syncthing's first pass removed 3 skills here. Should I put them back, or were they meant to be gone?").put("header", "3 skills")
             .put("options", org.json.JSONArray().put(org.json.JSONObject().put("label", "Put them back from the backup")).put(org.json.JSONObject().put("label", "They were meant to be gone")))))
-        // A Mac thread's question is matched by its runner (POST /questions/match): here, the runner's answer for tonight's pair.
-        override fun matchMacQuestions(onThread: String, card: org.json.JSONObject, answers: org.json.JSONObject, where: String, answeredThread: String?, answeredApproval: String?): org.json.JSONArray? {
+        override fun askSameQuestion(prompt: String): String? {
             if (waitingQuestion != "meaning") return null
-            android.util.Log.i("SomaWalk", "fixture runner match asked from $where")
-            return org.json.JSONArray().put(org.json.JSONObject().put("thread", "t1703ae4f").put("approval", "linked-mac-request").put("nonce", "linked-mac-nonce")
-                .put("match", "meaning").put("deliver", true).put("answers", org.json.JSONObject().put(meaningMacForm.getJSONArray("questions").getJSONObject(0).getString("question"), "Put them back from the backup")))
+            android.util.Log.i("SomaWalk", "fixture same-question asked")
+            return org.json.JSONObject().put("is_error", false).put("result", """{"verdicts":[{"key":"linked-mac-ticket","same":"yes","mapping":"clear","picks":["Put them back from the backup"]}]}""").toString()
         }
         private val linkedEntry by lazy { PendingApproval(AgentApproval("linked-request", "AskUserQuestion", linkedForm(waitingQuestion == "linked"), "Skills"), "linked-phone-nonce", 0) }
         override fun answerBuilderQuestions(entry: PendingApproval, answers: org.json.JSONObject): ApprovalOutcome {
