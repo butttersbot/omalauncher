@@ -1,0 +1,25 @@
+#!/usr/bin/env python3
+"""A stand-in for the model in POST /questions/match (test-linked.py): reads the prompt, answers by keywords, and logs
+each call so a test can see the model wasn't asked. Tonight's pair (the 3 deleted skills) is the same decision; a card
+saying 'unsure-case' is unsure; one saying 'bad-map' is 'same' but mapped onto a label the card doesn't have."""
+import json, os, re, sys
+prompt = sys.stdin.read()
+if os.environ.get('FAKE_MATCHER_LOG'):
+    with open(os.environ['FAKE_MATCHER_LOG'], 'a') as log:
+        log.write('call\n')
+matches = []
+for block in re.split(r'\n\n(?=id )', prompt.split('Other questions are waiting for him in other threads:', 1)[1].split('\n\nFor each one,')[0].strip()):
+    head = re.match(r'id (\S+) \(thread', block)
+    if not head:
+        continue
+    question = re.search(r'Q: (.*)', block).group(1)
+    if 'unsure-case' in block:
+        matches.append({'id': head.group(1), 'same': 'unsure', 'confident': False, 'why': 'not sure'})
+    elif 'bad-map' in block:
+        matches.append({'id': head.group(1), 'same': 'yes', 'confident': True, 'answers': {question: 'Something else'}, 'why': 'same'})
+    elif 'skills' in block.lower() and 'skills' in prompt.split('HIS ANSWER')[0].lower():
+        chose = 'Bring them back' if 'Restore' in prompt.split('HIS ANSWER:')[1].split('Other questions')[0] else 'Leave them deleted'
+        matches.append({'id': head.group(1), 'same': 'yes', 'confident': True, 'answers': {question: chose}, 'why': 'both ask whether to restore the 3 removed skills'})
+    else:
+        matches.append({'id': head.group(1), 'same': 'no', 'confident': True, 'why': 'a different decision'})
+print(json.dumps({'type': 'result', 'result': json.dumps({'matches': matches})}))
