@@ -18,7 +18,7 @@ for block in re.split(r'\n\n(?=id )', prompt.split('Other questions are waiting 
     elif 'bad-map' in block:
         matches.append({'id': head.group(1), 'same': 'yes', 'confident': True, 'answers': {question: 'Something else'}, 'why': 'same'})
     elif 'skills' in block.lower() and 'skills' in prompt.split('HIS ANSWER')[0].lower():
-        chose = 'Bring them back' if 'Restore' in prompt.split('HIS ANSWER:')[1].split('Other questions')[0] else 'Leave them deleted'
+        chose = 'Restore them (Recommended)' if 'Restore' in prompt.split('HIS ANSWER:')[1].split('Other questions')[0] else 'Keep them deleted'
         matches.append({'id': head.group(1), 'same': 'yes', 'confident': True, 'answers': {question: chose}, 'why': 'both ask whether to restore the 3 removed skills'})
     else:
         matches.append({'id': head.group(1), 'same': 'no', 'confident': True, 'why': 'a different decision'})
