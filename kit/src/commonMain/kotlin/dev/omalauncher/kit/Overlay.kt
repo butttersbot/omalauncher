@@ -28,13 +28,13 @@ expect fun ModalWindow(
 )
 
 /**
- * A menu or sheet over the screen, in a real modal window, on the scrim of [ink] (the caller's, from its look). With
- * [enterMillis] it comes in over that time; without, it is simply there. [dismissOnOutside] closes it on a tap beside
+ * A menu or sheet over the screen, in a real modal window, on the scrim of [ink] (the caller's, from its look; null
+ * for none). With [enterMillis] it comes in over that time; without, it is simply there. [dismissOnOutside] closes it on a tap beside
  * what it shows, which has to take its own taps.
  */
 @Composable
 fun KitOverlay(
-    ink: Color,
+    ink: Color?,
     onDismiss: () -> Unit,
     lightBars: Boolean,
     dismissOnOutside: Boolean = true,
@@ -49,7 +49,7 @@ fun KitOverlay(
     ModalWindow(onDismiss, lightBars) {
         val entrance = remember { Animatable(if (enterMillis > 0 && !Motion.reduced) 0f else 1f) }
         LaunchedEffect(Unit) { entrance.moveTo(1f, Motion.timed(enterMillis, Motion.easing)) }
-        Box(Modifier.fillMaxSize().background(ink.copy(alpha = Feel.SCRIM_ALPHA * entrance.value))
+        Box(Modifier.fillMaxSize().background(ink?.copy(alpha = Feel.SCRIM_ALPHA * entrance.value) ?: Color.Transparent)
             .then(if (dismissOnOutside) Modifier.clickable(onClick = onDismiss) else Modifier)) {
             Box(Modifier.fillMaxSize().overlayEntrance { entrance.value }, contentAlignment = Alignment.Center, content = content)
         }

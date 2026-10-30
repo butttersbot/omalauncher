@@ -93,7 +93,7 @@ class MotionSourceCheckTest {
         assertEquals(1, motion.count { "systemAnimationsOn()" in it })
         assertTrue(motion.any { "reducedMotion(" in it && "systemAnimationsOn()" in it })
         val asks = dev.omalauncher.theme.pack.mainSources("ui", "oma").filter { file -> code(file).any { "areAnimatorsEnabled" in it || "ANIMATOR_DURATION_SCALE" in it } }
-        assertEquals(listOf("Platform.android.kt"), asks.map { it.name })
+        assertEquals(listOf("KitPlatform.android.kt"), asks.map { it.name })
     }
 
     /** ScrapFrame's rule stands in what was added: a tilt is turned on the canvas while drawing, never by a layer, which would turn where a tile is touched. */
