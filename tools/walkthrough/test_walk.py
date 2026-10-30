@@ -176,7 +176,7 @@ Flags,IntendedVsync,Vsync,OldestInputEvent,NewestInputEvent,HandleInputStart,Ani
         self.assertEqual(walk.parse_framestats(self.STATS)[0:2], [(1000000000, 1010000000), (1500000000, 1520000000)])
 
     def test_touches_are_on_the_frame_clock(self):
-        down, up = walk.parse_touches("Input Dispatcher State at time 5000000000:\n  RecentQueue: length=2\n    MotionEvent(deviceId=-1, action=DOWN, x=1), age=4000.0ms\n    MotionEvent(deviceId=-1, action=UP, x=1), age=3900.5ms\n")
+        down, up = walk.parse_touches("  RecentQueue: length=2\n    MotionEvent(deviceId=-1, eventTime=1000000000ns, source=TOUCHSCREEN, displayId=0,action=DOWN, flags=0x0), age=4000.0ms\n    MotionEvent(deviceId=-1, eventTime=1099500000ns, source=TOUCHSCREEN, displayId=0,action=UP, flags=0x0), age=3900.5ms\n")
         self.assertEqual((down, up), (1000000000, 1099500000))
         self.assertEqual(walk.parse_touches("nothing here"), (None, None))
 

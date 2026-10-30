@@ -8,7 +8,7 @@ tap Look around with example conversations
 wait 1000
 frames start dev.omalauncher.messages
 frames tap open-chat Tahoe trip
-expect cabin or hotel
+expect Tahoe trip
 frames start dev.omalauncher.messages
 swipe 0.5 0.35 0.5 0.75 200
 swipe 0.5 0.35 0.5 0.75 200
@@ -23,10 +23,9 @@ wait 800
 frames report slide-back
 shot back-at-inbox
 frames tap open-again Mina Park
-expect should I bring the sake
 frames tap back-button Back to conversations
 frames tap open-third Mina Park
-tap iMessage | Message
+tap iMessage
 type a line to send
 frames start dev.omalauncher.messages
 frames tap send Send

@@ -179,13 +179,10 @@ def parse_framestats(text):
     return sorted(frames)
 
 def parse_touches(text):
-    """When the last finger went down and up, in ns on the frame clock: `dumpsys input` gives its time and each recent event's age."""
-    now = re.search(r"Input Dispatcher State at time (\d+)", text)
-    if not now:
-        return None, None
+    """When the last finger went down and up, in ns on the frame clock, from the event times `dumpsys input` keeps."""
     times = {}
-    for action, age in re.findall(r"MotionEvent\([^\n]*?action=(DOWN|UP)[^\n]*?age=([\d.]+)ms", text):
-        times[action] = int(now.group(1)) - int(float(age) * 1e6)
+    for time_ns, action in re.findall(r"MotionEvent\([^\n]*?eventTime=(\d+)ns[^\n]*?action=(DOWN|UP)\b", text):
+        times[action] = int(time_ns)
     return times.get("DOWN"), times.get("UP")
 
 def tap_response(frames, down, up, gap_ms=100):
@@ -216,7 +213,7 @@ def frames_step(serial, args, out):
             adb(serial, "shell", "dumpsys", "gfxinfo", args[1], "reset")
             return True, "", None
         if args[0] == "report":
-            got = parse_gfxinfo(adb(serial, "shell", "dumpsys", "gfxinfo", FRAMES["pkg"]).stdout)
+            got = parse_gfxinfo(adb(serial, "shell", "dumpsys", "gfxinfo", FRAMES["pkg"]))
             note = frames_note(got)
             FRAMES.setdefault("report", []).append({"name": args[1], "pkg": FRAMES["pkg"], **got})
         else:
@@ -232,8 +229,8 @@ def frames_step(serial, args, out):
             adb(serial, "shell", "dumpsys", "gfxinfo", FRAMES["pkg"], "reset")
             adb(serial, "shell", "input", "tap", str(x), str(y))
             time.sleep(1.5)
-            down, up = parse_touches(adb(serial, "shell", "dumpsys", "input").stdout)
-            frames = parse_framestats(adb(serial, "shell", "dumpsys", "gfxinfo", FRAMES["pkg"], "framestats").stdout)
+            down, up = parse_touches(adb(serial, "shell", "dumpsys", "input"))
+            frames = parse_framestats(adb(serial, "shell", "dumpsys", "gfxinfo", FRAMES["pkg"], "framestats"))
             first, rest = tap_response(frames, down, up)
             note = f"first frame {first} ms after the finger, at rest {rest} ms after it lifted" if first is not None else "no frame or no touch time seen: not measured"
             FRAMES.setdefault("report", []).append({"name": args[1], "pkg": FRAMES["pkg"], "first_ms": first, "rest_ms": rest})
