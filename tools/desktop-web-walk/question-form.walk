@@ -1,0 +1,11 @@
+# Soma's question form in the real panel: answer both by clicking, then only the native Send bar sends.
+wait 2500
+shot 01-form
+click 63% 33%
+wait 400
+click 63% 68%
+wait 800
+shot 02-ready
+click 7% 95.8%
+wait 1000
+shot 03-sent

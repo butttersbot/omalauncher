@@ -31,6 +31,18 @@ def receipt(commit, *codes):
 (repo / 'tools/mac-runner').mkdir(parents=True)
 for name in ('oma-runner', 'soma_services.py'):
     shutil.copyfile(RUNNER / name, repo / 'tools/mac-runner' / name)
+# A small stand-in for the HTML engine's natives, pinned the way tools/soma-release/engine.json pins the real ones.
+ENGINE_TAG = 'jcef-test+cef-1.0.0'
+natives_dir = work / 'natives'
+natives_dir.mkdir()
+ENGINE = {}
+for key, platform in (('linux-x64', 'linux-amd64'), ('macos-arm64', 'macosx-arm64')):
+    data = ('natives for %s ' % platform).encode() * 500
+    (natives_dir / ('jcef-natives-%s-%s.jar' % (platform, ENGINE_TAG))).write_bytes(data)
+    ENGINE[key] = {'platform': platform, 'sha256': hashlib.sha256(data).hexdigest(), 'size': len(data)}
+(repo / 'tools/soma-release').mkdir(parents=True)
+(repo / 'tools/soma-release/engine.json').write_text(json.dumps({'version': '1.0.0', 'tag': ENGINE_TAG,
+    'source': natives_dir.as_uri() + '/jcef-natives-{platform}-{tag}.jar', 'natives': ENGINE}))
 sh('git', 'init', '-q')
 sh('git', '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'first', '--allow-empty')
 sh('git', 'add', '.')
@@ -84,6 +96,54 @@ class Publish(unittest.TestCase):
         self.assertIsNotNone(record['previous'])
 
 
+    def test_5_theRecordNamesThePinnedEngineAndKeepsItAcrossBuilds(self):
+        record = json.loads((release / 'latest.json').read_text())
+        engine = record['engine']
+        self.assertEqual(('1.0.0', ENGINE_TAG), (engine['version'], engine['tag']))
+        self.assertEqual({'linux-x64', 'macos-arm64'}, set(engine['natives']))
+        for key, a in engine['natives'].items():
+            self.assertEqual(ENGINE[key]['sha256'], a['sha256'])
+            self.assertEqual(a['sha256'], hashlib.sha256((release / 'engine' / a['file']).read_bytes()).hexdigest())
+        # The next build doesn't fetch it again: the file already there matches its pin.
+        kept = {a['file']: (release / 'engine' / a['file']).stat().st_mtime_ns for a in engine['natives'].values()}
+        sh('git', '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'Another build', '--allow-empty')
+        done = publish('--artifact', 'linux-x64=%s' % jar, receipt=receipt(self.head(), 0))
+        self.assertEqual(0, done.returncode, done.stderr)
+        self.assertEqual(kept, {name: (release / 'engine' / name).stat().st_mtime_ns for name in kept})
+
+    def test_6_refusesAnEngineThatDoesntMatchItsPin(self):
+        before = (release / 'latest.json').read_text()
+        pin = json.loads((repo / 'tools/soma-release/engine.json').read_text())
+        pin['natives']['linux-x64']['sha256'] = '0' * 64
+        (repo / 'tools/soma-release/engine.json').write_text(json.dumps(pin))
+        sh('git', '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qam', 'A wrong pin')
+        try:
+            done = publish('--artifact', 'linux-x64=%s' % jar, receipt=receipt(self.head(), 0))
+            self.assertNotEqual(0, done.returncode)
+            self.assertIn('pinned sha256', done.stderr)
+            self.assertEqual(before, (release / 'latest.json').read_text())
+        finally:
+            sh('git', '-c', 'user.name=t', '-c', 'user.email=t@t', 'revert', '--no-edit', 'HEAD')
+            publish('--artifact', 'linux-x64=%s' % jar, receipt=receipt(self.head(), 0))
+
+
+class Pin(unittest.TestCase):
+    """The real pin: one engine version across engine.json, the Gradle catalog and the app (WebEngine.VERSION)."""
+    ROOT = HERE.parent.parent
+
+    def test_theEngineVersionIsTheSameEverywhere(self):
+        import re
+        pin = json.loads((HERE / 'engine.json').read_text())
+        catalog = (self.ROOT / 'gradle/libs.versions.toml').read_text()
+        self.assertIn('jcefmaven = { module = "me.friwi:jcefmaven", version = "%s" }' % pin['version'], catalog)
+        app = (self.ROOT / 'chat/src/desktopMain/kotlin/dev/omalauncher/oma/WebEngine.desktop.kt').read_text()
+        self.assertIn('const val VERSION = "%s"' % pin['version'], app)
+        self.assertIn('cef-%s' % pin['version'], pin['tag'])
+        for key, want in pin['natives'].items():
+            self.assertRegex(want['sha256'], r'^[0-9a-f]{64}$')
+            self.assertGreater(want['size'], 50_000_000, key)
+
+
 class Serve(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -132,6 +192,19 @@ class Serve(unittest.TestCase):
         self.assertEqual(404, self.get('/release/files/secret.txt')[0])
         self.assertEqual(404, self.get('/release/files/..%2Flatest.json')[0])
         self.assertEqual(404, self.get('/release/files/latest.json')[0])
+
+    def test_1b_servesOnlyTheEngineFilesTheRecordNames(self):
+        record = json.loads(self.get('/release')[1])['release']
+        for a in record['engine']['natives'].values():
+            code, data = self.get('/release/engine/' + a['file'])
+            self.assertEqual(200, code)
+            self.assertEqual(a['sha256'], hashlib.sha256(data).hexdigest())
+        (release / 'engine' / 'stray.jar').write_bytes(b'not listed')
+        self.assertEqual(404, self.get('/release/engine/stray.jar')[0])
+        self.assertEqual(404, self.get('/release/engine/..%2Flatest.json')[0])
+        # An engine file is not a build file, nor the other way round.
+        self.assertEqual(404, self.get('/release/files/' + next(iter(record['engine']['natives'].values()))['file'])[0])
+        self.assertEqual(404, self.get('/release/engine/' + record['artifacts']['runner']['file'])[0])
 
     def test_2_aKeyItDoesntKnowGetsNothing(self):
         self.assertEqual(401, self.get('/release', key='x' * 40)[0])

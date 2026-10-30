@@ -216,7 +216,17 @@ fun main(args: Array<String>) {
     // after the keys thread's first read and every half hour. Nothing installs until he taps it.
     var quitNow: (() -> Unit)? = null
     val updateDir = File(SomaHome.dir, "update")
-    val updater = Updater(DesktopUpdateHands({ RunnerKeys.known }, updateDir, quitting = { javax.swing.SwingUtilities.invokeLater { quitNow?.invoke() } }), updateDir)
+    val updateHands = DesktopUpdateHands({ RunnerKeys.known }, updateDir, quitting = { javax.swing.SwingUtilities.invokeLater { quitNow?.invoke() } })
+    val updater = Updater(updateHands, updateDir)
+    // The HTML engine (Engine.kt, WebEngine): installed into Soma's own folder from the same record; the panel's [ install ]
+    // opens the sheet on its line.
+    val engineDir = File(SomaHome.dir, "engine")
+    dev.omalauncher.oma.WebEngine.home = engineDir
+    val engineInstaller = EngineInstaller(updateHands, engineDir)
+    dev.omalauncher.oma.WebEngine.onInstall = {
+        updater.open = true
+        thread(name = "soma-engine-check", isDaemon = true) { runCatching { updater.check(); engineInstaller.check(updater.latest) } }
+    }
     thread(name = "soma-update", isDaemon = true) {
         runCatching { updater.markStarted() }
         // What the last update came to, and the published build, once the keys thread has read keys; then every half hour.
@@ -224,6 +234,7 @@ fun main(args: Array<String>) {
         runCatching { updater.reportAtStart() }
         while (true) {
             runCatching { updater.check() }
+            runCatching { engineInstaller.check(updater.latest) }
             Thread.sleep(UPDATE_CHECK_MS)
         }
     }
@@ -233,7 +244,7 @@ fun main(args: Array<String>) {
         var dashboardShown by dashboard
         fun showDashboard(on: Boolean) { dashboardShown = on; SomaHome.write(SomaHome.settings, SomaHome.read(SomaHome.settings).put("dashboard", on)) }
         remember {
-            val quit = { scraps.close(); LinuxTray.stop(); Single.release(); exitApplication() }
+            val quit = { scraps.close(); LinuxTray.stop(); dev.omalauncher.oma.WebEngine.dispose(); Single.release(); exitApplication() }
             quitNow = quit
             // The service is asked off the tray's thread; the code or what went wrong comes back as a notice.
             val car = { pair: Boolean -> kotlin.concurrent.thread(name = "soma-car-pairing", isDaemon = true) {
@@ -279,7 +290,7 @@ fun main(args: Array<String>) {
                 // A module's thread opens in the chat window, brought forward.
                 Box(Modifier.fillMaxSize()) {
                     CanvasScreen(canvas, host, source, tick.value, wanted, onTab = { wanted = it; showWindow() }, chatElsewhere = ::showWindow, widgets = windowWidgets, scraps = scraps, shelf = shelf, pagesOverview = true)
-                    Box(Modifier.align(Alignment.TopEnd).padding(top = 8.dp, end = 8.dp)) { UpdatePill(updater) }
+                    Box(Modifier.align(Alignment.TopEnd).padding(top = 8.dp, end = 8.dp)) { UpdatePill(updater, engineInstaller) }
                 }
             }
         }
@@ -322,7 +333,7 @@ fun main(args: Array<String>) {
                     val t = event.awtTransferable
                     t.isDataFlavorSupported(java.awt.datatransfer.DataFlavor.javaFileListFlavor) || t.isDataFlavorSupported(java.awt.datatransfer.DataFlavor.imageFlavor)
                 }, target = drops)) {
-                    CompositionLocalProvider(LocalTopBarExtra provides { UpdatePill(updater) }) {
+                    CompositionLocalProvider(LocalTopBarExtra provides { UpdatePill(updater, engineInstaller) }) {
                         OmaChatScreen(host, prefill = null, onPrefilled = {}, wanted = wanted, onTab = { wanted = it.takeIf { tab -> tab != OMA_TAB } })
                     }
                 }

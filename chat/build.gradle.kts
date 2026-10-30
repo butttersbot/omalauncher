@@ -15,7 +15,17 @@ val desktopOs: String = run {
 }
 
 // Each desktop test class in a JVM of its own: an off-screen scene and a UI test in one process trip over each other.
-tasks.matching { it.name == "desktopTest" }.configureEach { (this as Test).forkEvery = 1 }
+tasks.matching { it.name == "desktopTest" }.configureEach {
+    (this as Test).forkEvery = 1
+    // Chromium (WebEngine) reaches into AWT for its window, as in the app (desktop/build.gradle.kts).
+    jvmArgs("--add-opens=java.desktop/sun.awt=ALL-UNNAMED", "--add-opens=java.desktop/java.awt=ALL-UNNAMED")
+    // -PsomaWebWalk=DIR -PsomaWebNatives=JAR -PsomaWebPage=HTML: the HTML engine walk (ArtifactWebWalkTest), in a real window.
+    systemProperty("soma.webwalk", providers.gradleProperty("somaWebWalk").getOrElse(""))
+    systemProperty("soma.webnatives", providers.gradleProperty("somaWebNatives").getOrElse(""))
+    systemProperty("soma.webpage", providers.gradleProperty("somaWebPage").getOrElse(""))
+    systemProperty("soma.websteps", providers.gradleProperty("somaWebSteps").getOrElse(""))
+    if (providers.gradleProperty("somaWebWalk").isPresent) systemProperty("sun.java2d.uiScale", providers.gradleProperty("somaWebScale").getOrElse("2"))
+}
 
 // Soma's chat: the parts the phone app and the Mac app share. Both targets are JVMs, so common code may use the JDK
 // and org.json (Android ships it; the desktop target gets the library).
@@ -44,7 +54,11 @@ kotlin {
             implementation(libs.androidx.activity.compose)
         }
         val desktopMain by getting {
-            dependencies { implementation(libs.org.json) }
+            dependencies {
+                implementation(libs.org.json)
+                // Chromium for HTML artifacts (WebEngine.desktop.kt); the natives come from Soma's own release, never Maven at run time.
+                api(libs.jcefmaven)
+            }
         }
         val desktopTest by getting {
             dependencies {

@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# The desktop HTML engine walk on Hyprland (MG1): tools/desktop-web-walk/run PAGE.html OUT_DIR NATIVES_JAR [STEPS]
+# Runs ArtifactWebWalkTest (a real Soma artifact panel in a real window; steps in STEPS, else PAGE.html.walk), focuses its window once it
+# shows, and takes each screenshot the walk asks for (OUT_DIR/want-NAME -> OUT_DIR/NAME.png) with grim of that window alone;
+# "shot fullscreen" toggles the window's fullscreen instead (the page must follow the resize).
+# NATIVES_JAR is the pinned engine file (tools/soma-release/engine.json); it is checked against its pin first.
+set -euo pipefail
+page=$(realpath "$1"); out=$(realpath -m "$2"); natives=$(realpath "$3"); steps=${4:+$(realpath "$4")}
+repo=$(cd "$(dirname "$0")/../.." && pwd)
+mkdir -p "$out"
+pin=$(python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1]))["natives"]["linux-x64"]["sha256"])' "$repo/tools/soma-release/engine.json")
+[ "$(sha256sum "$natives" | cut -c1-64)" = "$pin" ] || { echo "run: $natives is not the pinned linux-x64 engine" >&2; exit 1; }
+( cd "$repo" && ./gradlew --no-daemon --configure-on-demand --no-configuration-cache :chat:desktopTest --tests '*ArtifactWebWalkTest' --rerun \
+    -PsomaOs=linux-x64 -PsomaWebWalk="$out" -PsomaWebNatives="$natives" -PsomaWebPage="$page" ${steps:+-PsomaWebSteps="$steps"} > "$out/gradle.log" 2>&1 ) &
+gradle=$!
+window() { hyprctl clients -j | python3 -I -c 'import json,sys; c=next((c for c in json.load(sys.stdin) if c.get("title")=="soma-web-walk"),None); print("" if c is None else "%s %s" % (c["address"], c.get("stableId","")))'; }
+focused=""
+while kill -0 $gradle 2>/dev/null; do
+  read -r address id <<<"$(window)" || true
+  if [ -n "${address:-}" ] && [ -z "$focused" ]; then hyprctl dispatch "hl.dsp.focus({ window = 'address:$address' })" >/dev/null; focused=1; fi
+  for want in "$out"/want-*; do
+    [ -e "$want" ] || continue
+    name=${want##*/want-}; rm -f "$want"
+    [ -n "${address:-}" ] && hyprctl dispatch "hl.dsp.focus({ window = 'address:$address' })" >/dev/null
+    # "shot fullscreen" in a walk toggles the window's fullscreen instead of taking a picture: the page must follow the resize.
+    if [ "$name" = fullscreen ]; then hyprctl dispatch "hl.dsp.window.fullscreen({ mode = 'fullscreen' })" >/dev/null; : > "$out/$name.png"; continue; fi
+    if [ -n "${id:-}" ]; then grim -T "$id" "$out/$name.png" || : > "$out/$name.png"; else : > "$out/$name.png"; fi
+  done
+  sleep 0.3
+done
+wait $gradle || true
+echo "walk finished: $out"; cat "$out/log.txt" 2>/dev/null; echo "answers:"; cat "$out/answers.txt" 2>/dev/null

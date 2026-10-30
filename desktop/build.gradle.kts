@@ -6,6 +6,9 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+/** The JDK packages Chromium (jcefmaven) reaches into for its window, on every platform the app runs on. */
+val CHROMIUM_OPENS = listOf("java.desktop/sun.awt", "java.desktop/java.awt", "java.desktop/sun.lwawt", "java.desktop/sun.lwawt.macosx")
+
 // Soma desktop (cockpit/DESIGN.md §6): the phone's chat, from :chat, in a window on the Macs and the Omarchy boxes.
 kotlin { jvmToolchain(17) }
 
@@ -67,6 +70,8 @@ compose.desktop {
         jvmArgs += "--enable-native-access=ALL-UNNAMED"
         // A trackpad pinch on the dashboard (desktop slice 5c, Pinch.kt) is heard through Apple's gesture listener.
         jvmArgs += "--add-exports=java.desktop/com.apple.eawt.event=ALL-UNNAMED"
+        // Chromium (WebEngine) finds the window it draws into through AWT's own classes.
+        jvmArgs += CHROMIUM_OPENS.map { "--add-opens=$it=ALL-UNNAMED" }
         nativeDistributions {
             // `soma --serve` runs on the JDK's own HTTP server, which a trimmed runtime leaves out unless named.
             modules("jdk.httpserver")
@@ -134,4 +139,6 @@ if (somaSignIdentity != null) {
 // file digest", seen 2026-10-28 in a linux/amd64 Temurin 17). They are left out; nothing here is checked against them.
 tasks.matching { it.name.startsWith("packageUberJar") || it.name.startsWith("packageReleaseUberJar") }.configureEach {
     (this as org.gradle.jvm.tasks.Jar).exclude("META-INF/*.SF", "META-INF/*.RSA", "META-INF/*.DSA", "META-INF/*.EC")
+    // `java -jar Soma.jar` (Linux) honors these from the manifest: the same access Chromium has from jvmArgs above.
+    manifest { attributes("Add-Opens" to CHROMIUM_OPENS.joinToString(" ")) }
 }

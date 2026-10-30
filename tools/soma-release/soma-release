@@ -6,11 +6,13 @@
 
 publish writes RELEASE/<commit>/ (each artifact, and the runner's tarball made here from tools/mac-runner) and then
 RELEASE/latest.json, the record each Soma reads over its runners (GET /release): commit, when it was committed, what
-changed, and every file with its sha256. It refuses unless the checkout is clean at the commit the receipt names, and the
+changed, and every file with its sha256. When the checkout pins an HTML engine (tools/soma-release/engine.json), the record
+names it too: its natives are fetched once into RELEASE/engine/, refused unless each matches its pinned sha256 and size, and
+kept across builds, so a Soma installs the engine once and app updates don't fetch it again. It refuses unless the checkout is clean at the commit the receipt names, and the
 receipt says every suite passed: build-release.sh writes it only then. KEY is the platform a file is for: macos-arm64 (a
 zipped Soma.app), linux-x64 (the jar). Nothing installs anywhere; each Soma asks Boss first.
 """
-import argparse, hashlib, io, json, os, pathlib, re, shutil, subprocess, sys, tarfile, time
+import argparse, hashlib, io, json, os, pathlib, re, shutil, subprocess, sys, tarfile, time, urllib.parse, urllib.request
 
 RELEASE = pathlib.Path(os.environ.get('OMA_RUNNER_RELEASE') or pathlib.Path.home() / '.local/share/soma-release')
 PLATFORMS = ('macos-arm64', 'macos-x64', 'linux-x64', 'linux-arm64')
@@ -53,6 +55,43 @@ def runner_tarball(repo, commit, into):
     return path
 
 
+def engine_component(repo):
+    """The pinned HTML engine as the record names it, its files in RELEASE/engine/ (fetched only when missing or wrong), or
+    None when the checkout pins none. Exits, publishing nothing, when a file can't be had that matches its pin."""
+    pin_path = repo / 'tools/soma-release/engine.json'
+    if not pin_path.is_file():
+        return None
+    pin = json.loads(pin_path.read_text())
+    version, tag = pin['version'], pin['tag']
+    folder = RELEASE / 'engine'
+    folder.mkdir(parents=True, exist_ok=True)
+    natives = {}
+    for key, want in pin['natives'].items():
+        if key not in PLATFORMS:
+            sys.exit('soma-release: engine.json names %s, which is not one of %s' % (key, ', '.join(PLATFORMS)))
+        name = 'jcef-natives-%s-%s.jar' % (key, version)
+        path = folder / name
+        if not (path.is_file() and path.stat().st_size == want['size'] and sha256(path) == want['sha256']):
+            url = pin['source'].replace('{platform}', want['platform']).replace('{tag}', urllib.parse.quote(tag, safe=''))
+            part = folder / ('.' + name + '.part')
+            try:
+                with urllib.request.urlopen(url, timeout=60) as reply, open(part, 'wb') as out:
+                    shutil.copyfileobj(reply, out, 1 << 20)
+            except OSError as problem:
+                part.unlink(missing_ok=True)
+                sys.exit('soma-release: the %s engine could not be fetched from %s: %s; nothing was published.' % (key, url, problem))
+            if part.stat().st_size != want['size'] or sha256(part) != want['sha256']:
+                part.unlink(missing_ok=True)
+                sys.exit('soma-release: the %s engine from %s does not match its pinned sha256; nothing was published.' % (key, url))
+            os.replace(part, path)
+        natives[key] = {'file': name, 'sha256': want['sha256'], 'size': want['size']}
+    # Engines no record names any more go.
+    for old in folder.iterdir():
+        if old.name not in {n['file'] for n in natives.values()}:
+            old.unlink(missing_ok=True)
+    return {'version': version, 'tag': tag, 'natives': natives}
+
+
 def previous_commit():
     try:
         return json.loads((RELEASE / 'latest.json').read_text()).get('commit')
@@ -88,10 +127,13 @@ def publish(args):
         artifacts[key] = {'file': name, 'sha256': sha256(staging / name), 'size': (staging / name).stat().st_size}
     tarball = runner_tarball(repo, commit, staging)
     artifacts['runner'] = {'file': tarball.name, 'sha256': sha256(tarball), 'size': tarball.stat().st_size}
+    engine = engine_component(repo)
     previous = previous_commit()
     record = {'commit': commit, 'committed': int(git(repo, 'log', '-1', '--format=%ct', head)), 'published': int(time.time()),
               'previous': previous, 'notes': [l for l in pathlib.Path(args.notes_file).read_text().splitlines() if l.strip()] if args.notes_file else notes(repo, head, previous),
               'tests': [s['name'] for s in receipt['suites']], 'source': os.uname().nodename.split('.')[0], 'artifacts': artifacts}
+    if engine:
+        record['engine'] = engine
     shutil.rmtree(into, ignore_errors=True)
     staging.rename(into)
     # The record last, whole or not at all: a Soma reading it mid-publish sees the build before.
@@ -100,7 +142,7 @@ def publish(args):
     os.replace(temp, RELEASE / 'latest.json')
     for old in sorted((d for d in RELEASE.iterdir() if d.is_dir() and re.fullmatch(r'[0-9a-f]{8}', d.name)), key=lambda d: d.stat().st_mtime, reverse=True)[KEEP:]:
         shutil.rmtree(old, ignore_errors=True)
-    print('published %s: %s' % (commit, ', '.join(sorted(artifacts))))
+    print('published %s: %s' % (commit, ', '.join(sorted(artifacts))) + ('; html engine %s' % engine['version'] if engine else ''))
     for line in record['notes']:
         print('  ' + line)
 

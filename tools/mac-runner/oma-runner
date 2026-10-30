@@ -15,6 +15,7 @@ Only exact Codex command scopes the owner explicitly saved may reuse that decisi
                                          cut off; says what is still busy, by thread name. off opens again. A restart ends it.
   GET  /release                          the latest desktop build published here: {release: {commit, committed, notes, artifacts}}
   GET  /release/files/NAME               one file that record names (the bytes); nothing else in the folder is served
+  GET  /release/engine/NAME              one HTML-engine file the record's engine names (RELEASE/engine/), the same way
   GET  /threads                          every thread: id, name, summary, status, last_worked, tail, pending, bot
   GET  /bots/ID                          one bot this machine hosts: its settings, instructions and notes (read only)
   POST /threads/ID/fresh                 a bot's session starts over: its conversation is archived, its notes stay
@@ -4224,7 +4225,7 @@ class Runner(BaseHTTPRequestHandler):
             return self.answer(200, {'ok': True, 'runner': 'oma-runner', **({'soma': SOMA_SERVICE} if SOMA_SERVICE else {}), 'threads': len(states), 'working': states.count('working'), 'waiting': states.count('waiting'),
                                      'build': runner_build(), 'updating': update_held(), 'kinds': [kind for kind in KINDS if program(kind)], 'models': {'venice': venice_models()} if program('venice') else {}, 'files': True,
                                      'bots': [{key: bot[key] for key in ('id', 'name', 'emoji', 'problem')} for bot in found.values()]})
-        if parts == ['release'] or (len(parts) == 3 and parts[:2] == ['release', 'files']):
+        if parts == ['release'] or (len(parts) == 3 and parts[:2] in (['release', 'files'], ['release', 'engine'])):
             return self.release(parts)
         if parts == ['devices']:
             # Who this runner lets in, by Tailscale name only (never a digest), so a paired Soma can show every leg (soma --mesh).
@@ -4284,8 +4285,15 @@ class Runner(BaseHTTPRequestHandler):
         if len(parts) == 1:
             return self.answer(200, {'ok': True, 'release': record})
         name = parts[2]
-        listed = {a.get('file') for a in record.get('artifacts', {}).values() if isinstance(a, dict)}
-        path = RELEASE / record['commit'] / name
+        if parts[1] == 'engine':
+            # The HTML engine (tools/soma-release/engine.json): kept in RELEASE/engine/ across builds, served only as named.
+            engine = record.get('engine') if isinstance(record.get('engine'), dict) else {}
+            natives = engine.get('natives') if isinstance(engine.get('natives'), dict) else {}
+            listed = {a.get('file') for a in natives.values() if isinstance(a, dict)}
+            path = RELEASE / 'engine' / name
+        else:
+            listed = {a.get('file') for a in record.get('artifacts', {}).values() if isinstance(a, dict)}
+            path = RELEASE / record['commit'] / name
         if not RELEASE_FILE.fullmatch(name) or name not in listed or not path.is_file():
             return self.answer(404, {'ok': False, 'error': 'not a file of the published build'})
         size = path.stat().st_size
