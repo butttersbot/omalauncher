@@ -34,7 +34,7 @@ expect Photo
 shot photo-fills-its-frame
 # Look: the white balloons' tails are one piece with the balloon; no line of its outline across the tail's top.
 shot white-balloon-tail
-expect from your Mac
+absent from your Mac
 shot group-with-photo-card
 key BACK
 wait 800

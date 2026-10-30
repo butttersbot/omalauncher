@@ -22,9 +22,25 @@ import androidx.compose.ui.unit.dp
 import dev.omalauncher.messages.engine.MacLink
 import dev.omalauncher.messages.engine.Parts
 import dev.omalauncher.messages.engine.RichLink
+import dev.omalauncher.messages.engine.XPost
+import dev.omalauncher.messages.engine.XPreviews
 import dev.omalauncher.ui.Pack
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+
+/** The card for [url]: the Mac's [known] metadata, with an X post's own when the Mac has no picture for it. */
+@Composable
+internal fun linkCardFor(url: String, known: RichLink?, settleMs: Long = 0): RichLink? {
+    if (XPost.statusId(url) == null || (known?.imageAttachmentId != null && known.state != "unavailable")) return known
+    val context = LocalContext.current
+    val found by XPreviews.found.collectAsState()
+    LaunchedEffect(url) {
+        delay(settleMs)
+        XPreviews.request(context, url)
+    }
+    return XPost.fill(known, found[url])
+}
 
 /** Same metadata card in either direction, the draft, and the unfolded shared table. */
 @Composable
@@ -32,7 +48,7 @@ internal fun RichLinkCard(link: RichLink, ink: Color, compact: Boolean = false, 
     val context = LocalContext.current
     val picture by produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, link.imageAttachmentId) {
         value = withContext(Dispatchers.IO) {
-            link.imageAttachmentId?.let { MacLink.file(context, it, picture = true) }?.let { file ->
+            link.imageAttachmentId?.let { if (XPreviews.owns(it)) XPreviews.image(context, it) else MacLink.file(context, it, picture = true) }?.let { file ->
                 runCatching {
                     val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
                     android.graphics.BitmapFactory.decodeFile(file.path, bounds)

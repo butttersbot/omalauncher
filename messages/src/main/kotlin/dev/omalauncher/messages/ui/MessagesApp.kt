@@ -104,6 +104,7 @@ fun MessagesApp(resumed: Int) {
                 }
             }
         }
+        PhotoViewerHost()
     }
 }
 

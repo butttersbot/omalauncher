@@ -25,7 +25,7 @@ import androidx.compose.ui.window.DialogWindowProvider
 import dev.omalauncher.ui.Pack
 
 /** A real modal window: accessibility and Back stay on the menu, using Soma's existing scrim. */
-@Composable internal fun MessageOverlay(onDismiss: () -> Unit, dismissOnOutside: Boolean = true, enterMillis: Int = 0, content: @Composable BoxScope.() -> Unit) {
+@Composable internal fun MessageOverlay(onDismiss: () -> Unit, dismissOnOutside: Boolean = true, enterMillis: Int = 0, scrim: Boolean = true, lightBars: Boolean? = null, content: @Composable BoxScope.() -> Unit) {
     // Capture the host's focus before entering the dialog's separate focus owner. Otherwise
     // Android restores a previously focused composer and reopens an already dismissed IME.
     val hostFocus = LocalFocusManager.current
@@ -33,7 +33,7 @@ import dev.omalauncher.ui.Pack
     LaunchedEffect(Unit) { hostFocus.clearFocus(); keyboard?.hide() }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         val view = LocalView.current
-        val light = Pack.paper.luminance() > 0.5f
+        val light = lightBars ?: (Pack.paper.luminance() > 0.5f)
         DisposableEffect(view, light) {
             val window = (view.parent as? DialogWindowProvider)?.window
             val apply = Runnable {
@@ -62,7 +62,7 @@ import dev.omalauncher.ui.Pack
         // their own focus and layout behavior. No delayed actions or network gating.
         val entrance = remember { Animatable(if (enterMillis > 0 && !Motion.reduced) 0f else 1f) }
         LaunchedEffect(Unit) { entrance.moveTo(1f, Motion.timed(enterMillis, Motion.easing)) }
-        Box(Modifier.fillMaxSize().background(Pack.foreground.copy(alpha = 0.18f * entrance.value))
+        Box(Modifier.fillMaxSize().background(Pack.foreground.copy(alpha = if (scrim) 0.18f * entrance.value else 0f))
             .then(if (dismissOnOutside) Modifier.clickable(onClick = onDismiss) else Modifier)) {
             Box(Modifier.fillMaxSize().graphicsLayer {
                 alpha = entrance.value

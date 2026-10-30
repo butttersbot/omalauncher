@@ -1,0 +1,156 @@
+# canvas-app: soma-messages
+# 0.8.8, Boss's five from testing 0.8.7: photos open over the chat, X previews, search icon, no "from your Mac", Delivered.
+# Isolated DEMO only: sample chats, its own token (INJECT_EPHEMERAL_DEMO_TOKEN, INJECT_DEMO_HOST and INJECT_DEMO_PORT, the Mac's tailnet address: the app refuses any other plain http).
+# The X post is a real public one (Cove's verified photo probe), read from X's public feed by the phone.
+fold folded
+wait 1500
+shell cmd statusbar collapse
+key HOME
+shell pm clear dev.omalauncher.messages
+shell pm grant dev.omalauncher.messages android.permission.READ_CONTACTS
+shell pm grant dev.omalauncher.messages android.permission.POST_NOTIFICATIONS
+shell pm grant dev.omalauncher.messages android.permission.RECORD_AUDIO
+shell am start -a android.intent.action.VIEW -d "'soma-messages://link?url=http%3A%2F%2FINJECT_DEMO_HOST%3AINJECT_DEMO_PORT&token=INJECT_EPHEMERAL_DEMO_TOKEN'" dev.omalauncher.messages
+wait 2500
+shot link-dialog
+tap Link
+wait 5000
+expect Weekend
+
+# --- Header: the name alone, a search icon with no word beside it; the icon still answers to Search.
+tap Sideways
+wait 1500
+expect Photo
+absent from your Mac
+absent iMessage ·
+absent OpenBubbles
+shot cover-header card=messages-parity-chat-header
+# --- A real picture over the chat, not the gallery.
+tap Photo
+wait 900
+expect Photo, full screen
+absent Message time
+shot cover-photo-open card=messages-photo-viewer
+# A small drag settles back; it stays open.
+swipe 0.5 0.5 0.5 0.54 400
+wait 700
+expect Photo, full screen
+swipe 0.5 0.5 0.5 0.92 200
+wait 900
+absent Photo, full screen
+expect Sideways
+key BACK
+wait 800
+
+# --- Same place in the chat: a chat longer than the screen, read from partway up.
+tap Weekend
+wait 1500
+tap Message
+type one
+key ENTER
+wait 500
+type two
+key ENTER
+wait 500
+type three
+key ENTER
+wait 500
+type four
+key ENTER
+wait 500
+type five
+key ENTER
+wait 500
+type six
+key ENTER
+wait 3500
+closeime
+wait 800
+# Item 5: the newest of mine. A live send here says Sent; the demo's history says Delivered, read on a fresh start.
+shot cover-sent-beside-tail card=messages-parity-status
+shell am force-stop dev.omalauncher.messages
+shell am start -n dev.omalauncher.messages/.MainActivity
+wait 2000
+tap Weekend
+wait 2000
+expect Delivered
+shot cover-delivered card=messages-parity-status
+swipe 0.5 0.3 0.5 0.62 700
+wait 1200
+expect Photo
+shot cover-before-photo
+tap Photo
+wait 900
+expect Photo, full screen
+shot cover-small-photo-open
+key BACK
+wait 900
+absent Photo, full screen
+shot cover-after-back
+tap Photo
+wait 900
+expect Photo, full screen
+swipe 0.5 0.6 0.5 0.1 200
+wait 900
+absent Photo, full screen
+shot cover-after-swipe
+key BACK
+wait 800
+
+# --- An X link with no metadata from the Mac: the phone reads the post and the card has its picture.
+tap Link previews
+wait 1500
+tap Message
+type https://x.com/BarackObama/status/266031293945503744
+wait 5000
+closeime
+wait 500
+shot cover-x-draft
+tap Send
+# The demo's reply repeats the link with no metadata from the Mac: this card is the phone reading X.
+wait 5000
+closeime
+wait 1000
+expect Four more years
+expect Link preview image
+shot cover-x-preview card=messages-parity-links
+
+# --- Unfolded: the same, beside the panel.
+fold open
+wait 2500
+tap Link previews
+wait 1500
+absent from your Mac
+expect Four more years
+shot unfolded-x-preview card=messages-parity-links-unfolded
+tap Weekend
+wait 1500
+absent from your Mac
+shot unfolded-header-delivered card=messages-parity-status
+swipe 0.65 0.3 0.65 0.62 700
+wait 1200
+shot unfolded-before-photo
+tap Photo
+wait 900
+expect Photo, full screen
+shot unfolded-photo-open card=messages-photo-viewer
+swipe 0.5 0.6 0.5 0.1 200
+wait 900
+absent Photo, full screen
+shot unfolded-after-swipe
+tap Photo
+wait 900
+key BACK
+wait 900
+absent Photo, full screen
+shot unfolded-after-back
+# The side panel opens a picture the same way.
+tap 1 Photo
+wait 1500
+expect Photo, full screen
+shot unfolded-panel-photo-open card=messages-photo-viewer
+key BACK
+wait 900
+absent Photo, full screen
+fold folded
+wait 1500

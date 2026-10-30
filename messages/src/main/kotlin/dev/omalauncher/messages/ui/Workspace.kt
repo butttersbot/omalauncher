@@ -432,7 +432,9 @@ private fun SharedCard(
     ) {
         when (val p = s.part) {
             is Part.Link -> {
-                val metadata = s.richLinks.firstOrNull { it.url == Parts.openable(p.url) }
+                val url = Parts.openable(p.url)
+                val known = s.richLinks.firstOrNull { it.url == url }
+                val metadata = if (url in s.hiddenLinks || p.url in s.hiddenLinks) known else linkCardFor(url, known)
                 if (metadata != null && metadata.state != "unavailable") RichLinkCard(metadata, Pack.foreground) else Card(p.host, p.path.ifEmpty { null }, "↗", Pack.foreground)
             }
             is Part.Website -> Card(p.host.ifEmpty { "Website" }, p.title, "↗", Pack.foreground)

@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -639,6 +640,8 @@ fun Thread(
                     parts.forEachIndexed { j, part ->
                         // Photos and videos stand on their own, as iMessage has them: no balloon, no tail (Boss, 2026-10-24).
                         val bare = part is Part.Attachment && m.files.any { visual(it) }
+                        val richLink = (part as? Part.Link)?.takeUnless { it.url in m.hiddenLinks }?.let { Parts.openable(it.url) }?.takeUnless { it in m.hiddenLinks }
+                            ?.let { url -> linkCardFor(url, m.richLinks.firstOrNull { it.url == url }) }
                         Balloon(
                             m,
                             highlighted = m.id?.removeSuffix("#a") == matchTarget?.removeSuffix("#a") && matchTarget != null,
@@ -648,7 +651,7 @@ fun Thread(
                             showTime = j == 0,
                             onTimeDelta = onTimeDelta,
                             onTimeEnd = onTimeEnd,
-                            flush = part is Part.Link && m.richLinks.any { it.url == Parts.openable(part.url) && it.state != "unavailable" && it.url !in m.hiddenLinks },
+                            flush = richLink != null && richLink.state != "unavailable",
                             onReply = {
                                 pending.quote(c.id, quoteOf(m), m.id)
                             },
@@ -665,7 +668,7 @@ fun Thread(
                             if (j == 0) (m.quote ?: m.replyTo?.let { "Reply to message" })?.let {
                                 QuoteInBalloon(it, ink, m.replyTo?.let { target -> { openThread(target) } })
                             }
-                            PartContent(part, ink, m.files, onHold = { held = m }, richLink = (part as? Part.Link)?.let { p -> m.richLinks.filter { it.url !in m.hiddenLinks }.firstOrNull { it.url == Parts.openable(p.url) } })
+                            PartContent(part, ink, m.files, onHold = { held = m }, richLink = richLink)
                         }
                     }
                     Tapbacks(m) { reactors = m }
@@ -689,7 +692,11 @@ fun Thread(
                     }
                     if (m.fromMe && !m.failed && !m.unsent && edit == null && i == c.messages.indexOfLast { it.fromMe && !it.unsent }) {
                         m.delivery?.let { status ->
-                            BasicText(Pack.caption(status.label), Modifier.fillMaxWidth().heightIn(min = 16.dp).padding(top = 3.dp, end = 6.dp),
+                            // Apple's place (iOS 26.5 reference): ending where the tail's slant starts, under the balloon
+                            // rather than under the tail. A tail's room is taken back, unless something else came in under it.
+                            val lastPart = Parts.of(m.text).lastOrNull()
+                            val tailRoom = if (inked && tail && !m.edited && m.tapbacks.isEmpty() && !(lastPart is Part.Attachment && m.files.any { visual(it) })) BALLOON_TAIL_ROOM else 0.dp
+                            BasicText(Pack.caption(status.label), Modifier.fillMaxWidth().raisedBy(tailRoom).heightIn(min = 16.dp).padding(top = STATUS_GAP, end = STATUS_END),
                                 style = Pack.mono(Pack.size.small, Pack.muted).copy(textAlign = androidx.compose.ui.text.style.TextAlign.End))
                         }
                     }
@@ -883,7 +890,7 @@ fun Thread(
                             link,
                             onDropPhoto = { uri -> pending.photos[c.id] = photos - uri },
                             onDropLink = { url -> pending.unlinked[c.id] = pending.unlinked[c.id].orEmpty() + url },
-                            metadata = link?.let { previews[Parts.openable(it)] },
+                            metadata = link?.let { Parts.openable(it) }?.let { url -> linkCardFor(url, previews[url], settleMs = DRAFT_SETTLE_MS) },
                         )
                     }
                 },
@@ -1010,7 +1017,7 @@ private fun PartContent(
 
 /**
  * Pictures from the Mac, fetched once and kept in the cache: one alone fits a balloon's width, several sit side by side
- * and scroll. A tap opens the picture in the phone's own viewer.
+ * and scroll. A tap opens the picture full screen over the chat.
  */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -1053,7 +1060,7 @@ private fun Photos(
             val size = if (one) Modifier.width(240.dp).height((240 * ratio).coerceIn(120f, 320f).dp) else Modifier.size(132.dp)
             Box(
                 // A hold is the balloon's (tapbacks, reply): the picture's own tap would otherwise take it (Boss, 2026-10-23).
-                size.clip(shape).background(Pack.surface).combinedClickable(onLongClick = onHold, onDoubleClick = onHold) { file?.let { view(context, it) } }
+                size.clip(shape).background(Pack.surface).combinedClickable(onLongClick = onHold, onDoubleClick = onHold) { file?.let { PhotoViewer.show(it, moving = gif) } }
                     .semantics { contentDescription = "Photo" },
                 contentAlignment = Alignment.Center,
             ) {
@@ -1082,7 +1089,7 @@ private fun Photos(
 }
 
 /** The GIF [local] (picked or from the keyboard) or [file] (the Mac's), as a drawable that moves; null when neither is here. */
-private fun moving(
+internal fun moving(
     context: android.content.Context,
     local: Uri?,
     file: java.io.File?,
@@ -1241,7 +1248,7 @@ private fun Voice(
 
 /**
  * Opens the Mac's attachment [file] ("id|mime") from outside its balloon (the unfolded table): fetched if it isn't
- * kept yet, then a picture in the viewer, a video in the player.
+ * kept yet, then a picture full screen over the app, a video in the player.
  */
 internal fun openMedia(
     context: android.content.Context,
@@ -1259,7 +1266,7 @@ internal fun openMedia(
         main.post {
             when {
                 f == null -> android.widget.Toast.makeText(context, "Couldn't get it from your Mac", android.widget.Toast.LENGTH_SHORT).show()
-                picture -> view(context, f)
+                picture -> PhotoViewer.show(f)
                 else -> play(context, f, mime)
             }
         }
@@ -1279,7 +1286,7 @@ private fun play(
 }
 
 /** [f] decoded no wider or taller than about [max] pixels. */
-private fun decode(
+internal fun decode(
     f: java.io.File,
     max: Int,
 ): ImageBitmap? {
@@ -1305,17 +1312,6 @@ private fun turned(
         postRotate(degrees.toFloat())
     }
     return android.graphics.Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, m, true)
-}
-
-/** Opens [f] in the phone's own viewer. */
-private fun view(
-    context: android.content.Context,
-    f: java.io.File,
-) {
-    val uri = androidx.core.content.FileProvider.getUriForFile(context, "dev.omalauncher.messages.photos", f)
-    runCatching {
-        context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, "image/jpeg").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK))
-    }
 }
 
 /** A link or attachment: a square mark, a bold line, and a quieter one under it. */
@@ -1633,7 +1629,7 @@ private fun Balloon(
             contentAlignment = Alignment.Center,
         ) { BasicText("↩", style = Pack.body(Pack.size.body, if (shown >= 1f) Pack.background else Pack.foreground)) }
         Row(
-            Modifier.fillMaxWidth().offset { IntOffset((drag - timeOffset()).roundToInt(), 0) }.padding(bottom = if (balloon) 11.dp else 0.dp),
+            Modifier.fillMaxWidth().offset { IntOffset((drag - timeOffset()).roundToInt(), 0) }.padding(bottom = if (balloon) BALLOON_TAIL_ROOM else 0.dp),
             horizontalArrangement = if (m.fromMe) Arrangement.End else Arrangement.Start,
         ) {
             Box(
@@ -1700,6 +1696,23 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.tail(
     }
 }
 
+/** A draft's link is read once it stops changing: part-way through typing, its number is some other post's. */
+private const val DRAFT_SETTLE_MS = 800L
+
+/** Room kept under a balloon for its tail. */
+private val BALLOON_TAIL_ROOM = 11.dp
+
+/** A status line's distance under the balloon, and its end's from the balloon's right edge: clear of the tail's 29 dp. */
+private val STATUS_GAP = 5.dp
+private val STATUS_END = 31.dp
+
+/** Laid out [by] higher, taking that much less room in the column. */
+private fun Modifier.raisedBy(by: androidx.compose.ui.unit.Dp) = layout { measurable, constraints ->
+    val placeable = measurable.measure(constraints)
+    val up = by.roundToPx()
+    layout(placeable.width, (placeable.height - up).coerceAtLeast(0)) { placeable.place(0, -up) }
+}
+
 /** How long an error is said under a conversation before it goes by itself. */
 private const val NOTICE_MS = 8_000L
 
@@ -1716,8 +1729,28 @@ private const val NOTICE_MS = 8_000L
             Spacer(Modifier.size(10.dp))
             Column(Modifier.weight(1f)) {
                 BasicText(c.title, style = Pack.body(Pack.size.item).copy(fontWeight = FontWeight.SemiBold), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                BasicText(Pack.caption(if (contextView) "Search context" else if (focused) "Replies" else if (Messages.linked) "iMessage · from your Mac" else "iMessage · through OpenBubbles"), style = Pack.mono(Pack.size.small, Pack.muted))
+                // Nothing to say under the name when it all comes from the Mac (Boss, 0.8.7).
+                val caption = if (contextView) "Search context" else if (focused) "Replies" else if (Messages.linked) null else "iMessage · through OpenBubbles"
+                if (caption != null) BasicText(Pack.caption(caption), style = Pack.mono(Pack.size.small, Pack.muted))
             }
-            if (onSearch != null) TextButton("Search", filled = false, onClick = onSearch)
+            if (onSearch != null) {
+                Box(
+                    Modifier.size(44.dp).clip(CircleShape).semantics { contentDescription = "Search"; role = Role.Button }.clickable(onClick = onSearch),
+                    contentAlignment = Alignment.Center,
+                ) { SearchIcon(Pack.foreground) }
+            }
         }
+}
+
+/** A magnifying glass, drawn in the ink of the header's back mark. */
+@Composable private fun SearchIcon(ink: Color) {
+    androidx.compose.foundation.Canvas(Modifier.size(22.dp)) {
+        val stroke = 2.dp.toPx()
+        val radius = size.width * 0.32f
+        val center = androidx.compose.ui.geometry.Offset(radius + stroke / 2, radius + stroke / 2)
+        val edge = radius * 0.7071f
+        drawCircle(ink, radius, center, style = androidx.compose.ui.graphics.drawscope.Stroke(stroke))
+        drawLine(ink, center + androidx.compose.ui.geometry.Offset(edge, edge), androidx.compose.ui.geometry.Offset(size.width - stroke / 2, size.height - stroke / 2),
+            stroke, androidx.compose.ui.graphics.StrokeCap.Round)
+    }
 }
