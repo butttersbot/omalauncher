@@ -170,7 +170,9 @@ fun ConnectionsModule(size: ModuleSize, now: Long, modifier: Modifier = Modifier
                         val status = connectionStatus(row, incidents, card = true)
                         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(if (small) 3.dp else 4.dp),
                             modifier = Modifier.weight(1f).semantics { contentDescription = "${capability.title}: ${status.word}" }) {
-                            StripMark(row.state.mark, status.tone.color)
+                            // Typed, as the card's CSS sets them (.connection-strip i{font-size:17px}): the card renders a heavy ✓ beside a
+                            // smaller, thin △ (soma-look of connections-small-cover v6, 2026-10-29), and the same face here draws the same.
+                            Words(row.state.mark, sans(17.sp, status.tone.color), 1)
                             Words(capability.band.orEmpty(), sans(10.sp, weight = FontWeight.Medium), 1)
                         }
                     }
