@@ -40,11 +40,22 @@ tap Ana Demo
 expect Reference motion draft
 key BACK
 expect Ana Demo
-# Partial back cancels; content remains usable. Gesture spring itself is unchanged.
+# Cancel predictive Back by returning to the edge BEFORE lifting the same contact.
+# A one-way edge swipe ending at 12% legitimately committed on this gesture-nav AVD.
+# Folded fixture is 1248x1972: x=25 -> 400 -> 25, y=986. No intervening UP/DOWN.
+# Each input command must succeed; && makes shell failure fail this step.
 tap Ana Demo
-swipe 0.02 0.50 0.12 0.50 700
+expect Perfect, see you there
+shell input touchscreen motionevent DOWN 25 986 && input touchscreen motionevent MOVE 150 986 && input touchscreen motionevent MOVE 275 986 && input touchscreen motionevent MOVE 400 986 && input touchscreen motionevent MOVE 275 986 && input touchscreen motionevent MOVE 150 986 && input touchscreen motionevent MOVE 25 986 && input touchscreen motionevent UP 25 986
 expect Perfect, see you there
 shot reference-back-cancel card=messages-parity-status
+# Cancellation must leave the composer usable, with no surprise IME reopening.
+keyboard hidden
+tap Message
+keyboard shown
+closeime
+keyboard hidden
+expect Perfect, see you there
 # Device settings: repeat open/back/send/menu with animator duration scale 0,
 # then restore the prior scale. Do not change Boss's phone settings.
 # Reduced-motion/device frame review remains an explicit native-walk check.
