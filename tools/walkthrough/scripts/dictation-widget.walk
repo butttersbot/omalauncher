@@ -60,6 +60,17 @@ shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es dicta
 tap Record
 expect Allow the microphone for Soma
 nolog fixture relay
+# 5. Any other widget (Boss, 2026-10-30): it reads nothing, and its button doesn't start the microphone.
+shell am force-stop dev.omalauncher.artifactpreview
+clearlog
+shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es dictationWidget other
+log dictation is only for the widget in dictation-mg1.owl
+tap Record
+absent listening
+absent turn the lights down
+tap Send
+nolog fixture relay
+shot dictation-refused-cover
 [phone] After the bundle, with Boss expecting it and MG1 on a text field: on Page 2's dictation widget, tap the big button, say something: the words show as he speaks and the ring lights. Tap to stop: the ring goes out and the words wait. Tap Send: they appear at MG1's cursor, without Enter, and the widget says "Typed into <app> on MG1".
 [phone] With MG1 locked, then with its receiver off: Send says so and the words stay; Send again once it is back types them once. Nothing reaches an agent.
 [phone] While recording: swipe to a far page, or lock the phone. The microphone stops and the words wait. Back on the page they are there.

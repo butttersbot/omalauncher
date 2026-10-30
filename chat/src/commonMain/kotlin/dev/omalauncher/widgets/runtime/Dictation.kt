@@ -15,6 +15,16 @@ import kotlinx.coroutines.flow.StateFlow
  * sends it, and a failed send keeps his words and sends them nowhere else. Main thread.
  */
 
+/**
+ * The one widget that may use the microphone and read what was said (Boss, 2026-10-30): by the file it is loaded from.
+ * The launcher saves store widgets as market-*.owl and shared ones as shared-*.owl, so neither can arrive under this name,
+ * whatever the widget calls itself. It is no wall against what can write in the widgets folder: an agent, or Linux.
+ */
+const val DICTATION_WIDGET_FILE = "dictation-mg1.owl"
+
+internal const val DICTATION_SOURCE = "android.dictation"
+internal const val DICTATION_REFUSED = "dictation is only for the widget in $DICTATION_WIDGET_FILE"
+
 /** What the widget reads. [state] is one of [DictationState]'s values. */
 data class DictationNow(
     val state: String = DictationState.IDLE,

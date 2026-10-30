@@ -36,6 +36,7 @@ import dev.omalauncher.widgets.layout.NotebookStart
 import dev.omalauncher.widgets.layout.OldWidget
 import dev.omalauncher.widgets.market.Review
 import dev.omalauncher.widgets.market.Shared
+import dev.omalauncher.widgets.runtime.DICTATION_WIDGET_FILE
 import dev.omalauncher.widgets.runtime.WidgetInstance
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -595,6 +596,7 @@ class WidgetEngine(
                     linux = { linux },
                     // ask(), open() and sound() from a trigger work only while its app or screen is showing.
                     foreground = { (shownApps[name] ?: 0) > 0 || openScreen == name },
+                    mayDictate = name == DICTATION_WIDGET_FILE,
                 )
             prev?.let(inst::adopt)
             instances[spec.file.name] = inst

@@ -61,7 +61,7 @@ private class FixtureMic(override val allowed: Boolean) : DictationMic {
     }
 }
 
-/** --es dictationWidget typed|locked|offline|nomic: what the fictional MG1 answers, or no microphone. Nothing reaches a device. */
+/** --es dictationWidget typed|locked|offline|nomic|other: what the fictional MG1 answers, no microphone, or any other widget. Nothing reaches a device. */
 @Composable
 internal fun DictationPreview(kind: String) {
     val scope = rememberCoroutineScope()
@@ -97,6 +97,7 @@ internal fun DictationPreview(kind: String) {
                 override fun terminal(command: String?, fontSize: Double?): WidgetTerminal = error("no terminal here")
             },
             onError = { Log.i("SomaWalk", "fixture widget error: $it") },
+            mayDictate = kind != "other",
         )
     }
     LaunchedEffect(inst) { inst.start(scope) { true } }
