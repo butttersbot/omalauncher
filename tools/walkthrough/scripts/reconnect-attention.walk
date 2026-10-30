@@ -1,0 +1,44 @@
+# Red that stays after the agent reconnects (Boss, 2026-10-30 00:42): a chat showed "needs attention", its agent
+# reconnected and worked again, and the red stayed. Fictional Mac thread "Reconnect test", made by the production path
+# stage by stage (--es reconnect dropped|back|done: macSettle, then a working status, then its answer; the row and dot by
+# macThreadNow). Nothing reaches a Mac.
+# 1. Dropped mid-request: needs attention, on the entry and in All chats.
+fold folded
+shell am force-stop dev.omalauncher.artifactpreview
+shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es reconnect dropped
+clearlog
+log fixture reconnect dropped: [Failed]
+expect Fictional long job
+expect needs attention
+shot reconnect-dropped-entry-cover
+tap Show the tabs
+expect Reconnect test
+shot reconnect-dropped-tab-cover
+# 2. The agent is back and working: the request runs again; no red anywhere.
+shell am force-stop dev.omalauncher.artifactpreview
+shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es reconnect back
+clearlog
+log fixture reconnect back: [Running]
+expect Fictional long job
+absent needs attention
+tap Show the tabs
+expect Reconnect test
+absent needs attention
+shot reconnect-back-tab-cover
+swipefrom Reconnect test -0.70 0 500
+swipefrom New chat -0.70 0 500
+tap All chats
+expect AT WORK
+expect Reconnect test
+absent needs attention
+shot reconnect-back-all-chats-cover
+key BACK
+# 3. It answered: done, at rest, still no red.
+shell am force-stop dev.omalauncher.artifactpreview
+shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es reconnect done
+clearlog
+log fixture reconnect done: [Done]
+expect Fictional job finished after the reconnect.
+absent needs attention
+shot reconnect-done-entry-cover
+[phone] After the bundle: a Mac thread that drops mid-request (stop its runner briefly, or let the agent reconnect) goes red; once the agent works again its tab dot is green and its Agents page tile reads working, not "needs attention"; when it answers, both rest without red. A thread with a real waiting question or approval stays red/accent until he answers.

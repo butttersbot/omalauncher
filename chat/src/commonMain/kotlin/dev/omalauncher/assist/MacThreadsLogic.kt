@@ -302,7 +302,10 @@ private fun approvalAnswer(decision: MacDecision) = when (decision) {
  * the entries still on their way to the Mac, which a stop that came before them does not end. [answeredBy] is
  * what the reply is named, given to the entry with its first words unless it already has a name.
  */
-fun macApply(tasks: List<ChatTask>, threadId: String, event: MacEvent, inFlight: Set<Long> = emptySet(), answeredBy: String = ""): List<ChatTask> {
+fun macApply(given: List<ChatTask>, threadId: String, event: MacEvent, inFlight: Set<Long> = emptySet(), answeredBy: String = ""): List<ChatTask> {
+    // The agent working again on a request given up on only because the runner said the thread rested (it restarted, or
+    // the agent dropped and reconnected) takes that request up again: "needs attention" no longer holds (Boss, 2026-10-30).
+    val tasks = if (macResumes(event)) macRevived(given, threadId) ?: given else given
     val current = tasks.firstOrNull { it.thread == threadId && it.status == TaskStatus.Running }
     fun running(change: (ChatTask) -> ChatTask) = if (current == null) tasks else tasks.map { if (it.time == current.time) change(it) else it }
     // While none of his requests runs there, what the thread says is the agent's own (its report on background
@@ -398,6 +401,25 @@ fun macApply(tasks: List<ChatTask>, threadId: String, event: MacEvent, inFlight:
         } ?: tasks
         is MacEvent.Status, is MacEvent.Other -> tasks
     }
+}
+
+/** Whether [event] is the thread at work: it says it works, or the agent speaks, steps or answers. */
+fun macResumes(event: MacEvent) = (event is MacEvent.Status && event.status == MacThreadStatus.Working) ||
+    event is MacEvent.Text || event is MacEvent.Step || event is MacEvent.Result
+
+/**
+ * [tasks] with the newest entry of [threadId] running again, when nothing of his runs there and that entry was given up
+ * on only because the thread said it rested ([macSettle]: the runner restarted, or the agent dropped): the thread is at
+ * work again, so it is no longer his to look at. Null when there is no such entry; one that failed for any other
+ * reason, ended or was stopped stays as it is.
+ */
+fun macRevived(tasks: List<ChatTask>, threadId: String): List<ChatTask>? {
+    if (tasks.any { it.thread == threadId && it.status == TaskStatus.Running }) return null
+    val latest = macLatest(tasks, threadId)?.takeIf { it.status == TaskStatus.Failed } ?: return null
+    val result = latest.result.trim()
+    val reason = listOf(MAC_INTERRUPTED, MAC_NO_ANSWER).firstOrNull { result.endsWith(it) } ?: return null
+    val said = result.removeSuffix(reason).trim()
+    return tasks.map { if (it.time == latest.time) it.copy(status = TaskStatus.Running, result = if (said.isEmpty()) "" else said + "\n") else it }
 }
 
 /**

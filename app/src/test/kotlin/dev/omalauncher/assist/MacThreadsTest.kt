@@ -221,6 +221,38 @@ class MacThreadsTest {
         assertEquals(listOf(handed(5)), macAsked(listOf(handed(5)), id, write))
     }
 
+    /**
+     * Boss, 2026-10-30: a chat went red ("needs attention") when its agent dropped, then the agent reconnected and worked
+     * again, and the red stayed. A request given up on only because the thread said it rested runs again once the thread
+     * works; its answer ends it as done, and the thread rests, not red. A real waiting request still asks him.
+     */
+    @Test fun aRequestGivenUpOnWhenTheAgentDroppedRunsAgainWhenItWorksAndTheRedClears() {
+        val dropped = macSettle(listOf(taken(5)), id, MacThreadStatus.Interrupted, 0)
+        assertEquals(TaskStatus.Failed, dropped.single().status)
+        assertEquals(ThreadState.Attention, macThreadNow(thread(MacThreadStatus.Interrupted), id, dropped, emptyList(), true).state)
+        // The agent is back: the runner says it works, and the request is his running one again, without the restart's line.
+        val back = macApply(dropped, id, MacEvent.Status(1, 1, MacThreadStatus.Working))
+        assertEquals(TaskStatus.Running, back.single().status)
+        assertEquals("", back.single().result)
+        // What it had said before it dropped stays, the restart's line goes.
+        val said = macSettle(listOf(taken(7).copy(result = "half\n")), id, MacThreadStatus.Idle, 0)
+        assertEquals("half\n", macApply(said, id, MacEvent.Status(1, 1, MacThreadStatus.Working)).single().result)
+        assertEquals(ThreadState.Working, macThreadNow(thread(MacThreadStatus.Working), id, back, emptyList(), true).state)
+        // It answers: done, and the thread at rest is not red.
+        val done = macApply(macApply(back, id, MacEvent.Text(2, 2, "and the rest.")), id, MacEvent.Result(3, 3, "and the rest.", failed = false))
+        assertEquals(TaskStatus.Done, done.single().status)
+        assertEquals(ThreadState.Idle, macThreadNow(thread(MacThreadStatus.Idle), id, done, emptyList(), true).state)
+        // Its words alone bring it back too (a runner that sends no status first).
+        assertEquals(TaskStatus.Running, macApply(dropped, id, MacEvent.Text(4, 4, "still here")).single().status)
+        // A waiting request of the thread keeps it asking him, whatever else.
+        assertEquals(ThreadState.NeedsOk, macThreadNow(thread(MacThreadStatus.Waiting, pending = listOf(write)), id, back, emptyList(), true).state)
+        // A request that failed for its own reason is not taken up again.
+        val failed = macApply(listOf(taken(6)), id, MacEvent.Error(5, 5, "Claude Code crashed", null))
+        assertEquals(TaskStatus.Failed, failed.single().status)
+        assertEquals(TaskStatus.Failed, macApply(failed, id, MacEvent.Status(6, 6, MacThreadStatus.Working)).single().status)
+        assertEquals(ThreadState.Attention, macThreadNow(thread(MacThreadStatus.Idle), id, failed, emptyList(), true).state)
+    }
+
     @Test fun aRestingThreadLeavesNothingWorkingAndOnlyWhatWasNeverTakenCanBeSentAgain() {
         val other = macHandOver(ChatTask(9, UNDECIDED_AGENT, "elsewhere"), thread(threadId = "t99999999"))
         val tasks = listOf(taken(5).copy(result = "half\n"), handed(6), other)

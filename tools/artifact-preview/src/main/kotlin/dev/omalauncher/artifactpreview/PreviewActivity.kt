@@ -61,7 +61,7 @@ class PreviewActivity : ComponentActivity() {
                         dev.omalauncher.ui.PhoneRunnerSetting(pairing) { finish() }
                     } else {
                     val empty = intent.getBooleanExtra("empty", false)
-                    val host = remember { PreviewHost(this@PreviewActivity, empty, intent.getStringExtra("mail"), intent.getBooleanExtra("questions", false), intent.getStringExtra("waitingQuestion"), intent.getBooleanExtra("rankedSessions", false), intent.getBooleanExtra("queuedBehind", false)) }
+                    val host = remember { PreviewHost(this@PreviewActivity, empty, intent.getStringExtra("mail"), intent.getBooleanExtra("questions", false), intent.getStringExtra("waitingQuestion"), intent.getBooleanExtra("rankedSessions", false), intent.getBooleanExtra("queuedBehind", false), intent.getStringExtra("reconnect")) }
                     // --ez newChat true: opens on a new chat, with its pick rows (computer, agent, model, mode; slice 6).
                     val start = remember { if (intent.getBooleanExtra("newChat", false)) dev.omalauncher.oma.newChatTab(host) else if (intent.getStringExtra("waitingQuestion") == "builder") PHONE_THREAD else if (intent.getStringExtra("waitingQuestion") in LINKED_MODES) { if (intent.getStringExtra("startTab") == "oma") OMA_TAB else PHONE_THREAD } else if (empty) PHONE_THREAD_B else OMA_TAB }
                     // --es updates offer|waiting|updating|updated|failed: the update pill, fictional offers only (UpdatesPreview).
@@ -78,7 +78,9 @@ class PreviewActivity : ComponentActivity() {
 
 private class PreviewHost(private val context: Context, private val empty: Boolean = false, private val mailMode: String? = null, private val questions: Boolean = false, private val waitingQuestion: String? = null, private val rankedSessions: Boolean = false,
     /** --ez queuedBehind true: a fictional mail queued behind the waiting builder question (its [ send now ] must not show). */
-    private val queuedBehind: Boolean = false) : ChatHost {
+    private val queuedBehind: Boolean = false,
+    /** --es reconnect dropped|back|done: a fictional Mac thread whose agent dropped mid-request, then came back and finished. */
+    private val reconnect: String? = null) : ChatHost {
         val now = System.currentTimeMillis()
         private val page = """<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1">
 <style>body{margin:0;padding:24px;background:#fdfdfb;color:#111113;font-family:system-ui}small{color:#d7262d;font-size:10px;letter-spacing:.1em}h1{font-size:32px;line-height:1.15;margin:18px 0}p{font-size:14px;line-height:1.6}button{background:#111113;color:#fdfdfb;padding:12px 18px;border:0}section{border:1px solid #111113;padding:18px;margin:22px 0}.record{border-radius:50%;width:100px;height:100px;background:repeating-radial-gradient(#111113 0 3px,#444 4px);margin:15px auto;display:grid;place-items:center}.record:after{content:"";width:28px;height:28px;border:8px solid #fdfdfb;border-radius:50%;background:#d7262d}</style>
@@ -109,6 +111,7 @@ Open the preview to try the layout. We can keep talking while you look at it.
                 return bundled.map { if (it.time == 1L) it.copy(status = TaskStatus.Done, result = "Combined handoff complete.") else it } +
                     ChatTask(5, "Codex", "Legacy update", mail = "Agent mail", status = TaskStatus.Done, result = "Delivered in the bundled agent handoff.")
             }
+            if (reconnect != null) return reconnectTasks
             if (waitingQuestion in LINKED_MODES) return listOf(ChatTask(LinkedFixture.began, "Claude Code", "Fictional skills question", builder = BuilderId.A.saved,
                 status = if (LinkedFixture.phoneDone) TaskStatus.Done else TaskStatus.Running,
                 approvals = listOf(dev.omalauncher.oma.ChatApproval("AskUserQuestion", "Restore or leave the skills", if (LinkedFixture.phoneDone) dev.omalauncher.oma.ApprovalAnswer.Approved else dev.omalauncher.oma.ApprovalAnswer.Waiting, linkedEntry.nonce))))
@@ -146,6 +149,22 @@ Open the preview to try the layout. We can keep talking while you look at it.
         }
         private val builderQuestionLedger = ApprovalLedger { "builder-ticket" }
         private val builderQuestionEntry by lazy { (builderQuestionLedger.admit(AgentApproval("builder-request", "AskUserQuestion", questionJson, "Four fictional decisions")) as Admission.Shown).entry }
+        // --es reconnect: the production path, stage by stage (Boss, 2026-10-30: red stuck after the agent reconnected).
+        // dropped: the runner said the thread rested mid-request (macSettle); back: it works again (a status event);
+        // done: it answered. The thread's dot, label and row are made by macThreadNow, as in Soma.
+        private val reconnectThread get() = dev.omalauncher.assist.MacThread(RECONNECT_ID, "Reconnect test", "/Users/boss/Projects/fixture", dev.omalauncher.assist.ThreadHome.Mac, "claude", "",
+            when (reconnect) { "back" -> dev.omalauncher.assist.MacThreadStatus.Working; "done" -> dev.omalauncher.assist.MacThreadStatus.Idle; else -> dev.omalauncher.assist.MacThreadStatus.Interrupted },
+            null, "", 0, 0, emptyList())
+        private val reconnectTasks: List<ChatTask> by lazy {
+            val sent = dev.omalauncher.assist.macTaken(dev.omalauncher.assist.macHandOver(ChatTask(System.currentTimeMillis() - 120_000, dev.omalauncher.oma.UNDECIDED_AGENT, "Fictional long job"), reconnectThread))
+            val dropped = dev.omalauncher.assist.macSettle(listOf(sent), RECONNECT_ID, dev.omalauncher.assist.MacThreadStatus.Interrupted, 0)
+            val back = dev.omalauncher.assist.macApply(dropped, RECONNECT_ID, dev.omalauncher.assist.MacEvent.Status(1, 1, dev.omalauncher.assist.MacThreadStatus.Working))
+            when (reconnect) {
+                "back" -> back
+                "done" -> dev.omalauncher.assist.macApply(back, RECONNECT_ID, dev.omalauncher.assist.MacEvent.Result(2, 2, "Fictional job finished after the reconnect.", failed = false))
+                else -> dropped
+            }.also { android.util.Log.i("SomaWalk", "fixture reconnect $reconnect: ${it.map { t -> t.status }}") }
+        }
         // --es waitingQuestion linked|alike: Phone A and the MacBook's fictional "Skills cleanup" thread ask the same thing;
         // linked, Phone A's question names that thread (metadata link). Kept per process, so a relaunch on the Oma tab sees it.
         private fun linkedForm(link: Boolean) = org.json.JSONObject().put("questions", org.json.JSONArray().put(org.json.JSONObject()
@@ -199,7 +218,9 @@ Open the preview to try the layout. We can keep talking while you look at it.
         override fun agentBin() = "claude"
         @Composable override fun linuxInstalled() = true
         override fun frontReady() = true
-        override fun threads() = if (rankedSessions) listOf(
+        override fun threads() = if (reconnect != null) listOf(
+            dev.omalauncher.assist.macThreadNow(reconnectThread, RECONNECT_ID, reconnectTasks, emptyList(), true),
+        ) else if (rankedSessions) listOf(
             AgentThread(PHONE_THREAD, "Newer working", ThreadState.Working, "Working on a fictional task", "working", worked = now, since = now),
             AgentThread("mac:fixture-question", "Question second", ThreadState.NeedsOk, "Fictional question needs your answer", "needs your answer", worked = now - 300000, requestedAt = now - 2000),
             AgentThread("mac:fixture-approval", "Approval first", ThreadState.NeedsOk, "Fictional approval needs your OK", "needs your OK", worked = now - 600000, requestedAt = now - 1000),
@@ -271,3 +292,5 @@ private object LinkedFixture {
     var phoneDone by androidx.compose.runtime.mutableStateOf(false)
     var macDone by androidx.compose.runtime.mutableStateOf(false)
 }
+
+private const val RECONNECT_ID = "t0ecc0ecc"
