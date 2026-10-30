@@ -33,7 +33,11 @@ Actions are Soma's bracketed words in every look (`[ Approve ]`, one line, never
 
 ## The active look: Manga
 
-Manga, after features/manga-look/manga-mockup.html: every home page is a manga page, fixed panels in hairline ink on white paper, one spot red, and screentone where City Pop would use a color. Dragging one panel onto another trades what is in them; the lines never move. Read from real pages (Kimagure Orange Road, 1984; Inio Asano): borders are hairlines, the gaps between rows are wider than those between panels side by side, and the page keeps a deeper margin at the foot than at the head, as a printed volume does. Nothing casts a shadow; depth is the ink's and the tone's. What it leaves out is Console's (assets/packs/console/pack.toml). Its fonts are copied from the other looks, in fonts/ (SIL Open Font License): Dela Gothic One from Riso, Patrick Hand from Bujo, Schibsted Grotesk and JetBrains Mono; each voice also names the nearest system family as a fallback.
+Design in the look Soma wears (Manga when this was built; `soma-theme` says which now), unless Boss asks
+for another style. Console is the plain fallback look whose values every look fills gaps from: it is not a design
+reference, and nothing is designed in it unless Boss asks.
+
+Manga, after features/manga-look/manga-mockup.html: every home page is a manga page, fixed panels in hairline ink on white paper, one spot red, and screentone where City Pop would use a color. Dragging one panel onto another trades what is in them; the lines never move. Read from real pages (Kimagure Orange Road, 1984; Inio Asano): borders are hairlines, the gaps between rows are wider than those between panels side by side, and the page keeps a deeper margin at the foot than at the head, as a printed volume does. Nothing casts a shadow; depth is the ink's and the tone's. A token it leaves out takes the base value (theme/pack/PackSchema.kt). Design in this look as it is drawn (soma-theme gives its full tokens), never in the base or in Console. Its fonts are copied from the other looks, in fonts/ (SIL Open Font License): Dela Gothic One from Riso, Patrick Hand from Bujo, Schibsted Grotesk and JetBrains Mono; each voice also names the nearest system family as a fallback.
 
 | Token | CSS | Pack |
 |---|---|---|

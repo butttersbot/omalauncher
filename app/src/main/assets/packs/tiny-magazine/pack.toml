@@ -1,7 +1,8 @@
 # Tiny Magazine, after design/oma-scrapbook-prototype.html ("tm"): a blue zine spread with
 # white clippings, an italic serif masthead, and a pen that writes in white.
 #
-# What it leaves out is Console's (assets/packs/console/pack.toml).
+# A token it leaves out takes the base value (theme/pack/PackSchema.kt). Design in this look as
+# it is drawn (soma-theme gives its full tokens), never in the base or in Console.
 # Its fonts are the prototype's, in fonts/ (SIL Open Font License); each voice also names the nearest system family as a fallback.
 [pack]
 format = 1

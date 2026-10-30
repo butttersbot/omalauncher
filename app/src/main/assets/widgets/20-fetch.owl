@@ -45,7 +45,7 @@ widget "fetch" {
     }
   }
 
-  component Line(key, value, size = 10, keyWidth = 50) {
+  component Line(key, value, size = 10, keyWidth = 58) {
     Row {
       gap: 6
       Text { text: key; fontSize: size; font: mono; color: accent; width: keyWidth }

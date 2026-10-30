@@ -368,6 +368,10 @@ Actions are Soma's bracketed words in every look (`[ Approve ]`, one line, never
 
 ## The active look: {pack['pack']['name']}
 
+Design in the look Soma wears ({pack['pack']['name']} when this was built; `soma-theme` says which now), unless Boss asks
+for another style. Console is the plain fallback look whose values every look fills gaps from: it is not a design
+reference, and nothing is designed in it unless Boss asks.
+
 {lead_comment(os.path.join(pack_dir, 'pack.toml'))}
 
 | Token | CSS | Pack |

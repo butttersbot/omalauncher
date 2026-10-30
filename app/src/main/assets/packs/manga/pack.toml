@@ -7,7 +7,8 @@
 # margin at the foot than at the head, as a printed volume does. Nothing casts a shadow; depth
 # is the ink's and the tone's.
 #
-# What it leaves out is Console's (assets/packs/console/pack.toml).
+# A token it leaves out takes the base value (theme/pack/PackSchema.kt). Design in this look as
+# it is drawn (soma-theme gives its full tokens), never in the base or in Console.
 # Its fonts are copied from the other looks, in fonts/ (SIL Open Font License): Dela Gothic One
 # from Riso, Patrick Hand from Bujo, Schibsted Grotesk and JetBrains Mono; each voice also names
 # the nearest system family as a fallback.

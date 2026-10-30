@@ -304,7 +304,12 @@ class WidgetServices(
                 "locale" to Str(java.util.Locale.getDefault().toLanguageTag()),
                 "timezone" to Str(java.util.TimeZone.getDefault().id),
                 "launcher" to Str(BuildConfig.VERSION_NAME),
-                "theme" to (runtime.themes.current?.title?.let(::Str) ?: Null),
+                // The look Soma wears (Manga, Riso…): what Boss sees and agents design in (Boss, 2026-10-29: the fetch
+                // card said the old Omarchy color theme). Console draws in the Omarchy theme's colors, so it says that.
+                "theme" to (
+                    dev.omalauncher.ui.ActivePack.pick.let { pick -> if (pick.isConsole) null else pick.load?.pack?.name }?.let(::Str)
+                        ?: runtime.themes.current?.title?.let(::Str) ?: Null
+                ),
                 "apps" to num(runtime.androidApps.apps.size.toLong()),
             ),
         )

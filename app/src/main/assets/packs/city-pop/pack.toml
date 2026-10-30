@@ -8,7 +8,8 @@
 # shape and crops it to cover; the cobalt shows only until the image has decoded. There is no
 # gutter, and the overview lays a thin white veil over each page.
 #
-# What it leaves out is Console's (assets/packs/console/pack.toml).
+# A token it leaves out takes the base value (theme/pack/PackSchema.kt). Design in this look as
+# it is drawn (soma-theme gives its full tokens), never in the base or in Console.
 # Its fonts are the prototype's, in fonts/ (SIL Open Font License); each voice also names the nearest system family as a fallback.
 [pack]
 format = 1

@@ -1,7 +1,9 @@
-# Console: the launcher's default pack, and the one every other pack is written from.
+# Console: the plain look Soma falls back to when a look can't be loaded, as it looked before
+# looks. Hardly worn: never design in it. Agents design in the look Soma wears (soma-theme says
+# which; Manga as of 2026-10-29), unless Boss asks for another style.
 #
-# It sets every token there is. A pack that leaves a token out, or names a font or wallpaper
-# it doesn't hold, gets the value here for that token only. The launcher has the same values
+# Its values are also the base: it sets every token there is, and a pack that leaves a token
+# out, or names a font or wallpaper it doesn't hold, gets the base value for that token only. The launcher has the same values
 # built in (theme/pack/PackSchema.kt) and a test keeps this file and the code in step.
 #
 # Lengths are dp, text sizes sp, angles degrees, times milliseconds. A color is "#rrggbb",

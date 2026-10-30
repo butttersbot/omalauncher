@@ -11,7 +11,7 @@ base pack because it's the default: Boss's rule is the active Soma theme unless 
   soma-theme css [--embed] [--fonts DIR] [--look NAME]
                                   the look as CSS: custom properties (--soma-*) and @font-face rules. --embed inlines
                                   the fonts (one self-contained file); --fonts DIR copies them into DIR and points there
-  soma-theme toml [--look NAME]    the look's pack.toml, merged over Console the way the launcher reads it
+  soma-theme toml [--look NAME]    the look's pack.toml, merged over the base values the way the launcher reads it
   soma-theme list                  every look the Soma build carries
 
 The active look comes from, in order: --look, $SOMA_LOOK, the phone's own report in the herd (`herd --json`: the Fold's
@@ -114,7 +114,8 @@ def active(args):
 
 
 def merged(packs, look):
-    """A pack leaves out what it doesn't change; the launcher fills those from Console, token by token."""
+    """A pack leaves out what it doesn't change; the launcher fills those from the base values (written out in
+    console/pack.toml, which is also the Console look's), token by token. The base is never a look to design in."""
     def deep(base, over):
         out = dict(base)
         for k, v in over.items():
