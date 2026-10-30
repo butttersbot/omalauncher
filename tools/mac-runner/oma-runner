@@ -19,6 +19,8 @@ Only exact Codex command scopes the owner explicitly saved may reuse that decisi
   GET  /threads[?all=1]                  every thread: id, name, summary, status, last_worked, tail, pending, bot; internal ones
                                          (made by agents for tests, proofs and helpers) only with all=1
   POST /threads/ID/internal  {internal}  marks a thread internal (hidden from the list) or not; nothing is deleted
+  GET  /questions                        every question waiting on this runner, across threads: {thread, approval, nonce, link,
+                                         fingerprint, title, card, same_pending}, so Soma finds one question asked in several threads
   GET  /bots/ID                          one bot this machine hosts: its settings, instructions and notes (read only)
   POST /threads/ID/fresh                 a bot's session starts over: its conversation is archived, its notes stay
   POST /threads/ID/model   {model}       the Venice model a bot's session runs from its next message ("" for bot.json's)
@@ -29,7 +31,8 @@ Only exact Codex command scopes the owner explicitly saved may reuse that decisi
   POST /threads/ID/messages   {text}     the owner's words; {taken: "now"} or {taken: "queued", position}
   GET  /threads/ID/stream[?after=N]      server-sent events from event N+1 on (or the Last-Event-ID header)
   GET  /threads/ID/events[?after=N]      the same events as plain JSON, for asking without holding a link
-  POST /threads/ID/approvals/APPROVAL    {decision: "allow"|"deny", nonce, remember?: true}
+  POST /threads/ID/approvals/APPROVAL    {decision: "allow"|"deny", nonce, remember?: true} (or, for a question, {…, receipt, sig}:
+                                         Boss's answer to the same question in another thread, signed by a pinned owner key)
                                          remember saves only an eligible exact Codex command for this thread
   POST /threads/ID/command-approvals/clear {}   forgets that thread's saved command approvals
   POST /threads/ID/stop                  stops the task and drops what was waiting its turn; what was said stays
@@ -50,7 +53,7 @@ pair gives DEVICE (its Tailscale machine name) a key of its own, sent to it by T
 before, and a computer running Soma as soma-runner-<this machine>.json. unpair takes it away at once. rekey is pair
 for the phone.
 """
-import queue, contextlib, fcntl, functools, hashlib, hmac, ipaddress, json, os, pathlib, plistlib, re, secrets, select, shlex, shutil, signal, socket, stat, subprocess, sys, tempfile, threading, time, tomllib, urllib.error, urllib.parse, urllib.request, uuid
+import base64, queue, contextlib, fcntl, functools, hashlib, hmac, ipaddress, json, os, pathlib, plistlib, re, secrets, select, shlex, shutil, signal, socket, stat, subprocess, sys, tempfile, threading, time, tomllib, urllib.error, urllib.parse, urllib.request, uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HOME = pathlib.Path.home()
@@ -318,7 +321,12 @@ ARTIFACT_NOTE = ('Soma (the app Boss is using) shows artifacts beside the chat. 
                  'so no CDN scripts, web fonts or network calls) and run `soma-artifact put FILE --title "Short title" --note '
                  '"what this version is"`. Every change is a new put of the same file name, which becomes its next version. '
                  'Before you start changing one, run `soma-artifact editing NAME` so Boss sees you are on it. '
-                 '`soma-artifact list` shows what this conversation has; `soma-artifact get NAME --version N` prints an older version.')
+                 '`soma-artifact list` shows what this conversation has; `soma-artifact get NAME --version N` prints an older version. '
+                 # Linked questions (Boss, 2026-10-29): the same sentence the phone's agents get.
+                 'If a decision you ask Boss is one another thread already asks or will ask him (a peer mailed you about it), link yours: '
+                 'add "metadata": {"source": "link:THREAD"} to AskUserQuestion, THREAD being that peer\'s thread (a Mac thread id like '
+                 't1703ae4f, or phone:A to phone:D); his answer to either then answers both. In a Codex question form, end the first '
+                 'question with a line "link: THREAD" instead.')
 
 SOMA_ARTIFACT_HELPER = r'''#!/usr/bin/env python3
 """soma-artifact: shows a file beside this conversation in Soma, as an artifact Boss can look at and use.
@@ -1267,7 +1275,12 @@ class Codex(Talker):
             thread.ask(number, 'Permissions', {'permissions': params.get('permissions') or {}, 'codex_request': 'permissions'}, params.get('reason') or '')
         elif method == 'item/tool/requestUserInput':
             questions = params.get('questions') or []
-            thread.ask(number, 'Question', {'questions': questions, 'codex_request': 'questions'},
+            # A link Codex gave (any metadata.source "link:KEY" or link, else a last line "link: KEY") goes forward as input.link.
+            meta = params.get('metadata') if isinstance(params.get('metadata'), dict) else {}
+            given = meta.get('source') if isinstance(meta.get('source'), str) else params.get('link') if isinstance(params.get('link'), str) else ''
+            given = given[5:].strip() if given.lower().startswith('link:') else given.strip()
+            link = given if LINK_KEY.fullmatch(given or '') else card_link({}, card_of(questions) or [])
+            thread.ask(number, 'Question', {'questions': questions, 'codex_request': 'questions', **({'link': link} if link else {})},
                        'Answer the question form in Soma, or reply in the chat.')
         elif method == 'mcpServer/elicitation/request':
             thread.ask(number, 'MCP', {'elicitation': params, 'codex_request': 'elicitation'},
@@ -2723,6 +2736,7 @@ changed = threading.Condition()  # guards every thread's state; told whenever an
 threads = {}
 closing = False
 _services = None
+_services_module = None
 _services_lock = threading.Lock()
 
 
@@ -2771,6 +2785,8 @@ def services():
             spec = importlib.util.spec_from_file_location('soma_services', here)
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
+            global _services_module
+            _services_module = module
             test = os.environ.get('OMA_RUNNER_SERVICES_TEST') if os.environ.get('OMA_RUNNER_BIND') == '127.0.0.1' else None
             if test:  # loopback proof only (test-runner.py): a mock backend, test trust, scripted probes; nothing real is touched
                 folder = pathlib.Path(test)
@@ -2839,7 +2855,8 @@ class Thread:
                 'read_only': False, 'internal': bool(self.meta.get('internal')),
                 'bot': self.bot_fields(),
                 'background': list(self.kept.driver.background.values()) if self.kept and not self.kept.done else [],
-                'pending': [{'approval': key, 'nonce': entry['nonce'], 'tool': entry['tool'], 'input': entry['input'], 'explanation': entry['explanation'], 'can_remember': entry.get('command_scope') is not None, 'asked_at': entry.get('asked_at')} for key, entry in self.pending.items()]}
+                'pending': [{'approval': key, 'nonce': entry['nonce'], 'tool': entry['tool'], 'input': entry['input'], 'explanation': entry['explanation'], 'can_remember': entry.get('command_scope') is not None, 'asked_at': entry.get('asked_at'),
+                             **question_marks(self, key, entry)} for key, entry in self.pending.items()]}
 
     def bot_fields(self):
         """What a device shows of a bot's session: who it is, what's wrong with it if anything, how full its memory is."""
@@ -4067,6 +4084,169 @@ def end(process):
 QUESTION_SKIP_ANSWER = "Boss skipped this question: decide yourself with your best judgment and carry on; only ask again if you truly can't continue without him."
 
 
+# Linked questions (Boss, 2026-10-29: he answered a question in one thread and the same one still waited in another). A
+# question's link is a key the asking agent sets (Claude: AskUserQuestion metadata.source "link:KEY"; any agent: a last
+# line "link: KEY" in the first question or its header); its fingerprint is its card, normalized. An answer Boss gave
+# elsewhere is delivered only by link or exact fingerprint, with his signed receipt (deliver_linked); a question that is
+# only worded alike gets the hint (same_pending, match "similar") and waits for his tap.
+LINK_KEY = re.compile(r'[A-Za-z0-9][A-Za-z0-9._:-]{0,79}')
+LINK_LINE = re.compile(r'(?:^|\n)\s*link:\s*(' + LINK_KEY.pattern + r')\s*$', re.I)
+
+
+def question_card(entry):
+    """A question's form as [{question, header, options}] (labels only), or None for anything else."""
+    info = entry.get('input') or {}
+    if entry.get('tool') != 'AskUserQuestion' and info.get('codex_request') != 'questions':
+        return None
+    return card_of(info.get('questions'))
+
+
+def card_of(questions):
+    if not isinstance(questions, list) or not questions:
+        return None
+    return [{'question': str(q.get('question') or ''), 'header': str(q.get('header') or ''),
+             'options': [str(o.get('label')) for o in (q.get('options') or []) if isinstance(o, dict) and isinstance(o.get('label'), str)]}
+            for q in questions if isinstance(q, dict)]
+
+
+def card_link(info, card):
+    if isinstance(info, dict) and isinstance(info.get('link'), str) and LINK_KEY.fullmatch(info['link']):
+        return info['link']
+    meta = info.get('metadata') if isinstance(info, dict) else None
+    source = meta.get('source') if isinstance(meta, dict) else None
+    if isinstance(source, str) and source.lower().startswith('link:') and LINK_KEY.fullmatch(source[5:].strip()):
+        return source[5:].strip()
+    for field in ((card or [{}])[0].get('question', ''), (card or [{}])[0].get('header', '')):
+        found = LINK_LINE.search(field)
+        if found:
+            return found.group(1)
+    return None
+
+
+def normal(text):
+    return ' '.join(LINK_LINE.sub('', str(text)).lower().split())
+
+
+def card_fingerprint(card):
+    return hashlib.sha256(json.dumps([[normal(q['question']), sorted(normal(o) for o in q['options'])] for q in card]).encode()).hexdigest()
+
+
+def card_words(card):
+    words = set()
+    for q in card:
+        for text in [q['question'], q['header'], *q['options']]:
+            words.update(w for w in re.findall(r'[a-z0-9]+', normal(text)) if len(w) > 2)
+    return words
+
+
+def cards_alike(a, b):
+    """Worded alike: most of their words shared (Jaccard 0.4 or more). Only ever a hint, never a delivery."""
+    wa, wb = card_words(a), card_words(b)
+    return bool(wa and wb) and len(wa & wb) / len(wa | wb) >= 0.4
+
+
+def same_pending(thread, approval, card, link, fingerprint):
+    """The same question waiting in other threads here: by link, exact card, or (a hint only) worded alike."""
+    found = []
+    for other in threads.values():
+        for key, entry in other.pending.items():
+            if other is thread and key == approval:
+                continue
+            theirs = question_card(entry)
+            if not theirs:
+                continue
+            their_link = card_link(entry.get('input') or {}, theirs)
+            match = ('link' if link and their_link == link else 'exact' if card_fingerprint(theirs) == fingerprint
+                     else 'similar' if cards_alike(card, theirs) else None)
+            if match:
+                found.append({'thread': other.meta['id'], 'thread_name': other.meta.get('name', ''), 'approval': key, 'match': match})
+    return found
+
+
+def question_marks(thread, approval, entry):
+    """What a waiting question shows beside its form: its link, its fingerprint, and the same question elsewhere here."""
+    card = question_card(entry)
+    if not card:
+        return {}
+    link = card_link(entry.get('input') or {}, card)
+    fingerprint = card_fingerprint(card)
+    return {'link': link, 'fingerprint': fingerprint, 'same_pending': same_pending(thread, approval, card, link, fingerprint)}
+
+
+def all_questions():
+    """Every question waiting on this runner (GET /questions)."""
+    out = []
+    for thread in threads.values():
+        for key, entry in thread.pending.items():
+            card = question_card(entry)
+            if card:
+                out.append({'thread': thread.meta['id'], 'thread_name': thread.meta.get('name', ''), 'internal': bool(thread.meta.get('internal')),
+                            'approval': key, 'nonce': entry['nonce'], 'asked_at': entry.get('asked_at'), 'title': card[0]['question'][:200],
+                            'card': card, **question_marks(thread, key, entry)})
+    return out
+
+
+def linked_answers(entry, raw, sig):
+    """Boss's answer from another thread, from his signed receipt ([raw], the exact string signed; [sig] base64), as this
+    question's answers: (answers, receipt id) or (None, why). Delivered only by link or exact card, never by likeness."""
+    try:
+        receipt = json.loads(raw)
+    except (TypeError, ValueError):
+        return None, 'the receipt is not JSON'
+    if not isinstance(receipt, dict) or receipt.get('kind') != 'question-answer':
+        return None, 'the receipt is not his answer to a question card'
+    at = receipt.get('at')
+    if not isinstance(at, (int, float)) or time.time() * 1000 - at > 7 * 86400 * 1000 or at > time.time() * 1000 + 300 * 1000:
+        return None, 'the receipt is older than 7 days, or dated in the future'
+    trust = services().trust()
+    if trust.state != 'ready':
+        return None, 'this runner has no pinned owner key to check the receipt with (%s)' % trust.detail
+    key = trust.keys.get(str(receipt.get('deviceId', '')).lower())
+    if key is None:
+        return None, 'the receipt is not signed by a pinned owner key'
+    try:
+        signature = base64.b64decode(str(sig), validate=True)
+    except ValueError:
+        return None, 'the signature is not base64'
+    if len(signature) == 64:  # IEEE P1363 (r||s) as some keystores give it: the DER form verify takes
+        from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
+        signature = encode_dss_signature(int.from_bytes(signature[:32], 'big'), int.from_bytes(signature[32:], 'big'))
+    if not _services_module.verify_signature(key, raw.encode('utf-8'), signature):
+        return None, 'the signature does not verify'
+    reply = receipt.get('replyTo') or {}
+    text = reply.get('text')
+    if not isinstance(text, str) or reply.get('textSha256') != hashlib.sha256(text.encode('utf-8')).hexdigest():
+        return None, "the receipt doesn't say which card he answered"
+    try:
+        asked = json.loads(text)
+    except ValueError:
+        return None, 'the card he answered is not readable'
+    their = card_of((asked or {}).get('questions') if isinstance(asked, dict) else None)
+    mine = question_card(entry)
+    if not their or not mine:
+        return None, 'not a question card'
+    my_link, their_link = card_link(entry.get('input') or {}, mine), card_link(asked if isinstance(asked, dict) else {}, their)
+    same = (my_link and my_link == their_link) or card_fingerprint(mine) == card_fingerprint(their)
+    if not same or len(mine) != len(their):
+        return None, "this is not the question he answered (no shared link, and not the same card): it waits for his own answer"
+    given = receipt.get('answers')
+    if not isinstance(given, dict):
+        return None, 'the receipt holds no answers'
+    info = entry.get('input') or {}
+    codex = info.get('codex_request') == 'questions'
+    answers = {}
+    for index, (q_mine, q_theirs) in enumerate(zip(info.get('questions') or [], their)):
+        value = given.get(q_theirs['question'])
+        if value is None:
+            return None, 'the receipt has no answer to "%s"' % q_theirs['question'][:80]
+        values = value if isinstance(value, list) else [value]
+        labels = [o.get('label') for o in (q_mine.get('options') or []) if isinstance(o, dict)]
+        if not values or any(v not in labels for v in values):
+            return None, 'his answer "%s" is not one of this question\'s options' % ', '.join(map(str, values))[:120]
+        answers[q_mine.get('id') if codex else q_mine.get('question')] = value
+    return answers, hashlib.sha256(raw.encode('utf-8')).hexdigest()[:24]
+
+
 def question_answers(entry, supplied):
     """Validate a complete answer without consuming the nonce or changing the original tool input."""
     info = entry.get('input') or {}
@@ -4115,6 +4295,19 @@ def decide(thread, approval, body, device=None):
             return 400, {'ok': False, 'error': 'decision must be "allow" or "deny"'}
         answers = None
         is_question = entry.get('tool') == 'AskUserQuestion' or (entry.get('input') or {}).get('codex_request') == 'questions'
+        linked = None
+        if 'receipt' in body:
+            # Boss's answer to the same question in another thread (linked_answers): taken only with his signed receipt,
+            # by link or exact card, each receipt once per thread; anything else waits for his own answer here.
+            if body['decision'] != 'allow' or not is_question or not isinstance(body.get('receipt'), str):
+                return 400, {'ok': False, 'error': 'a receipt answers a question: decision "allow", the receipt as the signed string'}
+            got, why = linked_answers(entry, body['receipt'], body.get('sig'))
+            if got is None:
+                return 409, {'ok': False, 'error': why}
+            if why in thread.meta.get('linked_receipts', []):
+                return 409, {'ok': False, 'error': 'this receipt already answered a question here'}
+            body = {**body, 'answers': got}
+            linked = why
         if body['decision'] == 'allow' and (is_question or 'answers' in body):
             try:
                 answers = question_answers(entry, body.get('answers'))
@@ -4155,7 +4348,10 @@ def decide(thread, approval, body, device=None):
                 if not thread.pending:
                     thread.status('working')
                 return 500, {'ok': False, 'error': 'command allowed once, but its saved approval could not be written'}
-        thread.emit('approval_result', approval=approval, decision=body['decision'], remembered=remember, **({'answers': answers} if answers is not None else {}), **({'skipped': True} if answers and all(value == QUESTION_SKIP_ANSWER for value in answers.values()) else {}), **({'device': device} if device else {}))
+        if linked:
+            thread.meta['linked_receipts'] = (thread.meta.get('linked_receipts', []) + [linked])[-200:]
+            thread.save()
+        thread.emit('approval_result', approval=approval, decision=body['decision'], remembered=remember, **({'linked_from': linked} if linked else {}), **({'answers': answers} if answers is not None else {}), **({'skipped': True} if answers and all(value == QUESTION_SKIP_ANSWER for value in answers.values()) else {}), **({'device': device} if device else {}))
         if not thread.pending:
             thread.status('working')
         return 200, {'ok': True, 'decision': body['decision']}
@@ -4242,6 +4438,9 @@ class Runner(BaseHTTPRequestHandler):
                                      'bots': [{key: bot[key] for key in ('id', 'name', 'emoji', 'problem')} for bot in found.values()]})
         if parts == ['release'] or (len(parts) == 3 and parts[:2] in (['release', 'files'], ['release', 'engine'])):
             return self.release(parts)
+        if parts == ['questions']:
+            with changed:
+                return self.answer(200, {'ok': True, 'questions': all_questions()})
         if parts == ['devices']:
             # Who this runner lets in, by Tailscale name only (never a digest), so a paired Soma can show every leg (soma --mesh).
             return self.answer(200, {'ok': True, 'runner': own_name_kept(), 'devices': sorted(d['name'] for d in DEVICES.table())})
