@@ -90,7 +90,7 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
     private fun check(restore: Boolean) {
         if (!running.compareAndSet(false, true)) {
             if (restore) {
-                main.post { ConnectionsSource.repair = "Already checking · details for agents." }
+                main.post { ConnectionsSource.repair = "Already checking." }
                 readers.execute {
                     val record = runCatching { incidents.record("restore", "phone", "blocked", "A check is already in progress.", "check_in_flight",
                         listOf(ConnectionCheck("monitor_guard", "phone", result = "busy")), listOf(ConnectionNextStep("agent", "wait_for_check", "No restart was attempted."))) }.getOrNull()
@@ -131,7 +131,7 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
                     ConnectionsSource.diagnostic = diagnostic?.toString(2)
                     if (restore) {
                         ConnectionsSource.diagnostic = restoreRecord?.toString(2) ?: diagnostic?.toString(2)
-                        ConnectionsSource.repair = if (restoreRecord != null) "Restore blocked · details saved for agents."
+                        ConnectionsSource.repair = if (restoreRecord != null) "Restore blocked."
                             else "Restore blocked · diagnostic storage unavailable."
                         ConnectionsSource.guide = null
                     }
@@ -140,7 +140,7 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
                 val record = runCatching { incidents.record("monitor", "phone", "failed", "Check failed; no restart attempted.", "monitor_exception",
                     listOf(ConnectionCheck("monitor", "phone", result = error.javaClass.simpleName, stderrTail = error.message.orEmpty())),
                     listOf(ConnectionNextStep("agent", "inspect_monitor", "Previous readings will become stale until a fresh check succeeds."))) }.getOrNull()
-                main.post { ConnectionsSource.repair = if (record != null) "Check failed · details saved for agents." else "Check failed · diagnostic storage unavailable."; ConnectionsSource.diagnostic = record?.toString(2) }
+                main.post { ConnectionsSource.repair = if (record != null) "Check failed." else "Check failed · diagnostic storage unavailable."; ConnectionsSource.diagnostic = record?.toString(2) }
             } finally {
                 running.set(false)
                 main.post { ConnectionsSource.checking = false }

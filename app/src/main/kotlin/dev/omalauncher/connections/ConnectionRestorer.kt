@@ -40,7 +40,7 @@ internal class ConnectionRestorer(private val context: Context, private val runt
             try {
                 if (pending().length() > 0) {
                     resumePending()
-                    publish("Previous repair needs verification · details for agents.")
+                    publish("Previous repair needs verification.")
                     busy.set(false); return@execute
                 }
                 // Creation/export happens only after the owner's Restore tap. This is a public key, never enrollment.
@@ -124,7 +124,7 @@ internal class ConnectionRestorer(private val context: Context, private val runt
                 blocked += phoneRecovery.guardEvidence()
                 if (targets.isEmpty() && phoneTargets.isEmpty()) {
                     val entry = record("restore", "paired-services", "blocked", "No failed service has a verified, owner-trusted repair route.", blocked)
-                    publish("No verified repair available · details for agents.", entry)
+                    publish("No verified repair available.", entry)
                     busy.set(false); return@execute
                 }
                 val plan = OwnerServicePlan(targets.map { it.approval } + phoneTargets.map { it.approval })
@@ -169,16 +169,16 @@ internal class ConnectionRestorer(private val context: Context, private val runt
                             for (target in phoneTargets) {
                                 val checks = phoneRecovery.recover(target)
                                 val verified = checks.isNotEmpty() && checks.all { it.result == "pass" }
-                                publish(if (verified) "Restored · ${target.approval.service}." else "Phone recovery unverified · details for agents.",
+                                publish(if (verified) "Restored · ${target.approval.service}." else "Phone recovery unverified.",
                                     record(target.approval.service, "phone", if (verified) "restored" else "unknown", "Owner-confirmed missing-service recovery; no live process killed.", checks))
                             }
                         } catch (error: Exception) {
-                            publish("Restore interrupted · details for agents.", record("restore", "phone", "failed", error.message.orEmpty()))
+                            publish("Restore interrupted.", record("restore", "phone", "failed", error.message.orEmpty()))
                         } finally { busy.set(false) }
                     } }
                 }
             } catch (error: Exception) {
-                publish("Restore blocked · details for agents.", record("restore", "phone", "blocked", error.message.orEmpty()))
+                publish("Restore blocked.", record("restore", "phone", "blocked", error.message.orEmpty()))
                 busy.set(false)
             }
         }
@@ -200,7 +200,7 @@ internal class ConnectionRestorer(private val context: Context, private val runt
     fun resume() {
         if (!busy.compareAndSet(false, true)) return
         io.execute { try { resumePending() } catch (error: Exception) {
-            publish("Repair status unavailable · details for agents.", record("restore", "phone", "unknown", error.message.orEmpty()))
+            publish("Repair status unavailable.", record("restore", "phone", "unknown", error.message.orEmpty()))
         } finally { busy.set(false) } }
     }
     private fun resumePending() {
@@ -214,14 +214,14 @@ internal class ConnectionRestorer(private val context: Context, private val runt
             val id = row.optString("operation").takeIf { it.isNotBlank() && it != "null" }
             val response = if (id == null) client.operationForApproval(approval.id) else client.operation(id)
             if (response.code != 200) {
-                publish("Repair result unverified · details for agents.", record(approval.service, approval.host, "unknown", "Operation lookup HTTP ${response.code}; no restart retried."))
+                publish("Repair result unverified.", record(approval.service, approval.host, "unknown", "Operation lookup HTTP ${response.code}; no restart retried."))
                 continue
             }
             val operation = ServiceOperation.parse(JSONObject(response.text).getJSONObject("operation"), id, approval)
             if (operation.terminal) {
                 val entry = record(approval.service, approval.host, operation.stage, "Service operation ${operation.id}", operation.checks)
                 removePending(approval.id)
-                publish(if (operation.restored) "Restored · ${approval.host}: ${approval.service}." else "Restore ${operation.stage} · details for agents.", entry)
+                publish(if (operation.restored) "Restored · ${approval.host}: ${approval.service}." else "Restore ${operation.stage}.", entry)
             } else publish("Verifying · ${approval.host}: ${approval.service}.")
         }
     }
