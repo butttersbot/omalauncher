@@ -63,6 +63,7 @@ class QuestionLinksTest {
         val body = JSONObject(req.body!!)
         assertEquals("t1703ae4f", questionLink(body.getJSONObject("card")))
         assertEquals("Phone A", body.getString("where"))
+        assertFalse("its own waiting questions are among the candidates already", body.getBoolean("local"))
         assertEquals("ticket-mb", body.getJSONArray("candidates").getJSONObject(0).getString("target_id"))
     }
 }

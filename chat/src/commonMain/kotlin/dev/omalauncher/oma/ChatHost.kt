@@ -223,7 +223,7 @@ interface ChatHost {
 
     /**
      * The Mac Pro asked which of [candidates] ({target_id, thread_name, card}: every question waiting for him) are the
-     * decision he just answered (its POST /questions/match, one model call there). Blocking, off the main thread; null
+     * decision he just answered (its POST /questions/match, local: false; one model call there). Returns its verdicts. Blocking, off the main thread; null
      * where it can't be asked, and then Soma's own check decides.
      */
     fun matchOnMacPro(card: org.json.JSONObject, answers: org.json.JSONObject, where: String, candidates: org.json.JSONArray): org.json.JSONArray? = null
