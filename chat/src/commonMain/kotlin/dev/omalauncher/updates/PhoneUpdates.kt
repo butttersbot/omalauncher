@@ -17,7 +17,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.foundation.text.InlineTextContent
+import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.Placeholder
+import androidx.compose.ui.text.PlaceholderVerticalAlign
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -145,42 +150,46 @@ fun PhoneUpdatePill(u: PhoneUpdates) {
 @Composable
 fun PhoneUpdateSheet(u: PhoneUpdates) {
     Dialog(onDismissRequest = u::close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding().padding(14.dp), contentAlignment = Alignment.Center) {
-            val wide = maxWidth >= 600.dp
-            Column(Modifier.widthIn(max = if (wide) 880.dp else 447.dp).fillMaxWidth().heightIn(max = maxHeight)
-                .background(Pack.background, Pack.shape()).border(Pack.hair, Pack.border, Pack.shape())) {
-                Row(Modifier.fillMaxWidth().heightIn(min = 80.dp).ruleBottom().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Spacer(Modifier.width(44.dp))
-                    Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Words(Pack.caption("Soma / updates"), mono(10.sp, Pack.muted))
-                        BasicText(Pack.heading("What changed"), style = Pack.display(22.sp).copy(textAlign = TextAlign.Center))
-                    }
-                    Box(Modifier.size(44.dp).clickable(onClick = u::close).semantics { contentDescription = "Close updates" }, contentAlignment = Alignment.Center) {
-                        BasicText("×", style = Pack.body(26.sp))
-                    }
-                }
-                Column(Modifier.weight(1f, fill = false).fillMaxWidth().verticalScroll(rememberScrollState()).padding(if (wide) 20.dp else 16.dp)) {
-                    val panels = buildList<@Composable (Modifier) -> Unit> {
-                        for (offer in needsTap(u.offers)) add { m -> OfferPanel(u, offer, m) }
-                        if (u.launcher != LauncherState.Idle && u.offers.none { it.launcher }) add { m -> Panel(m) { LauncherStatePanel(u) } }
-                        if (u.history.isNotEmpty()) add { m -> HistoryPanel(u.history, m) }
-                    }
-                    if (panels.isEmpty()) Words("Everything is up to date.", sans(15.sp, Pack.muted))
-                    else if (wide) {
-                        // Unfolded: the first panel (Soma's own) on the left, the rest stacked on the right, the
-                        // history under the app that waits (Boss, 2026-10-29: everything fits in landscape).
-                        Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Box(Modifier.weight(1f)) { panels.first()(Modifier) }
-                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                panels.drop(1).forEach { it(Modifier) }
-                            }
+        // Unfolded, the real screen gives the status and nav bars height the card doesn't: a tighter margin keeps the
+        // card's gap between the panels and the pinned footer.
+        BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.Center) {
+            val wide = maxWidth >= 600.dp + 28.dp
+            Box(Modifier.padding(if (wide) 6.dp else 14.dp), contentAlignment = Alignment.Center) {
+                Column(Modifier.widthIn(max = if (wide) 880.dp else 447.dp).fillMaxWidth().heightIn(max = maxHeight)
+                    .background(Pack.background, Pack.shape()).border(Pack.hair, Pack.border, Pack.shape())) {
+                    Row(Modifier.fillMaxWidth().heightIn(min = 80.dp).ruleBottom().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Spacer(Modifier.width(44.dp))
+                        Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Words(Pack.caption("Soma / updates"), mono(10.sp, Pack.muted))
+                            BasicText(Pack.heading("What changed"), style = Pack.display(22.sp).copy(textAlign = TextAlign.Center))
                         }
-                    } else panels.forEach { Box(Modifier.padding(bottom = 12.dp)) { it(Modifier) } }
-                    if (!wide) SheetFooter(u, Modifier.padding(top = 2.dp))
+                        Box(Modifier.size(44.dp).clickable(onClick = u::close).semantics { contentDescription = "Close updates" }, contentAlignment = Alignment.Center) {
+                            BasicText("×", style = Pack.body(26.sp))
+                        }
+                    }
+                    Column(Modifier.weight(1f, fill = false).fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = if (wide) 20.dp else 16.dp, end = if (wide) 20.dp else 16.dp, top = if (wide) 20.dp else 16.dp, bottom = if (wide) 0.dp else 16.dp)) {
+                        val panels = buildList<@Composable (Modifier) -> Unit> {
+                            for (offer in needsTap(u.offers)) add { m -> OfferPanel(u, offer, m) }
+                            if (u.launcher != LauncherState.Idle && u.offers.none { it.launcher }) add { m -> Panel(m) { LauncherStatePanel(u) } }
+                            if (u.history.isNotEmpty()) add { m -> HistoryPanel(u.history, m) }
+                        }
+                        if (panels.isEmpty()) Words("Everything is up to date.", sans(15.sp, Pack.muted))
+                        else if (wide) {
+                            // Unfolded: the first panel (Soma's own) on the left, the rest stacked on the right, the
+                            // history under the app that waits (Boss, 2026-10-29: everything fits in landscape).
+                            Row(Modifier.fillMaxWidth().padding(bottom = 14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Box(Modifier.weight(1f)) { panels.first()(Modifier) }
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    panels.drop(1).forEach { it(Modifier) }
+                                }
+                            }
+                        } else panels.forEach { Box(Modifier.padding(bottom = 12.dp)) { it(Modifier) } }
+                        if (!wide) SheetFooter(u, Modifier.padding(top = 2.dp))
+                    }
+                    // Unfolded, the footer stays on screen under the panels (Boss, 2026-10-29: the note and [ later ] visible
+                    // without scrolling, as on soma-update-sheet-unfolded); on the cover it ends the scroll as on its card.
+                    if (wide) SheetFooter(u, Modifier.padding(start = 20.dp, end = 20.dp))
                 }
-                // Unfolded, the footer stays on screen under the panels (Boss, 2026-10-29: the note and [ later ] visible
-                // without scrolling, as on soma-update-sheet-unfolded); on the cover it ends the scroll as on its card.
-                if (wide) SheetFooter(u, Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp))
             }
         }
     }
@@ -207,14 +216,15 @@ private fun OfferPanel(u: PhoneUpdates, offer: AppOffer, modifier: Modifier = Mo
         Column {
             val passed = listOfNotNull(if (offer.launcher) "taken and signed for this phone" else "signed for this phone",
                 "walks ${offer.walksPassed}/${offer.walksTotal} pass", offer.design.good)
-            // The card's small ✓ at the caps' height (the mono face draws its own tall and heavy).
-            Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                androidx.compose.foundation.Canvas(Modifier.padding(top = 4.dp).size(7.dp)) {
-                    val p = androidx.compose.ui.graphics.Path().apply { moveTo(size.width * .1f, size.height * .55f); lineTo(size.width * .4f, size.height * .85f); lineTo(size.width * .92f, size.height * .12f) }
-                    drawPath(p, Pack.green, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round))
-                }
-                Words(Pack.caption(passed.joinToString(" · ")), checks(Pack.green))
-            }
+            // The card's small ✓ at the caps' height (the mono face draws its own tall and heavy), inline so a wrapped
+            // line starts under it, flush left, as on the cards.
+            BasicText(buildAnnotatedString { appendInlineContent("ok", "✓"); append(" " + Pack.caption(passed.joinToString(" · "))) },
+                style = checks(Pack.green), inlineContent = mapOf("ok" to InlineTextContent(Placeholder(8.sp, 10.sp, PlaceholderVerticalAlign.TextCenter)) {
+                    androidx.compose.foundation.Canvas(Modifier.fillMaxSize().padding(top = 1.dp, end = 1.dp)) {
+                        val p = androidx.compose.ui.graphics.Path().apply { moveTo(size.width * .1f, size.height * .55f); lineTo(size.width * .4f, size.height * .85f); lineTo(size.width * .92f, size.height * .12f) }
+                        drawPath(p, Pack.green, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round))
+                    }
+                }))
             offer.design.warning?.let { Words(Pack.caption(it), checks(Pack.accent)) }
             offer.failure?.let { Words(Pack.caption("didn’t update by itself: $it"), checks(Pack.accent)) }
         }
