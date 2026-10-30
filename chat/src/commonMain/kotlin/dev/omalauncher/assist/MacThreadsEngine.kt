@@ -1279,12 +1279,11 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
     fun answerQuestions(ticket: String, answers: org.json.JSONObject, told: (MacApprovalOutcome) -> Unit) = decide(ticket, true, false, told, answers)
 
     /**
-     * The runner [onThread] is on, asked which of its waiting questions are the one he answered (POST /questions/match).
-     * Blocking, off the main thread; null when it can't be asked. [answeredThread]/[answeredApproval]: his, if on that runner.
+     * The Mac Pro (the first Mac) asked which of [candidates] are the decision he just made (POST /questions/match).
+     * Blocking, off the main thread; null when it can't be reached, is too slow, or doesn't know the route.
      */
-    fun matchQuestions(onThread: String, card: org.json.JSONObject, answers: org.json.JSONObject, where: String,
-                       answeredThread: String?, answeredApproval: String?): org.json.JSONArray? =
-        (runCatching { client(onThread).matchQuestions(card, answers, where, answeredThread, answeredApproval) }.getOrNull() as? MacAnswer.Ok)?.value
+    fun matchOnMacPro(card: org.json.JSONObject, answers: org.json.JSONObject, where: String, candidates: org.json.JSONArray): org.json.JSONArray? =
+        (runCatching { client("").matchQuestions(card, answers, where, candidates) }.getOrNull() as? MacAnswer.Ok)?.value
 
     fun rememberCommand(ticket: String, told: (MacApprovalOutcome) -> Unit) = decide(ticket, true, true, told)
 

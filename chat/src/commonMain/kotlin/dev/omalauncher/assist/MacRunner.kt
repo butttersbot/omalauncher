@@ -108,6 +108,19 @@ object MacRequests {
     fun clearCommands(threadId: String) = MacRequest("POST", "/threads/${part(threadId)}/command-approvals/clear", "{}")
 
     /**
+     * Linked questions by meaning, on the Mac Pro (Boss, 2026-10-29): which of [candidates] — every question waiting for him,
+     * on the phone and on every computer, {target_id, thread_name, card} — are the same decision as [card], his [answers]
+     * given in [where]. The runner asks its model once and answers per target_id: deliver, and his answer in that card's
+     * own labels.
+     */
+    fun matchQuestions(card: JSONObject, answers: JSONObject, where: String, candidates: org.json.JSONArray) = MacRequest(
+        "POST", "/questions/match",
+        JSONObject().put("card", card).put("answers", answers).put("where", where).put("candidates", candidates).toString(),
+    )
+
+    fun clearCommands(threadId: String) = MacRequest("POST", "/threads/${part(threadId)}/command-approvals/clear", "{}")
+
+    /**
      * Which questions waiting on this runner are the same decision as [card], his [answers] given in [where] (linked
      * questions by meaning; the runner asks its model once). [thread]/[approval]: the one he answered, if it waits here.
      */
@@ -445,9 +458,9 @@ class MacRunnerClient(private val config: MacRunnerConfig?, private val machine:
     fun answerApproval(threadId: String, approval: String, allow: Boolean, nonce: String, remember: Boolean = false, answers: JSONObject? = null): MacAnswer<MacDecision> =
         parseMacDecision(send(MacRequests.answerApproval(own(threadId), approval, allow, nonce, remember, answers)))
 
-    /** [MacRequests.matchQuestions]: the runner's matches; a model call is in it, so it is given a minute. */
-    fun matchQuestions(card: JSONObject, answers: JSONObject, where: String, threadId: String?, approval: String?): MacAnswer<org.json.JSONArray> =
-        macAnswer(send(MacRequests.matchQuestions(card, answers, where, threadId?.let { own(it) }, approval), readMs = 60_000)) { json -> json.optJSONArray("matches") }
+    /** [MacRequests.matchQuestions]: the runner's verdicts; a model call is in it, so it is given a minute. */
+    fun matchQuestions(card: JSONObject, answers: JSONObject, where: String, candidates: org.json.JSONArray): MacAnswer<org.json.JSONArray> =
+        macAnswer(send(MacRequests.matchQuestions(card, answers, where, candidates), readMs = 60_000)) { json -> json.optJSONArray("matches") }
 
     fun clearCommands(threadId: String): MacAnswer<Boolean> = macAnswer(send(MacRequests.clearCommands(own(threadId)))) { json ->
         (json.opt("cleared") as? Boolean)?.takeIf { it }

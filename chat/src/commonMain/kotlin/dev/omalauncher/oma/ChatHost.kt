@@ -222,11 +222,11 @@ interface ChatHost {
     fun askSameQuestion(prompt: String): String? = null
 
     /**
-     * The runner of Mac thread [onThread] asked which questions waiting there are the one he answered (its POST
-     * /questions/match: link, same card, or its model). Blocking, off the main thread; null where it can't be asked.
+     * The Mac Pro asked which of [candidates] ({target_id, thread_name, card}: every question waiting for him) are the
+     * decision he just answered (its POST /questions/match, one model call there). Blocking, off the main thread; null
+     * where it can't be asked, and then Soma's own check decides.
      */
-    fun matchMacQuestions(onThread: String, card: org.json.JSONObject, answers: org.json.JSONObject, where: String,
-                          answeredThread: String?, answeredApproval: String?): org.json.JSONArray? = null
+    fun matchOnMacPro(card: org.json.JSONObject, answers: org.json.JSONObject, where: String, candidates: org.json.JSONArray): org.json.JSONArray? = null
 
     fun answerMac(ticket: String, allow: Boolean, done: (MacApprovalOutcome) -> Unit)
     fun rememberMacCommand(ticket: String, done: (MacApprovalOutcome) -> Unit) { done(MacApprovalOutcome.Failed) }

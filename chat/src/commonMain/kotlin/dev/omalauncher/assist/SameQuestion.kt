@@ -10,8 +10,8 @@ import org.json.JSONObject
  * waiting question elsewhere is the same decision, and which of that card's own options his answer is. It never writes
  * an answer: it only picks the target's labels, or says to use his own words (where the card takes text). Soma checks
  * every pick against the card; a clear match with a clear pick is delivered as his, anything less is offered to him.
- * One decision path (agreed with the runner side): this check is for the phone builders' questions only; a Mac thread's
- * question is matched by its own runner (POST /questions/match), and Soma alone delivers either, each target once.
+ * Mac Pro first (Boss, 2026-10-29): the Mac Pro decides for every waiting question (POST /questions/match, candidates);
+ * this check on the device is the fallback when the Mac Pro can't be reached or answer. Soma alone delivers, each once.
  */
 
 /** What the model said of one waiting question. [picks] is null unless the mapping is clear and valid for that card. */

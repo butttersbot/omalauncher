@@ -187,8 +187,8 @@ class DesktopChatHost(
 
     override fun drafts(): ChatDrafts = ChatDrafts.of(SomaHome.dir)
 
-    override fun matchMacQuestions(onThread: String, card: org.json.JSONObject, answers: org.json.JSONObject, where: String, answeredThread: String?, answeredApproval: String?) =
-        engine.matchQuestions(onThread, card, answers, where, answeredThread, answeredApproval)
+    override fun matchOnMacPro(card: org.json.JSONObject, answers: org.json.JSONObject, where: String, candidates: org.json.JSONArray) =
+        engine.matchOnMacPro(card, answers, where, candidates)
     override fun askSameQuestion(prompt: String): String? = desktopQuickModel(dev.omalauncher.assist.sameQuestionCommand(prompt, desktop = true))
 
     /** A file dialog, several pictures at once; what was chosen goes to [onPicked] (nothing when he cancels). */
