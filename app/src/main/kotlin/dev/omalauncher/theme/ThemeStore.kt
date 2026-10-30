@@ -211,27 +211,34 @@ class ThemeStore(
     private fun usePack(pick: PackPick) {
         ActivePack.choose(pick)
         reportLook(pick)
-        val load = pick.load?.takeIf { !pick.isConsole } ?: return
-        val source = packSource(pick.id) ?: return
+        val load = pick.load?.takeIf { !pick.isConsole }
+        // Console (also what draws when a pack can't be loaded) has its own fonts from the store, in its own folder.
+        val console = load == null
+        val id = if (console) ConsolePack.ID else pick.id
+        val source = (if (console) AssetPackSource(context.assets, "$PACKS/${ConsolePack.ID}") else packSource(pick.id)) ?: return
         // Fonts and wallpapers arrive after the first frame; until then each font is its system family and the page its paper color.
         scope.launch(Dispatchers.IO) {
-            val type = load.pack.type
+            val type = (load?.pack ?: ConsolePack.pack).type
             fun fonts() =
                 listOf(type.display, type.body, type.hand, type.mono)
                     .map { it.file }
                     .filter { it.isNotEmpty() }
                     .distinct()
-                    .mapNotNull { path -> packFont(source, pick.id, path)?.let { path to it } }
-                    .toMap()
+                    .mapNotNull { path -> packFont(source, id, path)?.let { path to it } }
+                    .toMap() +
+                    // Console's body stack: JetBrains Mono, then Schibsted Grotesk, as the store has it.
+                    (if (console) packFont(source, id, ConsolePack.FONT, listOf(ConsolePack.BODY_FALLBACK))
+                        ?.let { mapOf("body:${ConsolePack.FONT}" to it) }.orEmpty() else emptyMap())
             val fonts = fonts()
-            val page = load.pack.page
-            val wallpapers = PackWallpapers(packImage(source, page.wallpaperCover), packImage(source, page.wallpaperInner))
+            val wallpapers = load?.pack?.page?.let { page -> PackWallpapers(packImage(source, page.wallpaperCover), packImage(source, page.wallpaperInner)) }
             withContext(Dispatchers.Main) {
                 // Another pack may have been picked meanwhile.
                 if (ActivePack.pick === pick) {
                     ActivePack.fonts = fonts
-                    ActivePack.wallpapers = wallpapers
-                    syncLockPaper()
+                    if (wallpapers != null) {
+                        ActivePack.wallpapers = wallpapers
+                        syncLockPaper()
+                    }
                     LookWidgets.refresh(context)
                 }
             }
@@ -281,6 +288,8 @@ class ThemeStore(
         source: PackSource,
         id: String,
         path: String,
+        /** The pack's own faces after this one, before the store's (Console's body). */
+        then: List<String> = emptyList(),
     ): FontFamily? =
         runCatching {
             val bytes = readCapped(source, path, AssetType.Font.maxBytes) ?: return null
@@ -295,7 +304,14 @@ class ThemeStore(
                 android.graphics.fonts.FontFamily.Builder(android.graphics.fonts.Font.Builder(file).build()).build()
             }
             // Then the store's fonts, as every voice's stack ends (symbols, emoji, CJK); past them, the device's own.
-            FontFamily(Typeface.CustomFallbackBuilder(own).apply { storeFallbacks().forEach { addCustomFallback(it) } }.build())
+            val after = then.mapNotNull { next ->
+                runCatching {
+                    val bytes2 = readCapped(source, next, AssetType.Font.maxBytes) ?: return@runCatching null
+                    val file2 = File(File(context.cacheDir, "pack-fonts/$id").apply { mkdirs() }, next.replace('/', '_')).apply { writeBytes(bytes2) }
+                    android.graphics.fonts.FontFamily.Builder(android.graphics.fonts.Font.Builder(file2).build()).build()
+                }.getOrNull()
+            }
+            FontFamily(Typeface.CustomFallbackBuilder(own).apply { (after + storeFallbacks()).forEach { addCustomFallback(it) } }.build())
         }.onFailure { Log.w(TAG, "pack $id font $path", it) }.getOrNull()
 
     /** A pack's wallpaper, read no further than an image's size limit and decoded no larger than the screen needs. */

@@ -38,7 +38,7 @@ glass = "background@0.88"
 # code. family is the system font used without a file: monospace, sans-serif, serif or cursive.
 [type.display]
 family = "monospace"
-file = ""
+file = "fonts/JetBrainsMono.ttf"
 weight = 400
 scale = 1
 italic = false
@@ -48,7 +48,7 @@ highlighter = false
 
 [type.body]
 family = "monospace"
-file = ""
+file = "fonts/JetBrainsMono.ttf"
 weight = 400
 scale = 1
 italic = false
@@ -57,7 +57,7 @@ tracking = 0
 
 [type.hand]
 family = "monospace"
-file = ""
+file = "fonts/JetBrainsMono.ttf"
 weight = 400
 scale = 1
 italic = false
@@ -66,7 +66,7 @@ tracking = 0
 
 [type.mono]
 family = "monospace"
-file = ""
+file = "fonts/JetBrainsMono.ttf"
 weight = 400
 scale = 1
 italic = false

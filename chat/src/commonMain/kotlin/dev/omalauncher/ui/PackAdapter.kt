@@ -104,7 +104,10 @@ object ActivePack {
     var pick by mutableStateOf(PackPick.Console)
         private set
 
-    /** The pack's font files by their path in the pack, once read; a role whose file isn't here uses its system family. */
+    /**
+     * The pack's font files by their path in the pack, once read; a role whose file isn't here uses its system family.
+     * A role with a stack of its own (Console's body: JetBrains Mono, then Schibsted Grotesk) is under "role:path".
+     */
     var fonts by mutableStateOf<Map<String, FontFamily>>(emptyMap())
 
     /** The pack's wallpapers, once decoded. */
@@ -201,7 +204,7 @@ class PackLook(
     private val radiusScale = pack.shape.radius / CONSOLE_RADIUS
 
     private val families: Map<TypeRole, FontFamily> =
-        TypeRole.entries.associateWith { role -> font(role).let { fonts[it.file] ?: it.family.family() } }
+        TypeRole.entries.associateWith { role -> font(role).let { fonts["${role.id}:${it.file}"] ?: fonts[it.file] ?: it.family.family() } }
 
     fun font(role: TypeRole): PackFont =
         when (role) {

@@ -49,6 +49,14 @@ class StoreFontsTest {
         assertNull(StoreFonts.cached(dir, other))
     }
 
+    @Test fun consoleCarriesTheStoreFontsItsVoicesName() {
+        fun asset(p: String) = File("src/main/assets/packs/console/$p").let { if (it.exists()) it else File("app/src/main/assets/packs/console/$p") }
+        // The store's console set (manifest 92235ea631ee): JetBrains Mono 48715a42…, Schibsted Grotesk 6ceeadf6….
+        assertEquals("48715a42ec242c21e9f02692891e147d022299a52e48d5e413e1a942193ffeda", sha(asset(dev.omalauncher.theme.pack.ConsolePack.FONT).readBytes()))
+        assertEquals("6ceeadf6be8e1fd7687011c7fa38ed0edd1abe967a0b73d97caec183552e823d", sha(asset(dev.omalauncher.theme.pack.ConsolePack.BODY_FALLBACK).readBytes()))
+        assertEquals(4, asset("pack.toml").readText().split("file = \"fonts/JetBrainsMono.ttf\"").size - 1)
+    }
+
     @Test fun aPinnedNameNeverBecomesAPath() {
         val dir = Files.createTempDirectory("store-fonts").toFile()
         val evil = pin.copy(file = "../../evil.ttf")
@@ -58,7 +66,9 @@ class StoreFontsTest {
 
     @Test fun everyVoiceGetsTheStoreFallbacksBehindItsOwnFace() {
         val text = File("src/main/kotlin/dev/omalauncher/theme/ThemeStore.kt").let { if (it.exists()) it else File("app/src/main/kotlin/dev/omalauncher/theme/ThemeStore.kt") }.readText()
-        assertTrue(text.contains("Typeface.CustomFallbackBuilder(own).apply { storeFallbacks().forEach { addCustomFallback(it) } }"))
+        assertTrue(text.contains("Typeface.CustomFallbackBuilder(own).apply { (after + storeFallbacks()).forEach { addCustomFallback(it) } }"))
+        // Console draws in its store fonts too, its body with Schibsted Grotesk behind JetBrains Mono.
+        assertTrue(text.contains("packFont(source, id, ConsolePack.FONT, listOf(ConsolePack.BODY_FALLBACK))"))
         assertFalse("no Latin cut, no generic family in front of the store's", text.contains("FontFamily.SansSerif"))
     }
 }

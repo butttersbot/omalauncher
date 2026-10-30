@@ -9,6 +9,12 @@ package dev.omalauncher.theme.pack
 object ConsolePack {
     const val ID = "console"
 
+    /** Console's face for every voice, as the font store has it (manifest 92235ea631ee): assets/packs/console/fonts. */
+    const val FONT = "fonts/JetBrainsMono.ttf"
+
+    /** And after it in the body's stack only, before the store's symbols, emoji and CJK. */
+    const val BODY_FALLBACK = "fonts/SchibstedGrotesk.ttf"
+
     /** Console's own tokens. A value in [PackSchema] that isn't one for its token fails here, and so in the tests. */
     val tokens: PackTokens =
         PackTokens(
