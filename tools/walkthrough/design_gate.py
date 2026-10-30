@@ -129,7 +129,8 @@ def summary(report):
             lines += [f"    {d.get('n', i)}. {d.get('what', d)}" for i, d in enumerate(c["differences"], 1)]
     if unappr:
         lines.append(f"DESIGN UNAPPROVED: {', '.join(c['card'] for c in unappr)} have nothing Approved on Canvas "
-                     "(not blocking): ask Boss once, one native question card for the whole batch, with the Canvas link")
+                     "(not blocking): ask Boss once, one native question card for the whole batch, with the Canvas link; "
+                     "record his yes with: soma-canvas approve-from-chat CARD... --receipt R.json (R.json from oma receipt last-answer)")
     if unchecked:
         lines.append(f"DESIGN UNCHECKED: {', '.join(c['card'] for c in unchecked)} could not be checked against Approved; "
                      "this build is not done on design until they are")
@@ -174,7 +175,8 @@ def gate(path, build=None):
     if not blocked:
         return 0
     print("Refused: build it as Approved, or Boss waives the difference (in chat or on Canvas) (" +
-          ", ".join(c["card"] for c in blocked) + ").")
+          ", ".join(c["card"] for c in blocked) + "). His waiver in chat: soma-canvas waive-from-chat CARD --item N "
+          "--build SHA --receipt R.json (R.json from oma receipt; the message he answered must name the card and N).")
     return 3
 
 def main(a):
