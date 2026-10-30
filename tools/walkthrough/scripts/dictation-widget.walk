@@ -34,7 +34,9 @@ shot mg1-typed-cover card=mg1-typed-cover
 # 2. On its way: no links, the words stay, a tap on the paper does nothing.
 shell am force-stop dev.omalauncher.artifactpreview
 shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es dictationWidget sending
-tap 0.2 0.1
+# On the rail's own words this time: they take the tap like the rest of the panel, now they are clear of the status bar.
+tap MG1 · Press to record
+expect Listening
 tap 0.5 0.3
 tap Send
 expect Typing on MG1
