@@ -1,3 +1,4 @@
+# canvas-app: soma-messages
 # Demo-only group1 anchor/batch regression. Visible new states have separate approval cards.
 # Soma Messages linked to the Mac's iMessage service (0.6+). Against the service's DEMO on the Mac Pro: sample
 # chats only, nothing of Boss's; every send gets a fake reply 2 s later. The token below is the demo's own.

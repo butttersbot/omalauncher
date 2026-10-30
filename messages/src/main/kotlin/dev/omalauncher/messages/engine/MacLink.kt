@@ -485,7 +485,11 @@ object MacLink {
      * Attachment [id] from the Mac, kept in the app's cache (where its file provider can show it in another app); a
      * picture comes as JPEG, whatever it was taken as. Off the main thread; null when the Mac can't give it.
      */
-    fun file(
+    private val fileLocks = Array(64) { Any() }
+    fun file(context: Context, id: String, picture: Boolean): File? =
+        synchronized(fileLocks[(id.hashCode() and Int.MAX_VALUE) % fileLocks.size]) { fetchFile(context, id, picture) }
+
+    private fun fetchFile(
         context: Context,
         id: String,
         picture: Boolean,

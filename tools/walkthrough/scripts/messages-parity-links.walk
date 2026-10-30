@@ -1,0 +1,51 @@
+# canvas-app: soma-messages
+# Demo-only parity UI, with native rich-link fixtures from the isolated API branch.
+# Soma Messages linked to the Mac's iMessage service (0.6+). Against the service's DEMO on the Mac Pro: sample
+# chats only, nothing of Boss's; every send gets a fake reply 2 s later. The token below is the demo's own.
+shell cmd statusbar collapse
+key HOME
+# A clean start: not linked yet, no contacts answer.
+shell pm clear dev.omalauncher.messages
+# Contacts allowed ahead, so Android's prompt (whose title also says Allow) doesn't cover the inbox.
+shell pm grant dev.omalauncher.messages android.permission.READ_CONTACTS
+# 0.7+ asks for notifications when linked; granted here so its prompt does not cover the inbox.
+shell pm grant dev.omalauncher.messages android.permission.POST_NOTIFICATIONS
+shell pm grant dev.omalauncher.messages android.permission.RECORD_AUDIO
+# Quoted twice: walk.py hands the line to the phone's shell, which would split the link at '&'.
+shell am start -a android.intent.action.VIEW -d "'soma-messages://link?url=http%3A%2F%2F100.120.219.46%3A8765&token=BON7avwraojOZCR1WT8sLWZg9WTx0RFaqeR3udg1kzA'" dev.omalauncher.messages
+wait 2500
+# The owner says yes to the Mac by name before anything goes to it.
+expect Get your iMessages from 100.120.219.46?
+shot link-dialog
+tap Link
+wait 1500
+# Names come from the phone's contacts; the Mac's names stand in when the phone has none.
+wait 4000
+expect Weekend
+expect Ana Demo
+absent OpenBubbles
+shot inbox-from-the-mac
+tap Link previews
+wait 1500
+expect A post with an image
+expect The shared article title
+expect Link preview image
+shot both-cold-images card=messages-parity-links
+tap Message
+type https://example.com/story
+wait 800
+expect Remove link preview
+tap Remove link preview
+absent Remove link preview
+shot removed-draft card=messages-parity-fallback
+key ENTER
+wait 4000
+expect Demo reply to:
+shot removed-sent card=messages-parity-fallback
+key BACK
+shell am force-stop dev.omalauncher.messages
+shell am start -n dev.omalauncher.messages/.MainActivity
+wait 1000
+tap Link previews
+expect Demo reply to:
+shot removed-after-restart card=messages-parity-fallback
