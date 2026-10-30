@@ -43,10 +43,11 @@ expect Ana Demo
 # Cancel predictive Back by returning to the edge BEFORE lifting the same contact.
 # A one-way edge swipe ending at 12% legitimately committed on this gesture-nav AVD.
 # Folded fixture is 1248x1972: x=25 -> 400 -> 25, y=986. No intervening UP/DOWN.
+# Space samples by 150ms: an unpaced chain completed in 191ms and did not render a return.
 # Each input command must succeed; && makes shell failure fail this step.
 tap Ana Demo
 expect Perfect, see you there
-shell input touchscreen motionevent DOWN 25 986 && input touchscreen motionevent MOVE 150 986 && input touchscreen motionevent MOVE 275 986 && input touchscreen motionevent MOVE 400 986 && input touchscreen motionevent MOVE 275 986 && input touchscreen motionevent MOVE 150 986 && input touchscreen motionevent MOVE 25 986 && input touchscreen motionevent UP 25 986
+shell input touchscreen motionevent DOWN 25 986 && sleep 0.15 && input touchscreen motionevent MOVE 150 986 && sleep 0.15 && input touchscreen motionevent MOVE 275 986 && sleep 0.15 && input touchscreen motionevent MOVE 400 986 && sleep 0.15 && input touchscreen motionevent MOVE 275 986 && sleep 0.15 && input touchscreen motionevent MOVE 150 986 && sleep 0.15 && input touchscreen motionevent MOVE 25 986 && sleep 0.15 && input touchscreen motionevent UP 25 986
 expect Perfect, see you there
 shot reference-back-cancel card=messages-parity-status
 # Cancellation must leave the composer usable, with no surprise IME reopening.
