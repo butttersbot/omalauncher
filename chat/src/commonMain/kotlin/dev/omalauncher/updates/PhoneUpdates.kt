@@ -197,7 +197,14 @@ private fun OfferPanel(u: PhoneUpdates, offer: AppOffer, modifier: Modifier = Mo
         Column {
             val passed = listOfNotNull(if (offer.launcher) "taken and signed for this phone" else "signed for this phone",
                 "walks ${offer.walksPassed}/${offer.walksTotal} pass", offer.design.good)
-            Words(Pack.caption("✓ " + passed.joinToString(" · ")), checks(Pack.green))
+            // The card's small ✓ at the caps' height (the mono face draws its own tall and heavy).
+            Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                androidx.compose.foundation.Canvas(Modifier.padding(top = 4.dp).size(7.dp)) {
+                    val p = androidx.compose.ui.graphics.Path().apply { moveTo(size.width * .1f, size.height * .55f); lineTo(size.width * .4f, size.height * .85f); lineTo(size.width * .92f, size.height * .12f) }
+                    drawPath(p, Pack.green, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round))
+                }
+                Words(Pack.caption(passed.joinToString(" · ")), checks(Pack.green))
+            }
             offer.design.warning?.let { Words(Pack.caption(it), checks(Pack.accent)) }
             offer.failure?.let { Words(Pack.caption("didn’t update by itself: $it"), checks(Pack.accent)) }
         }

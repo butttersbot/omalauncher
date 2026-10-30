@@ -266,7 +266,7 @@ private fun ConnectionsRepair(snapshot: ConnectionsSnapshot, now: Long) {
                 Words(Pack.caption("All devices"), caption(10.sp))
                 Words(if (stage == 3) "Back in working order." else if (ready) "Everything is ready." else "No confirmed failure.",
                     sans(19.sp, weight = FontWeight.SemiBold), modifier = Modifier.padding(top = 10.dp, bottom = 6.dp))
-                Words(if (ready) "Every capability passed its last check." else "Some checks have no fresh evidence yet; they are marked in the list.", sans(13.sp))
+                Words(if (ready) "Every capability passed its last check." else "Some checks have no fresh evidence yet; they are marked in the list.", sans(13.sp).copy(lineHeight = 19.5.sp))
                 ConnectionsSource.repair?.let { Words(it, sans(13.sp), modifier = Modifier.padding(top = 8.dp)) }
                 AgentTools()
             }
@@ -312,7 +312,7 @@ private fun ConnectionDisclosure(row: ConnectionReading, status: ConnectionStatu
             Words(row.capability.title, sans(13.sp), modifier = Modifier.weight(1f))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                 // The card's small ✓ / △ (the mono face draws them tall and heavy): drawn, one size.
-                if (status.mark == "✓" || status.mark == "△") Box(Modifier.size(10.dp)) { StripMark(status.mark, status.tone.color, 10.dp, 1.2.dp) }
+                if (status.mark == "✓" || status.mark == "△") Box(Modifier.size(7.dp)) { StripMark(status.mark, status.tone.color, 7.dp, 1.dp) }
                 else Words(status.mark, plainMono(10.sp, status.tone.color), 1)
                 Words(status.word, plainMono(10.sp, status.tone.color), 1)
             }
