@@ -20,12 +20,22 @@ import kotlin.concurrent.thread
  * Claude, a failure, a minute gone) the first words of his message name the chat. A name he gave a tab is never replaced.
  * Before this every tab on the desktop said "New chat" (2026-10-27).
  */
-class DesktopChatTitles(private val platform: DesktopThreadsPlatform, private val ask: (TitleAsk) -> String? = ::model) {
+class DesktopChatTitles(private val platform: DesktopThreadsPlatform, given: ((TitleAsk) -> String?)? = null) {
+    private val ask: (TitleAsk) -> String? = given ?: ::model
+
+    /**
+     * Off in the test suite (desktop/build.gradle.kts) unless a test gives its own namer: a suite run in his own session
+     * would otherwise ask his real model, and race the namer a test checks (2026-10-29: the release build got "File
+     * Listing Request", then the first words, where the test's own namer was meant to answer).
+     */
+    private val off = given == null && System.getProperty("soma.titles") == "off"
+
     /** The chats asked for in this run, so none is asked twice while its answer is on its way. */
     private val asked = HashSet<String>()
 
     /** Starts naming every chat that has no name and can be named now; returns at once. */
     fun check() {
+        if (off) return
         val book = platform.book()
         val tasks = platform.chatLog().tasks
         val now = System.currentTimeMillis()
@@ -43,9 +53,6 @@ class DesktopChatTitles(private val platform: DesktopThreadsPlatform, private va
 
 /** What this computer's fast model says for [ask]; null without Claude Code here, or when it fails or takes too long. */
 private fun model(ask: TitleAsk): String? {
-    // Off in the test suite (desktop/build.gradle.kts): a suite run in his own session would otherwise ask his real model
-    // (2026-10-29: the release build's DesktopEndToEndTest got "File Listing Request", not the fallback it checks for).
-    if (System.getProperty("soma.titles") == "off") return null
     val home = System.getProperty("user.home")
     // Opened from Finder or at login, Soma's PATH is launchd's: Claude Code's own places are added.
     val path = listOf("$home/.local/bin", "$home/.local/share/mise/shims", "$home/.bun/bin", "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin")
