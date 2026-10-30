@@ -34,5 +34,10 @@ class RealMeaning(linked.ByMeaning):
     test_3_aSharedLinkOrTheSameCardNeedsNoModel = None
 
 
+class RealFromElsewhere(linked.FromElsewhere):
+    """The same with the real model, as Soma sends it: tonight's MacBook card as a candidate from another runner."""
+    test_2_malformedCandidatesAreRefused = None
+
+
 if __name__ == '__main__':
-    unittest.main(argv=[sys.argv[0], 'RealMeaning', '-v'])
+    unittest.main(argv=[sys.argv[0], 'RealMeaning', 'RealFromElsewhere', '-v'])

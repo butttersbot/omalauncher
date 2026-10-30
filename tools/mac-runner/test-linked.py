@@ -226,5 +226,45 @@ class ByMeaning(unittest.TestCase):
         self.assertNotIn(self.link_a, found)  # the one he answered is left out
 
 
+class FromElsewhere(unittest.TestCase):
+    """Boss, 2026-10-29: the Mac Pro decides for every thread: Soma sends it the questions waiting elsewhere (phone builders,
+    other runners) as candidates, and it judges them with its own in one call."""
+    @classmethod
+    def setUpClass(cls):
+        Linked.setUpClass.__func__(cls)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.runner.terminate()
+        cls.runner.wait()
+
+    def test_1_candidatesFromElsewhereGetTheSameVerdictKeyedByTheirId(self):
+        builder = {'questions': [{'question': 'Which colour for the Hunch header?', 'header': 'Colour', 'multiSelect': False,
+                                  'options': [{'label': 'Red', 'description': ''}, {'label': 'Blue', 'description': ''}]}]}
+        codex = {'codex_request': 'questions', 'link': 'widget-theme', 'questions': [{'id': 'theme', 'question': 'Theme for the widget?', 'header': 'Theme',
+                 'options': [{'label': 'Sync them', 'description': ''}, {'label': 'Keep them apart', 'description': ''}]}]}
+        code, said = call('POST', '/questions/match', {'card': TONIGHT_A, 'answers': {TONIGHT_A['questions'][0]['question']: 'Yes, keep them deleted'},
+                                                       'where': 'phone:A', 'local': False, 'candidates': [
+            {'target_id': 'galaxy-z-fold8/builder-b/tk-1', 'thread_name': 'Phone B', 'card': builder},
+            {'target_id': 'macbook-pro/t1703ae4f/ap-7', 'thread_name': 'MacBook skills', 'card': TONIGHT_MACBOOK}]})
+        self.assertEqual(200, code, said)
+        self.assertEqual([], said['matches'])  # local: false leaves this runner's own out
+        by = {c['target_id']: c for c in said['candidates']}
+        mac = by['macbook-pro/t1703ae4f/ap-7']
+        self.assertEqual(('meaning', True), (mac['match'], mac['deliver']))
+        self.assertEqual({TONIGHT_MACBOOK['questions'][0]['question']: 'Keep them deleted'}, mac['answers'])
+        self.assertNotIn('galaxy-z-fold8/builder-b/tk-1', by)  # a different decision is left out
+        # A Codex form sharing the link, with the very same labels: settled without the model, in its own keys (ids).
+        code, said = call('POST', '/questions/match', {'card': LINKED_A, 'answers': {'Pick the theme for the new widget': 'Sync them'},
+                                                       'where': 'phone:A', 'local': False, 'candidates': [{'target_id': 'mg1/t9/ap-1', 'thread_name': 'MG1', 'card': codex}]})
+        self.assertEqual(200, code, said)
+        self.assertEqual({'theme': 'Sync them'}, said['candidates'][0]['answers'])
+        self.assertEqual('link', said['candidates'][0]['match'])
+
+    def test_2_malformedCandidatesAreRefused(self):
+        self.assertEqual(400, call('POST', '/questions/match', {'card': TONIGHT_A, 'answers': {}, 'candidates': [{'card': {}}]})[0])
+        self.assertEqual(400, call('POST', '/questions/match', {'card': TONIGHT_A, 'answers': {}, 'candidates': 'all'})[0])
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
