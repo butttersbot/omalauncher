@@ -43,6 +43,9 @@ class DesktopChatTitles(private val platform: DesktopThreadsPlatform, private va
 
 /** What this computer's fast model says for [ask]; null without Claude Code here, or when it fails or takes too long. */
 private fun model(ask: TitleAsk): String? {
+    // Off in the test suite (desktop/build.gradle.kts): a suite run in his own session would otherwise ask his real model
+    // (2026-10-29: the release build's DesktopEndToEndTest got "File Listing Request", not the fallback it checks for).
+    if (System.getProperty("soma.titles") == "off") return null
     val home = System.getProperty("user.home")
     // Opened from Finder or at login, Soma's PATH is launchd's: Claude Code's own places are added.
     val path = listOf("$home/.local/bin", "$home/.local/share/mise/shims", "$home/.bun/bin", "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin")

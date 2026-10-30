@@ -52,6 +52,8 @@ dependencies {
 
 tasks.test {
     forkEvery = 1
+    // Chats are never named by his real model from a test (DesktopChatTitles).
+    systemProperty("soma.titles", "off")
     // -PsomaShots=DIR: the update pill's cards as PNGs there, for a walk (UpdatesTest.shots).
     systemProperty("soma.shots", providers.gradleProperty("somaShots").getOrElse(""))
     // -PsomaWalk=DIR: the update walk against a real runner and a real published build (UpdateWalkTest), its record there.
