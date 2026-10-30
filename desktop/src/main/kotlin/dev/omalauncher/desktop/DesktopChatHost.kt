@@ -187,6 +187,8 @@ class DesktopChatHost(
 
     override fun drafts(): ChatDrafts = ChatDrafts.of(SomaHome.dir)
 
+    override fun askSameQuestion(prompt: String): String? = desktopQuickModel(dev.omalauncher.assist.sameQuestionCommand(prompt, desktop = true))
+
     /** A file dialog, several pictures at once; what was chosen goes to [onPicked] (nothing when he cancels). */
     @Composable
     override fun rememberImagePicker(max: Int, onPicked: (List<PickedImage>) -> Unit): () -> Unit {

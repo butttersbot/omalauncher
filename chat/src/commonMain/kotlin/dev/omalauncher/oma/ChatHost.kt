@@ -215,6 +215,11 @@ interface ChatHost {
     /** His answer to a Mac thread's request; [done] gets how it went. */
     fun answerMacQuestions(ticket: String, answers: org.json.JSONObject, done: (MacApprovalOutcome) -> Unit) { done(MacApprovalOutcome.Failed) }
     fun answerBuilderQuestions(entry: PendingApproval, answers: org.json.JSONObject): ApprovalOutcome = ApprovalOutcome.Expired
+    /**
+     * Asks the fast model whether the questions waiting elsewhere are the one he just answered (SameQuestion.kt), and
+     * returns what it printed. Blocking, off the main thread; null where no model can be asked.
+     */
+    fun askSameQuestion(prompt: String): String? = null
 
     fun answerMac(ticket: String, allow: Boolean, done: (MacApprovalOutcome) -> Unit)
     fun rememberMacCommand(ticket: String, done: (MacApprovalOutcome) -> Unit) { done(MacApprovalOutcome.Failed) }

@@ -203,6 +203,8 @@ class AndroidChatHost(
 
     override fun drafts(): ChatDrafts = ChatDrafts.of(context)
 
+    override fun askSameQuestion(prompt: String): String? = dev.omalauncher.assist.QuickModel.ask(context, dev.omalauncher.assist.sameQuestionCommand(prompt))
+
     @Composable
     override fun rememberImagePicker(max: Int, onPicked: (List<PickedImage>) -> Unit): () -> Unit {
         val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(max)) { uris -> onPicked(uris.map(::UriImage)) }

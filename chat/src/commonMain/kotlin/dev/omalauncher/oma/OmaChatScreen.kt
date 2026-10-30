@@ -555,6 +555,18 @@ private fun ChatScreen(
                 // On a thread's tab only that thread's: the builder's tab has none, since its requests are always an entry's.
                 val loose = macPending.filter { waiting -> tasks.none { it.thread == waiting.threadId && it.approvals.any { line -> line.key == waiting.request.approval } } }
                     .filter { tab == OMA_TAB || it.threadId == tabMacThread(tab, book) }
+                // His answer carried over to this thread from the same question elsewhere (Boss, 2026-10-29): said where it
+                // came from, with [ undo ]. On the thread's own tab, and on the Oma tab where its card was.
+                val carried = CarriedAnswers.list.filter { c ->
+                    tab == OMA_TAB || c.target.thread == tabMacThread(tab, book) ||
+                        BuilderId.entries.any { b -> c.target.thread == "phone:${b.letter}" && b.thread == tab }
+                }
+                items(carried, key = { "carried-${it.target.key}" }) { c ->
+                    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        BasicText("${c.target.where}: answered in ${c.from}: ${c.words}", Modifier.weight(1f), style = Pack.mono(Pack.size.small, Pack.muted), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        BracketAction("undo", Pack.accent) { host.undoCarried(c) }
+                    }
+                }
                 items(loose, key = { it.ticket }) { waiting ->
                     ApprovalBox(dev.omalauncher.assist.macApprovalTitle(waiting.request.tool, waiting.threadName), macApprovalDetail(waiting.request), macCard(waiting))
                 }
