@@ -457,7 +457,7 @@ function draw() {
 function openStory(i) {
   if (i < 0 || i >= S.stories.length) return;
   // A tap within a moment of the stream being redrawn by itself (a refresh, not him) lands on whatever moved: ignored.
-  if (S.scene === 'stream' && performance.now() - (S.redrawnAt || 0) < 350) return;
+  if (S.scene === 'stream' && S.redrawnAt && performance.now() - S.redrawnAt < 350) return;
   if (S.scene === 'stream' && $('scroll')) S.streamTop = $('scroll').scrollTop;
   S.scene = 'reader'; S.at = i; want(S.stories[i]); draw();
   if ($('art')) $('art').scrollTop = 0;
