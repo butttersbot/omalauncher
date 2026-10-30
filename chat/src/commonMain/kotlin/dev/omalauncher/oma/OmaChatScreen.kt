@@ -65,6 +65,10 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.Key
+import androidx.compose.foundation.ScrollState
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.isShiftPressed
@@ -504,6 +508,7 @@ private fun ChatScreen(
                 TabStrip(
                     threads, tab, ::pick,
                     soma = host.somaTab,
+                    wheelSideways = host.wheelScrollsTabs,
                     onMenu = { menuFor = it },
                     onAll = {
                         focusManager.clearFocus()
@@ -873,6 +878,27 @@ private fun ChatScreen(
  * are more than fit, and a square ＋ after the last that starts a new chat. The open one is filled in. A long
  * press on a tab opens its menu, with a tick the hand can feel.
  */
+/**
+ * A mouse wheel turned up or down over the tab strip scrolls it sideways, [WHEEL_STEP] a notch ([on]: Linux's Soma, where a
+ * wheel only turns that way; a Mac's touchpad already scrolls it sideways). A sideways scroll is left to [horizontalScroll].
+ */
+internal fun Modifier.wheelScrollsSideways(scroll: ScrollState, on: Boolean): Modifier = if (!on) this else pointerInput(scroll) {
+    awaitPointerEventScope {
+        while (true) {
+            val event = awaitPointerEvent(PointerEventPass.Initial)
+            if (event.type != PointerEventType.Scroll) continue
+            val change = event.changes.firstOrNull() ?: continue
+            val delta = change.scrollDelta
+            if (delta.y == 0f || delta.x != 0f) continue
+            scroll.dispatchRawDelta(delta.y * WHEEL_STEP.toPx())
+            change.consume()
+        }
+    }
+}
+
+/** How far one notch of a mouse wheel moves the tab strip. */
+private val WHEEL_STEP = 64.dp
+
 @Composable
 private fun TabStrip(
     threads: List<AgentThread>,
@@ -882,6 +908,7 @@ private fun TabStrip(
     onNew: () -> Unit,
     soma: Boolean = true,
     onAll: () -> Unit = {},
+    wheelSideways: Boolean = false,
 ) {
     val haptics = LocalHapticFeedback.current
     val tabs = chatTabs(threads, soma)
@@ -904,7 +931,7 @@ private fun TabStrip(
         spans[key] = x to x + spot.size.width
     }
     Row(
-        Modifier.fillMaxWidth().onSizeChanged { width = it.width }.horizontalScroll(scroll).padding(horizontal = 6.dp, vertical = 4.dp).height(IntrinsicSize.Min),
+        Modifier.fillMaxWidth().onSizeChanged { width = it.width }.wheelScrollsSideways(scroll, wheelSideways).horizontalScroll(scroll).padding(horizontal = 6.dp, vertical = 4.dp).height(IntrinsicSize.Min),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         for (key in tabs) {

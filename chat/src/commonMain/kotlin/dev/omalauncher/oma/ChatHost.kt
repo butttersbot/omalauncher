@@ -86,6 +86,9 @@ interface ChatHost {
     /** Whether a hardware Enter sends (Shift+Enter a new line). Not on the phone, where Return starts a new line (Boss, 2026-10-25). */
     val enterSends: Boolean get() = false
 
+    /** Whether a mouse wheel turned over the tab strip scrolls it sideways: Linux, whose wheels only turn up and down (Boss, 2026-10-29). */
+    val wheelScrollsTabs: Boolean get() = false
+
     /** A bot's instructions and notes ([MacBotFiles]), read from its computer; null when they can't be read now. */
     fun botFiles(thread: String, told: (dev.omalauncher.assist.MacBotFiles?) -> Unit) = told(null)
 

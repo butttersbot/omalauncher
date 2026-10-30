@@ -56,6 +56,7 @@ class DesktopChatHost(
     override val dictates: Boolean get() = false
     // Enter sends unless he turned it off in Settings (DesktopSettings).
     override val enterSends: Boolean get() = DesktopSettings.enterSends
+    override val wheelScrollsTabs: Boolean = !System.getProperty("os.name").lowercase().contains("mac")
 
     // No Soma tab and no front agent here (Boss, 2026-10-19): it opens to a new chat, and he starts each one himself.
     override val somaTab: Boolean get() = false
