@@ -61,6 +61,9 @@ class StoreFontsTest {
         // Console's own text (Palette.mono) is drawn in them while Console is the look.
         val store = File("src/main/kotlin/dev/omalauncher/theme/ThemeStore.kt").let { if (it.exists()) it else File("app/src/main/kotlin/dev/omalauncher/theme/ThemeStore.kt") }.readText()
         assertTrue(store.contains("dev.omalauncher.ui.PlatformFonts.consoleMono = if (console) fonts[\"body:\"] else null"))
+        // Held out of the bundle until Console's home cards fit (Phone A, 2026-10-29): off, Console is as before.
+        assertFalse(dev.omalauncher.theme.pack.ConsolePack.STORE_FONT)
+        assertTrue(store.contains("if (!ConsolePack.STORE_FONT) return emptyMap()"))
     }
 
     @Test fun aPinnedNameNeverBecomesAPath() {

@@ -221,6 +221,7 @@ class ThemeStore(
         scope.launch(Dispatchers.IO) {
             fun fonts(): Map<String, FontFamily> {
                 if (console) {
+                    if (!ConsolePack.STORE_FONT) return emptyMap()
                     // Every voice is JetBrains Mono; the body has Schibsted Grotesk behind it, and Console's own
                     // monospace (Palette.mono, most of its text) is drawn in that, the fuller stack.
                     val mono = packFont(source, id, ConsolePack.FONT) ?: return emptyMap()

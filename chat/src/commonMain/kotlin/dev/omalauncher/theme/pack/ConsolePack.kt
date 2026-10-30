@@ -16,6 +16,13 @@ object ConsolePack {
      */
     const val FONT = "console/JetBrainsMono.ttf"
 
+    /**
+     * Whether Console draws in [FONT] yet. Off until its fixed-height home cards (the system card, today's weather) hold
+     * what they held in the system monospace: JetBrains Mono's taller lines clip them (lane C, 6becf8a9-e891d611), and
+     * Phone A's call (2026-10-29) is no visible regression in the bundle. Off, Console is exactly as before.
+     */
+    const val STORE_FONT = false
+
     /** After [FONT] in the body's stack only. */
     const val BODY_FALLBACK = "console/SchibstedGrotesk.ttf"
 
