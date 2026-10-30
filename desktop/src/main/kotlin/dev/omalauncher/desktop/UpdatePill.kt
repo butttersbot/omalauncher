@@ -23,7 +23,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import dev.omalauncher.ui.BackHandler
 import dev.omalauncher.ui.BracketAction
 import dev.omalauncher.ui.Pack
@@ -44,17 +48,28 @@ internal fun pillLabel(state: UpdateState): Pair<String, Boolean>? = when (state
     is UpdateState.Failed -> "didn't update" to true
 }
 
+/**
+ * The pill; a tap opens the sheet just under it ([withSheet]: a popup anchored to the pill, closed by a click outside it
+ * or Escape). Tests lay the sheet out themselves.
+ */
 @Composable
-fun UpdatePill(updater: Updater) {
+fun UpdatePill(updater: Updater, withSheet: Boolean = true) {
     val (label, filled) = pillLabel(updater.state) ?: return
     val shape = RoundedCornerShape(999.dp)
-    Box(
-        Modifier.padding(horizontal = 6.dp)
-            .then(if (filled) Modifier.background(Pack.accent, shape) else Modifier.border(Pack.hair, Pack.border, shape))
-            .clickable { updater.open = true }
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-    ) {
-        BasicText(Pack.caption(label), style = Pack.mono(Pack.size.small, if (filled) Pack.background else Pack.foreground), maxLines = 1, softWrap = false)
+    Box {
+        Box(
+            Modifier.padding(horizontal = 6.dp)
+                .then(if (filled) Modifier.background(Pack.accent, shape) else Modifier.border(Pack.hair, Pack.border, shape))
+                .clickable { if (updater.open) updater.close() else updater.open = true }
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+        ) {
+            BasicText(Pack.caption(label), style = Pack.mono(Pack.size.small, if (filled) Pack.background else Pack.foreground), maxLines = 1, softWrap = false)
+        }
+        if (withSheet && updater.open) {
+            Popup(alignment = Alignment.TopEnd, offset = IntOffset(0, with(LocalDensity.current) { 34.dp.roundToPx() }), onDismissRequest = updater::close, properties = PopupProperties(focusable = true)) {
+                UpdateSheet(updater, Modifier.widthIn(min = 320.dp))
+            }
+        }
     }
 }
 
@@ -64,7 +79,7 @@ fun UpdateSheet(updater: Updater, modifier: Modifier = Modifier) {
     if (!updater.open) return
     val state = updater.state
     if (state == UpdateState.None) return
-    BackHandler { updater.open = false }
+    BackHandler { updater.close() }
     Column(
         modifier.widthIn(max = 460.dp).framed(Pack.hair, Pack.border, Pack.surface).padding(14.dp).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -79,10 +94,10 @@ fun UpdateSheet(updater: Updater, modifier: Modifier = Modifier) {
                     if (r.notes.isEmpty()) Body("(the build says nothing about what changed)", Pack.muted)
                     r.notes.forEach { Body("·  $it") }
                 }
-                Body("Checked before anything changes: built from a commit whose tests passed, and each download's sha256 must match the record.", Pack.muted)
+                Body("Checked: built from a commit whose tests passed; the download's sha256 must match.", Pack.muted)
                 Actions {
                     BracketAction("update and restart", Pack.accent) { updater.start(r) }
-                    BracketAction("later", Pack.muted) { updater.open = false }
+                    BracketAction("later", Pack.muted) { updater.close() }
                 }
             }
             is UpdateState.Waiting -> {
@@ -108,16 +123,14 @@ fun UpdateSheet(updater: Updater, modifier: Modifier = Modifier) {
             is UpdateState.Updated -> {
                 StatePill("updated", false)
                 Body("Soma ${state.commit} is running, app and runner alike. The pill is gone until the next build.")
-                Actions { BracketAction("ok", Pack.accent) { updater.dismiss() } }
             }
             is UpdateState.Failed -> {
                 StatePill("didn't update", true)
                 Body("Kept ${state.kept}: ${state.reason}")
                 val clipboard = LocalClipboardManager.current
                 Actions {
-                    BracketAction("try again", Pack.accent) { state.release?.let(updater::start) ?: run { updater.dismiss(); kotlin.concurrent.thread(isDaemon = true) { updater.check() } } }
+                    if (state.release != null) BracketAction("try again", Pack.accent) { updater.start(state.release) }
                     BracketAction("copy details for an agent", Pack.muted) { clipboard.setText(AnnotatedString(state.details)) }
-                    BracketAction("close", Pack.muted) { updater.dismiss() }
                 }
             }
             UpdateState.None -> Unit

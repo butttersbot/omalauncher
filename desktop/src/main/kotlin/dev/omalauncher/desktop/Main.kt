@@ -218,8 +218,10 @@ fun main(args: Array<String>) {
     val updateDir = File(SomaHome.dir, "update")
     val updater = Updater(DesktopUpdateHands({ RunnerKeys.known }, updateDir, quitting = { javax.swing.SwingUtilities.invokeLater { quitNow?.invoke() } }), updateDir)
     thread(name = "soma-update", isDaemon = true) {
+        runCatching { updater.markStarted() }
+        // What the last update came to, and the published build, once the keys thread has read keys; then every half hour.
+        while (RunnerKeys.known.isEmpty()) Thread.sleep(5_000)
         runCatching { updater.reportAtStart() }
-        Thread.sleep(15_000)
         while (true) {
             runCatching { updater.check() }
             Thread.sleep(UPDATE_CHECK_MS)
@@ -278,7 +280,6 @@ fun main(args: Array<String>) {
                 Box(Modifier.fillMaxSize()) {
                     CanvasScreen(canvas, host, source, tick.value, wanted, onTab = { wanted = it; showWindow() }, chatElsewhere = ::showWindow, widgets = windowWidgets, scraps = scraps, shelf = shelf, pagesOverview = true)
                     Box(Modifier.align(Alignment.TopEnd).padding(top = 8.dp, end = 8.dp)) { UpdatePill(updater) }
-                    UpdateSheet(updater, Modifier.align(Alignment.TopEnd).padding(top = 44.dp, end = 12.dp))
                 }
             }
         }
@@ -324,7 +325,6 @@ fun main(args: Array<String>) {
                     CompositionLocalProvider(LocalTopBarExtra provides { UpdatePill(updater) }) {
                         OmaChatScreen(host, prefill = null, onPrefilled = {}, wanted = wanted, onTab = { wanted = it.takeIf { tab -> tab != OMA_TAB } })
                     }
-                    UpdateSheet(updater, Modifier.align(Alignment.TopEnd).padding(top = 44.dp, end = 12.dp))
                 }
             }
         }

@@ -9,6 +9,7 @@ work = pathlib.Path(tempfile.mkdtemp(prefix='soma-release-'))
 release = work / 'release'
 repo = work / 'repo'
 KEY = 'k' * 40
+SELF_KEY = 's' * 40
 
 
 def sh(*words, cwd=repo, check=True):
@@ -91,7 +92,9 @@ class Serve(unittest.TestCase):
             cls.port = s.getsockname()[1]
         state = work / 'runner'
         (state / 'Projects').mkdir(parents=True)
-        (state / 'keys.json').write_text(json.dumps({'devices': [{'name': 'phone', 'digest': 'sha256:' + hashlib.sha256(KEY.encode()).hexdigest(), 'added': 0}]}))
+        (state / 'keys.json').write_text(json.dumps({'devices': [{'name': 'phone', 'digest': 'sha256:' + hashlib.sha256(KEY.encode()).hexdigest(), 'added': 0},
+                                                             {'name': 'testhost', 'digest': 'sha256:' + hashlib.sha256(SELF_KEY.encode()).hexdigest(), 'added': 0}]}))
+        cls.whois = state / 'whois.json'
         (state / 'whois.json').write_text(json.dumps({'127.0.0.1': 'phone'}))
         env = {**os.environ, 'OMA_RUNNER_PORT': str(cls.port), 'OMA_RUNNER_BIND': '127.0.0.1', 'OMA_RUNNER_STATE': str(state / 'state'),
                'OMA_RUNNER_LOGS': str(state / 'logs'), 'OMA_RUNNER_ROOTS': str(state / 'Projects'), 'OMA_RUNNER_KEYS': str(state / 'keys.json'),
@@ -99,7 +102,7 @@ class Serve(unittest.TestCase):
                'OMA_RUNNER_MAIL': str(state / 'mail'), 'OMA_RUNNER_CODEX_DISCOVER': '0', 'OMA_RUNNER_CLAUDE_DISCOVER': '0',
                'OMA_RUNNER_AGENT': str(RUNNER / 'fake-agent'), 'OMA_RUNNER_CODEX': str(RUNNER / 'fake-codex'), 'OMA_RUNNER_CURSOR': str(RUNNER / 'fake-cursor'),
                'OMA_RUNNER_GROK': str(state / 'no-grok'), 'OMA_RUNNER_BOTS': str(state / 'bots'), 'OMA_RUNNER_ARTIFACTS': str(state / 'artifacts'),
-               'OMA_RUNNER_PROJECTS': str(state / 'projects.json'), 'OMA_RUNNER_RELEASE': str(release), 'HOME': str(state)}
+               'OMA_RUNNER_PROJECTS': str(state / 'projects.json'), 'OMA_RUNNER_RELEASE': str(release), 'OMA_RUNNER_SELF': 'testhost', 'HOME': str(state)}
         cls.runner = subprocess.Popen([sys.executable, str(RUNNER / 'oma-runner'), 'serve'], env=env, stdout=subprocess.PIPE, text=True)
         cls.runner.stdout.readline()
 
@@ -108,8 +111,9 @@ class Serve(unittest.TestCase):
         cls.runner.terminate()
         cls.runner.wait()
 
-    def get(self, path, key=KEY):
-        request = urllib.request.Request('http://127.0.0.1:%d%s' % (self.port, path), headers={'Authorization': 'Bearer ' + key})
+    def get(self, path, key=KEY, body=None):
+        request = urllib.request.Request('http://127.0.0.1:%d%s' % (self.port, path), headers={'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json'},
+                                         data=None if body is None else json.dumps(body).encode())
         try:
             with urllib.request.urlopen(request, timeout=10) as reply:
                 return reply.status, reply.read()
@@ -136,6 +140,33 @@ class Serve(unittest.TestCase):
         code, body = self.get('/health')
         self.assertEqual(200, code)
         self.assertIsNone(json.loads(body)['build'])
+
+    def as_(self, device):
+        self.whois.write_text(json.dumps({'127.0.0.1': device}))
+
+    def test_4_onlyThisComputersOwnSomaHoldsItsRunnerAndAHoldRefusesNewTurns(self):
+        self.as_('phone')
+        self.assertEqual(403, self.get('/update/hold', body={'on': True})[0])
+        project = work / 'runner' / 'Projects'
+        code, made = self.get('/threads', body={'name': 'Fold GPU', 'project': str(project)})
+        self.assertEqual(200, code, made)
+        thread = json.loads(made)['thread']['id']
+        try:
+            self.as_('testhost')
+            code, said = self.get('/update/hold', key=SELF_KEY, body={'on': True})
+            self.assertEqual(200, code, said)
+            self.assertEqual({'ok': True, 'held': True, 'busy': []}, json.loads(said))
+            self.as_('phone')
+            self.assertTrue(json.loads(self.get('/health')[1])['updating'])
+            code, said = self.get('/threads/%s/messages' % thread, body={'text': 'hello'})
+            self.assertEqual(409, code)
+            self.assertIn('updating', json.loads(said)['error'])
+            self.assertEqual(503, self.get('/threads', body={'name': 'x', 'project': str(project)})[0])
+        finally:
+            self.as_('testhost')
+            self.assertFalse(json.loads(self.get('/update/hold', key=SELF_KEY, body={'on': False})[1])['held'])
+            self.as_('phone')
+        self.assertFalse(json.loads(self.get('/health')[1])['updating'])
 
 
 if __name__ == '__main__':

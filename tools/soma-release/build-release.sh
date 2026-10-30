@@ -29,6 +29,8 @@ echo "== build"
 ./gradlew --no-daemon --no-configuration-cache :desktop:createDistributable > $out/app.log 2>&1 || { echo "the Mac app didn't build; see $out/app.log"; exit 1; }
 app=desktop/build/compose/binaries/main/app/Soma.app
 codesign --verify --deep --strict $app 2>> $out/app.log || { echo "the Mac app's signature doesn't verify; see $out/app.log"; exit 1; }
+# Signed by this Mac's identity (somaSignIdentity), never ad hoc: every Mac's Keychain "Always Allow" for its runner keys rests on it.
+codesign -dv $app 2>&1 | grep -q '^TeamIdentifier=[A-Z0-9]' || { echo "the Mac app is signed ad hoc (no somaSignIdentity here?); nothing was published"; exit 1; }
 ditto -c -k --keepParent $app $out/Soma.zip
 ./gradlew --no-daemon --no-configuration-cache -PsomaOs=linux-x64 :desktop:packageUberJarForCurrentOS > $out/jar.log 2>&1 || { echo "the Linux jar didn't build; see $out/jar.log"; exit 1; }
 jar=$(ls -t desktop/build/compose/jars/*.jar | head -1)

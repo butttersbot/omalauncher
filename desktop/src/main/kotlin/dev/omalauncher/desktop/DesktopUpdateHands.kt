@@ -55,14 +55,29 @@ class DesktopUpdateHands(
         }.getOrElse { "${it.message ?: it.javaClass.simpleName} while fetching ${file.file}" }
     }
 
-    override fun working(): List<String>? {
+    override fun hold(): List<String>? {
         val m = local() ?: return null
-        val (code, body) = runnerGet("${base(m)}/threads", m.config.key)
-        if (code != 200) return null
+        val (code, body) = runnerPost("${base(m)}/update/hold", m.config.key, """{"on": true}""")
+        if (code == 200) return runCatching { JSONObject(body).getJSONArray("busy").let { a -> (0 until a.length()).map { a.getString(it) } } }.getOrNull()
+        if (code != 404) return null
+        // A runner from before the hold (the first update onto it): its chats working or waiting, asked as they stand.
+        val (listed, threads) = runnerGet("${base(m)}/threads", m.config.key)
+        if (listed != 200) return null
         return runCatching {
-            val threads = JSONObject(body).getJSONArray("threads")
-            (0 until threads.length()).map { threads.getJSONObject(it) }.filter { it.optString("status") == "working" }.map { it.optString("name").ifEmpty { it.optString("id") } }
+            val all = JSONObject(threads).getJSONArray("threads")
+            (0 until all.length()).map { all.getJSONObject(it) }.filter { it.optString("status") in setOf("working", "waiting") }.map { it.optString("name").ifEmpty { it.optString("id") } }
         }.getOrNull()
+    }
+
+    override fun unhold() {
+        val m = local() ?: return
+        runnerPost("${base(m)}/update/hold", m.config.key, """{"on": false}""")
+    }
+
+    override fun runnerBuild(): String? {
+        val m = local() ?: return null
+        val (code, body) = runnerGet("${base(m)}/health", m.config.key)
+        return if (code == 200) runCatching { JSONObject(body).optString("build").takeIf { it.isNotEmpty() && it != "null" } }.getOrNull() else null
     }
 
     /** Where the staged app is: the unpacked Soma.app on the Mac, the new jar beside the running one on Linux. */
@@ -77,7 +92,11 @@ class DesktopUpdateHands(
             target.parentFile.mkdirs()
             run("ditto", "-x", "-k", artifact.path, target.parentFile.path)?.let { return "the zip didn't unpack: $it" }
             if (!target.isDirectory) return "the zip had no Soma.app in it"
-            return run("codesign", "--verify", "--deep", "--strict", target.path)?.let { "its signature doesn't verify: $it" }
+            run("codesign", "--verify", "--deep", "--strict", target.path)?.let { return "its signature doesn't verify: $it" }
+            // Signed by the same identity as this one, so the Keychain's "Always Allow" for the runner keys holds.
+            val mine = team(runningApp()!!)
+            val theirs = team(target)
+            return if (mine != null && theirs != mine) "it is signed by ${theirs ?: "no team (an ad hoc build)"}, not $mine as this Soma is" else null
         }
         runningJar() ?: return "this Soma isn't running from a jar"
         return runCatching { artifact.copyTo(target, overwrite = true); null }.getOrElse { "${target.path} couldn't be written: ${it.message}" }
@@ -90,7 +109,7 @@ class DesktopUpdateHands(
         // The installed copy kept first, with its services module, so it can put itself back (restoreRunner).
         before.deleteRecursively()
         before.mkdirs()
-        for (name in listOf("oma-runner", "soma_services.py")) File(installed.parentFile, name).takeIf { it.isFile }?.copyTo(File(before, name), overwrite = true)
+        for (name in listOf("oma-runner", "soma_services.py", "oma-runner.build")) File(installed.parentFile, name).takeIf { it.isFile }?.copyTo(File(before, name), overwrite = true)
         run(python, File(unpacked, "oma-runner").path, "install", timeout = 120)?.let { return restoredAfter("its install said: $it") }
         if (!runnerOn(release.commit)) return restoredAfter("it didn't come back on ${release.commit} within a minute")
         return null
@@ -102,7 +121,8 @@ class DesktopUpdateHands(
         val copy = File(before, "oma-runner").takeIf { it.isFile } ?: return "no copy of the old runner was kept"
         val python = runnerPython() ?: return "no python to install it with"
         run(python, copy.path, "install", timeout = 120)?.let { return it }
-        return if (runnerOn(null)) null else "it didn't answer within a minute"
+        val was = File(before, "oma-runner.build").takeIf { it.isFile }?.readText()?.trim()
+        return if (runnerOn(was)) null else "it didn't answer${was?.let { " on $it" } ?: ""} within a minute"
     }
 
     /** Whether this computer's runner answers within a minute, on [commit] when one is named. */
@@ -168,6 +188,12 @@ class DesktopUpdateHands(
         return listOf(info.command().orElse("java")) + args.takeWhile { it != "-jar" }
     }
 
+    /** The TeamIdentifier an app is signed with, or null (ad hoc, or unsigned). */
+    private fun team(app: File): String? = runCatching {
+        val p = ProcessBuilder("codesign", "-dv", app.path).redirectErrorStream(true).start()
+        p.inputStream.bufferedReader().readText().also { p.waitFor() }.lines().firstOrNull { it.startsWith("TeamIdentifier=") }?.substringAfter('=')?.takeIf { it != "not set" }
+    }.getOrNull()
+
     /** Runs a command; null when it succeeded, else what it said (its last lines). */
     private fun run(vararg words: String, timeout: Long = 60): String? = runCatching {
         val p = ProcessBuilder(*words).redirectErrorStream(true).start()
@@ -203,19 +229,23 @@ echo "${'$'}(date) updating ${'$'}from -> ${'$'}to (${'$'}mode); waiting for Som
 n=0
 while kill -0 "${'$'}pid" 2>/dev/null; do sleep 0.5; n=${'$'}((n+1)); [ ${'$'}n -gt 240 ] && { say false quit "the old Soma did not quit within two minutes"; exit 1; }; done
 rm -f "${'$'}dir/started"
+# Up for a while: a Soma that says it started and then dies within seconds didn't start either.
+stays() { sleep "${'$'}{SOMA_SWAP_STAY:-10}"; if [ "${'$'}mode" = mac ]; then pgrep -fx "${'$'}old/Contents/MacOS/Soma" >/dev/null; else kill -0 "${'$'}newpid" 2>/dev/null; fi; }
 if [ "${'$'}mode" = mac ]; then
+  # The real path (a /var that is /private/var), as the process list shows the app it runs.
+  old="${'$'}(cd "${'$'}(dirname "${'$'}old")" && pwd -P)/${'$'}(basename "${'$'}old")"
   rm -rf "${'$'}old.prev"
   mv "${'$'}old" "${'$'}old.prev" || { say false app "the old app could not be moved aside"; open "${'$'}old"; exit 1; }
   if ! mv "${'$'}new" "${'$'}old"; then mv "${'$'}old.prev" "${'$'}old"; say false app "the new app could not be moved into place"; open "${'$'}old"; exit 1; fi
   serve
   say true app ""
   open "${'$'}old"
-  if ! started; then
-    pkill -f "${'$'}old/Contents/MacOS/Soma"
+  if ! started || ! stays; then
+    pkill -fx "${'$'}old/Contents/MacOS/Soma"
     sleep 2
     rm -rf "${'$'}old"; mv "${'$'}old.prev" "${'$'}old"
     serve
-    say false start "the new Soma did not start within a minute; the old app is back"
+    say false start "the new Soma did not start, or did not stay up; the old app is back"
     open "${'$'}old"
     exit 1
   fi
@@ -223,9 +253,9 @@ else
   say true app ""
   "${'$'}@" -jar "${'$'}new" </dev/null >/dev/null 2>&1 &
   newpid=${'$'}!
-  if ! started; then
+  if ! started || ! stays; then
     kill ${'$'}newpid 2>/dev/null
-    say false start "the new Soma did not start within a minute; the old jar runs again"
+    say false start "the new Soma did not start, or did not stay up; the old jar runs again"
     "${'$'}@" -jar "${'$'}old" </dev/null >/dev/null 2>&1 &
     exit 1
   fi

@@ -118,8 +118,17 @@ interface UpdateHands {
     /** [file] of [release], fetched into [into]. */
     fun fetch(release: Release, file: ReleaseFile, into: File): String?
 
-    /** The names of the chats working on this computer's runner now, or null when it can't be asked. */
-    fun working(): List<String>?
+    /**
+     * This computer's runner held for the update (POST /update/hold: no new turn starts, agent mail waits) and the names of
+     * the chats with work still in it; empty when it can restart with nothing cut off. Null when it can't be asked.
+     */
+    fun hold(): List<String>?
+
+    /** The hold let go (cancelled, or failed before the restart): turns start again. */
+    fun unhold() {}
+
+    /** The commit this computer's runner says it runs (/health build), or null when it says none or can't be asked. */
+    fun runnerBuild(): String? = null
 
     /** The app, unpacked (and on the Mac its signature checked) where the swap takes it from; nothing running changes. */
     fun stageApp(artifact: File, release: Release): String?
@@ -164,15 +173,38 @@ class Updater(
         if (busy) return
         val release = newest(hands.latest())
         val now = state
-        if (now is UpdateState.Waiting || now is UpdateState.Updating || now is UpdateState.Failed || now is UpdateState.Updated) return
+        if (now is UpdateState.Waiting || now is UpdateState.Updating || now is UpdateState.Updated) return
+        // "didn't update" stays until he tries again; one about the runner and app apart takes the build to try with.
+        if (now is UpdateState.Failed) {
+            if (now.release == null && offered(own, release, platform)) state = now.copy(release = release)
+            return
+        }
         state = if (offered(own, release, platform)) UpdateState.Offer(release!!) else UpdateState.None
     }
 
-    /** At the start: what the last update came to, said once. A new Soma marks itself started, which the swap helper waits for. */
+    /**
+     * At the start: what the last update came to, said once. A new Soma marks itself started, which the swap helper waits
+     * for. With nothing to say, the runner and this Soma are compared: apart (an update cut off by a crash or power), it says so.
+     */
     fun reportAtStart() {
-        File(dir, "started").apply { parentFile.mkdirs(); writeText(own.commit + "\n") }
-        val said = runCatching { JSONObject(result.readText()) }.getOrNull() ?: return
+        markStarted()
+        val said = runCatching { JSONObject(result.readText()) }.getOrNull()
+        if (said == null) {
+            val runner = hands.runnerBuild()
+            if (runner != null && runner != own.commit) state = failed("this computer's runner is on $runner and Soma on ${own.commit}: an update stopped partway. Try again to put both on the newest build.", "apart", null)
+            return
+        }
         result.delete()
+        settle(said)
+    }
+
+    /** Tells the swap helper this Soma is up (it waits a minute for it), before anything that can wait on the Keychain. */
+    fun markStarted() {
+        File(dir, "started").apply { parentFile.mkdirs(); writeText(own.commit + "\n") }
+    }
+
+    /** What the helper's result says, taken in: updated, or failed (the runner put back when it had moved). */
+    private fun settle(said: JSONObject) {
         val to = said.optString("to")
         if (said.optBoolean("ok") && to == own.commit) {
             state = UpdateState.Updated(own.commit)
@@ -180,9 +212,12 @@ class Updater(
             return
         }
         val reason = said.optString("error").ifEmpty { "the new Soma didn't start" }
-        // The runner was already on the new commit when the app swap failed: it goes back too, when no chat is working.
-        val back = if (said.optBoolean("runnerSwapped")) waitForQuiet(null)?.let { "and the runner couldn't be put back: $it" } ?: hands.restoreRunner()?.let { "and the runner couldn't be put back: $it" } else null
-        state = failed("${reason}${back?.let { "; $it" } ?: ""}.", said.optString("step"), null, to)
+        if (!said.optBoolean("runnerSwapped")) return run { state = failed("$reason.", said.optString("step"), null, to) }
+        // The runner was already on the new commit: it goes back too, once nothing would be cut off. Said while it waits.
+        state = failed("$reason; the runner goes back to ${own.commit} as soon as no chat is working.", said.optString("step"), null, to)
+        val back = waitForQuiet(null) ?: hands.restoreRunner()
+        hands.unhold()
+        state = failed("$reason; " + (back?.let { "the runner couldn't be put back: $it" } ?: "the runner is back on ${own.commit} too") + ".", said.optString("step"), null, to)
     }
 
     /** A state set directly: the walk's pictures of each card (UpdatesTest.shots). */
@@ -193,10 +228,10 @@ class Updater(
         cancelled = true
     }
 
-    /** Hides the pill after "updated" or "didn't update" was read. */
-    fun dismiss() {
+    /** The sheet closed: "updated" has been read, so the pill goes; "didn't update" stays until he tries again. */
+    fun close() {
         open = false
-        if (state is UpdateState.Updated || state is UpdateState.Failed) state = UpdateState.None
+        if (state is UpdateState.Updated) state = UpdateState.None
     }
 
     /** "update and restart" (or "try again"): on a thread of its own. */
@@ -205,7 +240,7 @@ class Updater(
         busy = true
         cancelled = false
         thread(name = "soma-update", isDaemon = true) {
-            try { update(release) } catch (e: Exception) { state = failed("something unexpected: ${e.message ?: e.javaClass.simpleName}. Nothing was swapped.", "unknown", release) } finally { busy = false }
+            try { update(release) } catch (e: Exception) { hands.unhold(); state = failed("something unexpected: ${e.message ?: e.javaClass.simpleName}. Nothing was swapped.", "unknown", release) } finally { busy = false }
         }
     }
 
@@ -218,23 +253,36 @@ class Updater(
         for (file in listOf(app, runner)) hands.fetch(release, file, into)?.let { return run { state = failed("the build couldn't be fetched from ${release.runner}: $it. Nothing was swapped.", "fetch", release) } }
         state = UpdateState.Updating(release, 1)
         for (file in listOf(app, runner)) if (!matches(File(into, file.file), file)) return run { state = failed("the download's sha256 didn't match the record (${file.file}). Nothing was swapped.", "check", release) }
-        hands.stageApp(File(into, app.file), release)?.let { return run { state = failed("the new app couldn't be unpacked: $it. Nothing was swapped.", "stage", release) } }
-        waitForQuiet(release)?.let { why -> return run { state = if (cancelled) UpdateState.Offer(release) else failed("$why. Nothing was swapped.", "wait", release) } }
         state = UpdateState.Updating(release, 2)
-        hands.swapRunner(File(into, runner.file), release)?.let { return run { state = failed("the runner didn't take the new copy: $it. The old runner is back; the app wasn't touched.", "runner", release) } }
+        hands.stageApp(File(into, app.file), release)?.let { return run { state = failed("the new app couldn't be unpacked: $it. Nothing was swapped.", "stage", release) } }
+        waitForQuiet(release)?.let { why ->
+            hands.unhold()
+            return run { state = if (cancelled) UpdateState.Offer(release) else failed("$why. Nothing was swapped.", "wait", release) }
+        }
+        state = UpdateState.Updating(release, 2)
+        hands.swapRunner(File(into, runner.file), release)?.let {
+            hands.unhold()
+            return run { state = failed("the runner didn't take the new copy: $it. The old runner is back; the app wasn't touched.", "runner", release) }
+        }
         state = UpdateState.Updating(release, 3)
         hands.startSwap(release)?.let { why ->
             val back = hands.restoreRunner()?.let { "; the runner couldn't be put back: $it" } ?: "; the runner was put back"
             return run { state = failed("the app swap couldn't start: $why$back.", "app", release) }
         }
+        result.delete()
         hands.quit()
+        // Still here: this Soma didn't quit. The helper gives up after two minutes and says so; that is taken in here.
+        repeat(150) {
+            pause(1_000)
+            runCatching { JSONObject(result.readText()) }.getOrNull()?.let { said -> result.delete(); return settle(said) }
+        }
     }
 
-    /** Waits until no chat works on this computer's runner (the waiting card names them); null then, else why it stopped. */
+    /** Holds the runner and waits until nothing on it would be cut off (the waiting card names the chats); null then, else why it stopped. */
     private fun waitForQuiet(release: Release?): String? {
         while (true) {
             if (cancelled) return "cancelled"
-            val chats = hands.working() ?: return "this computer's runner couldn't be asked whether a chat is working"
+            val chats = hands.hold() ?: return "this computer's runner couldn't be asked whether a chat is working"
             if (chats.isEmpty()) return null
             if (release != null) state = UpdateState.Waiting(release, chats)
             pause(3_000)
@@ -256,6 +304,19 @@ class Updater(
         return UpdateState.Failed(own.commit, reason, details, release)
     }
 }
+
+/** One authenticated POST of a JSON [body] to a runner, its status and body (status 0 when nothing answered). */
+internal fun runnerPost(url: String, key: String, body: String): Pair<Int, String> = runCatching {
+    val c = URI(url).toURL().openConnection() as HttpURLConnection
+    c.connectTimeout = 4_000; c.readTimeout = 8_000
+    c.requestMethod = "POST"
+    c.doOutput = true
+    c.setRequestProperty("Authorization", "Bearer $key")
+    c.setRequestProperty("Content-Type", "application/json")
+    c.outputStream.use { it.write(body.toByteArray()) }
+    val code = c.responseCode
+    code to runCatching { (if (code < 400) c.inputStream else c.errorStream)?.bufferedReader()?.readText().orEmpty() }.getOrDefault("")
+}.getOrDefault(0 to "")
 
 /** One authenticated GET of a runner, its status and body (status 0 when nothing answered). */
 internal fun runnerGet(url: String, key: String, timeout: Int = 8_000): Pair<Int, String> = runCatching {

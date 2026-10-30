@@ -29,8 +29,8 @@ sourceSets.main { resources.srcDir(looks) }
  * Mac Pro's published build (Updates.kt, tools/soma-release). Asked of Git through providers, so the configuration cache keeps it.
  */
 val buildStamp by tasks.registering {
-    val commit = providers.exec { commandLine("git", "rev-parse", "--short=8", "HEAD"); isIgnoreExitValue = true }.standardOutput.asText.map { it.trim() }
-    val committed = providers.exec { commandLine("git", "log", "-1", "--format=%ct"); isIgnoreExitValue = true }.standardOutput.asText.map { it.trim() }
+    val commit = providers.exec { workingDir(rootDir); commandLine("git", "rev-parse", "--short=8", "HEAD"); isIgnoreExitValue = true }.standardOutput.asText.map { it.trim() }
+    val committed = providers.exec { workingDir(rootDir); commandLine("git", "log", "-1", "--format=%ct"); isIgnoreExitValue = true }.standardOutput.asText.map { it.trim() }
     val out = layout.buildDirectory.dir("generated/stamp")
     inputs.property("commit", commit)
     inputs.property("committed", committed)

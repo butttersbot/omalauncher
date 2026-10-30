@@ -10,6 +10,9 @@ Only exact Codex command scopes the owner explicitly saved may reuse that decisi
 
   GET  /health                           {ok, working, waiting, kinds, models: {venice: [...]}}
   GET  /devices                          {runner, devices: [names]}: who this runner lets in, by name only (soma --mesh)
+  POST /update/hold   {on}               this machine's own Soma only: on (renewed every few seconds, ten minutes at most) refuses
+                                         new turns and leaves agent mail waiting, so its update can restart the runner with nothing
+                                         cut off; says what is still busy, by thread name. off opens again. A restart ends it.
   GET  /release                          the latest desktop build published here: {release: {commit, committed, notes, artifacts}}
   GET  /release/files/NAME               one file that record names (the bytes); nothing else in the folder is served
   GET  /threads                          every thread: id, name, summary, status, last_worked, tail, pending, bot
@@ -2720,6 +2723,27 @@ _services = None
 _services_lock = threading.Lock()
 
 
+# The update pill's hold (POST /update/hold): until this time no new turn starts here and agent mail waits in new/.
+UPDATE_HOLD = {'until': 0.0}
+UPDATE_HOLD_MOST = 600
+
+
+def update_held():
+    return time.time() < UPDATE_HOLD['until']
+
+
+def update_busy():
+    """The threads with any work an update's restart would cut off, by name (as runner_work counts it)."""
+    with changed:
+        busy = []
+        for thread in threads.values():
+            kept = getattr(thread, 'kept', None)
+            if (thread.meta.get('status') in ('working', 'waiting') or thread.pending or thread.queue
+                    or (kept is not None and not kept.done and kept.driver.background)):
+                busy.append(thread.meta.get('name') or thread.meta['id'])
+        return busy
+
+
 def runner_work():
     """Every kind of runner work the owner-approved service restart must wait for (soma_services.WorkGate)."""
     with changed:
@@ -3567,6 +3591,9 @@ def collect_mail():
     """Takes the mail for these threads out of new/ by moving it to read/, which only one taker can do, and gives each
     to its thread in a bounded handoff after its active turn and collection window."""
     while not closing:
+        if update_held():  # left in new/ for the runner after the update
+            time.sleep(MAIL_EVERY)
+            continue
         try:
             waiting = sorted((MAIL / 'new').glob('*.json')) if (MAIL / 'new').is_dir() else []
             for path in waiting:
@@ -3609,6 +3636,8 @@ def thread_env(thread, driver):
 def take(thread, text):
     """The owner's words: at once when the thread is free, otherwise when the turn before them ends."""
     with changed:
+        if update_held():
+            return {'taken': 'refused', 'error': "this computer's runner is updating; send it again in a minute"}
         # An owner-approved service restart holds admission closed from its idle check until it is verified.
         if _services is not None and not _services.gate.admit():
             return {'taken': 'refused', 'error': 'maintenance: an owner-approved service restart is in progress; try again shortly'}
@@ -4193,7 +4222,7 @@ class Runner(BaseHTTPRequestHandler):
                 states = [thread.meta['status'] for thread in threads.values()]
             # Where this Mac's canvas service is, when it has one: a device asks here rather than guessing a port.
             return self.answer(200, {'ok': True, 'runner': 'oma-runner', **({'soma': SOMA_SERVICE} if SOMA_SERVICE else {}), 'threads': len(states), 'working': states.count('working'), 'waiting': states.count('waiting'),
-                                     'build': runner_build(), 'kinds': [kind for kind in KINDS if program(kind)], 'models': {'venice': venice_models()} if program('venice') else {}, 'files': True,
+                                     'build': runner_build(), 'updating': update_held(), 'kinds': [kind for kind in KINDS if program(kind)], 'models': {'venice': venice_models()} if program('venice') else {}, 'files': True,
                                      'bots': [{key: bot[key] for key in ('id', 'name', 'emoji', 'problem')} for bot in found.values()]})
         if parts == ['release'] or (len(parts) == 3 and parts[:2] == ['release', 'files']):
             return self.release(parts)
@@ -4336,6 +4365,15 @@ class Runner(BaseHTTPRequestHandler):
                 return self.answer(202, control.approve(parts[1], body, keys=self.soma_keys()))
             except Exception as e:  # soma_services.Refused carries its own status and code
                 return self.answer(getattr(e, 'status', 400), {'ok': False, 'error': getattr(e, 'code', 'refused'), 'detail': str(getattr(e, 'message', e))[:300]})
+        if parts == ['update', 'hold']:
+            # Only this machine's own Soma, updating this machine's runner, may hold it; a hold lapses by itself.
+            if self.device != own_name_kept():
+                return self.answer(403, {'ok': False, 'error': "only this computer's own Soma can hold its runner for an update"})
+            with changed:
+                UPDATE_HOLD['until'] = time.time() + UPDATE_HOLD_MOST if body.get('on') is True else 0.0
+            return self.answer(200, {'ok': True, 'held': update_held(), 'busy': update_busy()})
+        if parts == ['threads'] and update_held():
+            return self.answer(503, {'ok': False, 'error': "this computer's runner is updating; try again in a minute"})
         if parts == ['threads']:
             name = str(body.get('name') or '').strip()[:80]
             project = allowed_project(body.get('project') or '')

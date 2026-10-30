@@ -58,7 +58,10 @@ class UpdatesTest {
         var releases = listOf<Release>()
         override fun latest() = releases
         override fun fetch(release: Release, file: ReleaseFile, into: File): String? { did += "fetch ${file.file}"; File(into, file.file).writeBytes(served.getValue(file.file.substringAfterLast('.'))); return null }
-        override fun working(): List<String>? = (if (busy.size > 1) busy.removeAt(0) else busy[0]).also { did += "working $it" }
+        var runner: String? = null
+        override fun hold(): List<String>? = (if (busy.size > 1) busy.removeAt(0) else busy[0]).also { did += "hold $it" }
+        override fun unhold() { did += "unhold" }
+        override fun runnerBuild(): String? = runner
         override fun stageApp(artifact: File, release: Release): String? { did += "stage"; return null }
         override fun swapRunner(tarball: File, release: Release): String? { did += "runner"; return runnerFails }
         override fun restoreRunner(): String? { did += "restore"; return null }
@@ -128,7 +131,7 @@ class UpdatesTest {
         val hands = Fake().apply { busy = mutableListOf(listOf("Fold GPU"), listOf("Fold GPU"), emptyList()) }
         val u = updater(hands)
         u.update(release())
-        assertEquals(listOf("fetch Soma-macos-arm64-f0ed9535.zip", "fetch oma-runner-f0ed9535.tar.gz", "stage", "working [Fold GPU]", "working [Fold GPU]", "working []", "runner", "swap", "quit"), hands.did)
+        assertEquals(listOf("fetch Soma-macos-arm64-f0ed9535.zip", "fetch oma-runner-f0ed9535.tar.gz", "stage", "hold [Fold GPU]", "hold [Fold GPU]", "hold []", "runner", "swap", "quit"), hands.did)
         assertEquals(UpdateState.Updating(release(), 3), u.state)
     }
 
@@ -139,10 +142,11 @@ class UpdatesTest {
         u.update(release())
         assertEquals(UpdateState.Offer(release()), u.state)
         assertFalse(hands.did.toString(), "runner" in hands.did)
+        assertTrue("the hold is let go", "unhold" in hands.did)
     }
 
     @Test fun aRunnerThatCantBeAskedStopsBeforeAnythingIsSwapped() {
-        val hands = object : UpdateHands by Fake() { override fun working(): List<String>? = null }
+        val hands = object : UpdateHands by Fake() { override fun hold(): List<String>? = null }
         val u = updater(hands)
         u.update(release())
         assertTrue((u.state as UpdateState.Failed).reason.contains("couldn't be asked"))
@@ -155,6 +159,7 @@ class UpdatesTest {
         val failed = u.state as UpdateState.Failed
         assertTrue(failed.reason, failed.reason.contains("The old runner is back; the app wasn't touched"))
         assertFalse("swap" in hands.did || "quit" in hands.did)
+        assertEquals("unhold", hands.did.last())
     }
 
     @Test fun theNewSomaSaysItUpdatedAndTheOldOnePutsTheRunnerBackAfterAFailedSwap() {
@@ -173,20 +178,42 @@ class UpdatesTest {
         val v = updater(again)
         v.reportAtStart()
         val failed = v.state as UpdateState.Failed
-        assertTrue(failed.reason, failed.reason.startsWith("the new Soma did not start") && failed.reason.endsWith("the old app is back.") && failed.kept == "85a29c49")
-        assertEquals(listOf("working []", "restore"), again.did)
+        assertTrue(failed.reason, failed.reason.startsWith("the new Soma did not start") && failed.reason.endsWith("the runner is back on 85a29c49 too.") && failed.kept == "85a29c49")
+        assertEquals(listOf("hold []", "restore", "unhold"), again.did)
+    }
+
+    @Test fun aRunnerAndAppLeftApartAreSaidAtStartAndTryAgainTakesTheBuild() {
+        val hands = Fake().apply { runner = "f0ed9535" }
+        val u = updater(hands)
+        u.reportAtStart()
+        val apart = u.state as UpdateState.Failed
+        assertTrue(apart.reason, apart.reason.contains("runner is on f0ed9535 and Soma on 85a29c49"))
+        assertNull(apart.release)
+        hands.releases = listOf(release())
+        u.check()
+        assertEquals(release(), (u.state as UpdateState.Failed).release)
+    }
+
+    @Test fun readingUpdatedHidesThePillButDidntUpdateStays() {
+        val u = updater(Fake())
+        u.forTest(UpdateState.Updated("f0ed9535"))
+        u.close()
+        assertEquals(UpdateState.None, u.state)
+        u.forTest(UpdateState.Failed("85a29c49", "x", "d", release()))
+        u.close()
+        assertTrue(u.state is UpdateState.Failed)
     }
 
     @Test fun theSwapHelperStartsTheNewJarAndKeepsTheOldOneWhenItDoesntStart() {
         val work = Files.createTempDirectory("soma-swap").toFile()
         val script = File(work, "swap.sh").apply { writeText(SWAP_SCRIPT) }
         // A "java" that, run with -jar NEW, says it started (as a new Soma's reportAtStart does) when its jar is the good one.
-        val java = File(work, "java").apply { writeText("#!/bin/sh\ncase \"\$2\" in *good*) echo f0ed9535 > \"${work.path}/started\";; esac\necho \"\$2\" >> \"${work.path}/ran\"\n"); setExecutable(true) }
+        val java = File(work, "java").apply { writeText("#!/bin/sh\necho \"\$2\" >> \"${work.path}/ran\"\ncase \"\$2\" in *good*) echo f0ed9535 > \"${work.path}/started\"; sleep 3;; esac\n"); setExecutable(true) }
         fun swap(newJar: String): JSONObject {
             File(work, "ran").delete()
             val gone = ProcessBuilder("true").start().apply { waitFor() }.pid().toString()  // a Soma that has quit already
             val p = ProcessBuilder("/bin/sh", script.path, "linux", gone, "${work.path}/old.jar", "${work.path}/$newJar", "f0ed9535", "85a29c49", work.path, java.path)
-                .apply { environment()["SOMA_SWAP_WAIT"] = "3" }.redirectErrorStream(true).start()
+                .apply { environment()["SOMA_SWAP_WAIT"] = "3"; environment()["SOMA_SWAP_STAY"] = "1" }.redirectErrorStream(true).start()
             assertTrue(p.waitFor(30, TimeUnit.SECONDS))
             Thread.sleep(500)
             return JSONObject(File(work, "result.json").readText())
@@ -204,7 +231,7 @@ class UpdatesTest {
     @Test fun thePillOpensWhatChangedAndLaterChangesNothing() = runComposeUiTest {
         val hands = Fake().apply { releases = listOf(release()) }
         val u = updater(hands).apply { check() }
-        setContent { Box(Modifier.size(520.dp, 520.dp)) { Column { Row { UpdatePill(u) }; UpdateSheet(u) } } }
+        setContent { Box(Modifier.size(520.dp, 520.dp)) { Column { Row { UpdatePill(u, withSheet = false) }; UpdateSheet(u) } } }
         onNodeWithText("update soma · f0ed9535", ignoreCase = true).performClick()
         onNodeWithText("Update Soma").assertExists()
         onNodeWithText("·  Enter sends on the Mac too").assertExists()
@@ -250,5 +277,5 @@ class UpdatesTest {
 private fun ShowState(u: Updater, state: UpdateState) {
     u.forTest(state)
     u.open = true
-    Column { Row { UpdatePill(u) }; UpdateSheet(u) }
+    Column { Row { UpdatePill(u, withSheet = false) }; UpdateSheet(u) }
 }

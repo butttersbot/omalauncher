@@ -52,10 +52,18 @@ class UpdateWalkTest {
         val macos = File(at, "Soma.app/Contents/MacOS").apply { mkdirs() }
         File(at, "Soma.app/Contents/Info.plist").writeText("""<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict>
             <key>CFBundleExecutable</key><string>Soma</string><key>CFBundleIdentifier</key><string>dev.omalauncher.soma.walk</string><key>CFBundlePackageType</key><string>APPL</string></dict></plist>""")
-        File(macos, "Soma").apply {
-            writeText("#!/bin/sh\necho $commit >> \"${said.path}/ran\"\n" + (if (starts) "echo $commit > \"${said.path}/soma-home/update/started\"\n" else "") + "exit 0\n")
-            setExecutable(true)
-        }
+        // Native, as the real launcher is, so the helper's exact process match (pgrep -fx) sees it as the real one.
+        val c = File(at, "soma.c")
+        c.writeText("""#include <stdio.h>
+#include <unistd.h>
+int main(void) {
+    FILE *f = fopen("${said.path}/ran", "a"); fprintf(f, "$commit\n"); fclose(f);
+    ${if (starts) """f = fopen("${said.path}/soma-home/update/started", "w"); fprintf(f, "$commit\n"); fclose(f); sleep(6);""" else ""}
+    return 0;
+}
+""")
+        sh("cc", "-o", File(macos, "Soma").path, c.path)
+        c.delete()
         sh("codesign", "--force", "-s", "-", File(at, "Soma.app").path)
     }
 
@@ -98,7 +106,7 @@ class UpdateWalkTest {
                 "OMA_RUNNER_WHOIS_FILE" to "${state.path}/whois.json", "OMA_RUNNER_PHONE" to "walk", "OMA_RUNNER_MAIL" to "${state.path}/mail",
                 "OMA_RUNNER_CODEX_DISCOVER" to "0", "OMA_RUNNER_CLAUDE_DISCOVER" to "0", "OMA_RUNNER_AGENT" to "$r/fake-agent", "OMA_RUNNER_CODEX" to "$r/fake-codex",
                 "OMA_RUNNER_CURSOR" to "$r/fake-cursor", "OMA_RUNNER_GROK" to "${state.path}/no-grok", "OMA_RUNNER_BOTS" to "${state.path}/bots",
-                "OMA_RUNNER_ARTIFACTS" to "${state.path}/artifacts", "OMA_RUNNER_PROJECTS" to "${state.path}/projects.json", "OMA_RUNNER_RELEASE" to release.path, "HOME" to state.path))
+                "OMA_RUNNER_ARTIFACTS" to "${state.path}/artifacts", "OMA_RUNNER_PROJECTS" to "${state.path}/projects.json", "OMA_RUNNER_RELEASE" to release.path, "OMA_RUNNER_SELF" to "walk", "HOME" to state.path))
         }.redirectErrorStream(true).start()
         try {
             runner.inputStream.bufferedReader().readLine()
@@ -119,12 +127,12 @@ class UpdateWalkTest {
                 }
                 override fun startSwap(release: Release): String? { did += "swap helper (run below)"; return null }
             }
-            val updater = Updater(hands, dir, SomaBuild("85a29c49", 1_000), "macos-arm64", "walk")
+            val updater = Updater(hands, dir, SomaBuild("85a29c49", 1_000), "macos-arm64", "walk", pause = {})
 
             // 3. The pill, his tap, what changed, his tap on update and restart; each card as it showed.
             runComposeUiTest {
                 updater.check()
-                setContent { Box(Modifier.size(560.dp, 440.dp).background(Pack.background).padding(12.dp)) { Column { Row { UpdatePill(updater) }; UpdateSheet(updater) } } }
+                setContent { Box(Modifier.size(560.dp, 440.dp).background(Pack.background).padding(12.dp)) { Column { Row { UpdatePill(updater, withSheet = false) }; UpdateSheet(updater) } } }
                 waitForIdle()
                 fun shot(name: String) = javax.imageio.ImageIO.write(onRoot().captureToImage().toAwtImage(), "png", File(out, "$name.png"))
                 shot("1-pill")
@@ -149,7 +157,7 @@ class UpdateWalkTest {
             fun helper(newApp: File): JSONObject {
                 File(dir, "result.json").delete()
                 val p = ProcessBuilder("/bin/sh", File(dir, "swap.sh").apply { writeText(SWAP_SCRIPT) }.path, "mac", gone, File(old, "Soma.app").path, newApp.path, commit, "85a29c49", dir.path)
-                    .apply { environment()["SOMA_SWAP_WAIT"] = "8"; environment()["HOME"] = work.path }.redirectErrorStream(true).start()
+                    .apply { environment()["SOMA_SWAP_WAIT"] = "8"; environment()["SOMA_SWAP_STAY"] = "2"; environment()["HOME"] = work.path }.redirectErrorStream(true).start()
                 note("helper: " + p.inputStream.bufferedReader().readText().trim().replace("\n", " | "))
                 p.waitFor(60, TimeUnit.SECONDS)
                 return JSONObject(File(dir, "result.json").readText())
@@ -160,6 +168,7 @@ class UpdateWalkTest {
             assertTrue(File(old, "Soma.app.prev").isDirectory)
             assertEquals(commit, File(work, "ran").readLines().last())
 
+            Thread.sleep(7_000)  // the stand-in that started ends first (open would only bring a running one forward)
             // And a new app that doesn't start: the old one is put back and started, and the result says why.
             val broken = File(work, "broken").apply { mkdirs() }
             fakeApp(broken, "deadbeef", starts = false, said = work)
@@ -167,20 +176,21 @@ class UpdateWalkTest {
             note("helper result (doesn't start): $bad")
             assertTrue(!bad.getBoolean("ok") && bad.getString("step") == "start")
             Thread.sleep(3_000)  // open returns before the app runs
+            ProcessBuilder("pkill", "-f", File(old, "Soma.app").path).start().waitFor()
             note("ran, in order: ${File(work, "ran").readLines()}")
             assertEquals(listOf(commit, "deadbeef", commit), File(work, "ran").readLines())
 
             // 5. The old Soma, started again, reads the failure: shown to him, and the runner put back (recorded here).
             val back = mutableListOf<String>()
             val after = Updater(object : UpdateHands by hands {
-                override fun working(): List<String>? = emptyList()
+                override fun hold(): List<String>? = emptyList()
                 override fun restoreRunner(): String? { back += "runner put back (recorded)"; return null }
-            }, dir, SomaBuild("85a29c49", 1_000), "macos-arm64", "walk")
+            }, dir, SomaBuild("85a29c49", 1_000), "macos-arm64", "walk", pause = {})
             after.reportAtStart()
             note("old Soma at start: ${after.state.let { (it as? UpdateState.Failed)?.reason ?: it.toString() }}; $back")
             runComposeUiTest {
                 after.open = true
-                setContent { Box(Modifier.size(560.dp, 300.dp).background(Pack.background).padding(12.dp)) { Column { Row { UpdatePill(after) }; UpdateSheet(after) } } }
+                setContent { Box(Modifier.size(560.dp, 300.dp).background(Pack.background).padding(12.dp)) { Column { Row { UpdatePill(after, withSheet = false) }; UpdateSheet(after) } } }
                 waitForIdle()
                 javax.imageio.ImageIO.write(onRoot().captureToImage().toAwtImage(), "png", File(out, "4-didnt-update.png"))
             }
