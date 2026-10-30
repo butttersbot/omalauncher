@@ -188,7 +188,7 @@ class Runtime(
     }
     private val connectionsMonitor by lazy { dev.omalauncher.connections.ConnectionsMonitor(context.applicationContext, this) }
     /** The update pill's feed (cards soma-chat/Updates). */
-    val updates by lazy { dev.omalauncher.update.PhoneUpdater(context.applicationContext) }
+    val phoneUpdates by lazy { dev.omalauncher.update.PhoneUpdater(context.applicationContext) }
 
     /** The Linux install and removal; one at a time. */
     private var linuxJob: Job? = null
@@ -240,7 +240,7 @@ class Runtime(
         started = true
         phoneRunner.start()
         connectionsMonitor.start()
-        updates.start()
+        phoneUpdates.start()
         // Phone control switched off by a force-stop or an update, while he wanted it on, is put back: off this thread.
         dev.omalauncher.phone.PhoneControlHeal.atStart(context)
         // Wireless debugging, which Android turns off at every restart and Wi-Fi drop, is put back on.

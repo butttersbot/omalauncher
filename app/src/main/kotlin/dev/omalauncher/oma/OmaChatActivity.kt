@@ -65,7 +65,7 @@ class OmaChatActivity : ComponentActivity() {
         setContent {
             LaunchedEffect(Pack.isLight) { applySystemBars(this@OmaChatActivity, Pack.isLight) }
             // The update pill before [ artifacts · N ] (cards soma-chat/Updates), as on the desktop.
-            androidx.compose.runtime.CompositionLocalProvider(LocalTopBarExtra provides { dev.omalauncher.updates.PhoneUpdatePill(runtime.updates.model) }) {
+            androidx.compose.runtime.CompositionLocalProvider(LocalTopBarExtra provides { dev.omalauncher.updates.PhoneUpdatePill(runtime.phoneUpdates.model) }) {
                 OmaChatScreen(host, prefill, onPrefilled = { prefill = null }, wanted = wanted, onTab = { wanted = it.takeIf { tab -> tab != OMA_TAB } }, wantedQuestion = wantedQuestion, onQuestionOpened = { wantedQuestion = null; intent.removeExtra(EXTRA_QUESTION) })
             }
         }
