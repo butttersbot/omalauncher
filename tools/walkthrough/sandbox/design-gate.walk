@@ -1,0 +1,9 @@
+# canvas-app: design-gate-sandbox
+# The design gate walked against the SCRATCH Canvas only (taebc3f66, 2026-10-29): CANVAS_URL=http://100.120.219.46:5872,
+# app design-gate-sandbox, page Drift. Never Boss's board: this lives outside scripts/ so no build ever walks it.
+# sandbox-drift is Approved as a plain "Sandbox status" card, so any real screen shot against it drifts (DESIGN FAIL);
+# sandbox-unapproved has only Proposed (DESIGN UNAPPROVED, not blocking).
+fold folded
+launch dev.omalauncher.boss/dev.omalauncher.MainActivity
+shot soma-home card=sandbox-drift
+shot soma-home-again card=sandbox-unapproved
