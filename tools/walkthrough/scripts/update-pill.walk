@@ -37,7 +37,7 @@ log fixture update cancel
 expect update and restart Soma
 key BACK
 wait 1500
-absent What changed
+absent Updated by themselves
 expect Update Soma · 176
 shell am force-stop dev.omalauncher.artifactpreview
 shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es updates updating
@@ -53,7 +53,7 @@ expect Soma 176 is running. 6 phone checks wait for us
 shot update-state-updated-cover
 tap later
 wait 1500
-absent What changed
+absent Updated by themselves
 absent updated
 shell am force-stop dev.omalauncher.artifactpreview
 shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es updates failed
