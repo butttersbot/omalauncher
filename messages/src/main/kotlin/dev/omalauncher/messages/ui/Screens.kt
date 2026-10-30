@@ -372,6 +372,9 @@ fun Thread(
     revealTarget: String? = null,
     onJumpHandled: () -> Unit = {},
     contextView: Boolean = false,
+    matchTarget: String? = null,
+    onContextEdge: ((Int) -> Unit)? = null,
+    navigation: (@Composable () -> Unit)? = null,
     onSent: () -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -458,6 +461,12 @@ fun Thread(
             val index = c.messages.indexOfFirst { it.id?.removeSuffix("#a") == revealTarget.removeSuffix("#a") }
             if (index >= 0) { latest = false; list.scrollToItem(index); onJumpHandled() }
         }
+    }
+    val edgeCallback by rememberUpdatedState(onContextEdge)
+    LaunchedEffect(list, contextView) {
+        if (contextView) snapshotFlow {
+            if (!list.isScrollInProgress) 0 else if (!list.canScrollBackward) -1 else if (!list.canScrollForward) 1 else 0
+        }.collect { edge -> if (edge != 0) edgeCallback?.invoke(edge) }
     }
     val currentSize by rememberUpdatedState(size)
     val currentMessages by rememberUpdatedState(c.messages)
@@ -576,25 +585,11 @@ fun Thread(
             if (uris.isNotEmpty()) pending.photos[c.id] = (pending.photos[c.id].orEmpty() + uris).distinct().take(MAX_PHOTOS)
         }
     Column(modifier) {
-        Row(Modifier.fillMaxWidth().height(58.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (onBack != null) {
-                Box(
-                    Modifier.size(44.dp).clip(CircleShape).semantics { contentDescription = if (focused) "Back to conversation" else "Back to conversations"; role = Role.Button }.clickable(onClick = onBack),
-                    contentAlignment = Alignment.Center,
-                ) { BasicText("‹", style = Pack.body(30.sp)) }
-            }
-            Avatar(c.title, 32)
-            Spacer(Modifier.size(10.dp))
-            Column(Modifier.weight(1f)) {
-                BasicText(c.title, style = Pack.body(Pack.size.item).copy(fontWeight = FontWeight.SemiBold), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                BasicText(Pack.caption(if (contextView) "Search context" else if (focused) "Replies" else if (Messages.linked) "iMessage · from your Mac" else "iMessage · through OpenBubbles"), style = Pack.mono(Pack.size.small, Pack.muted))
-            }
-            if (!focused && Messages.linked) TextButton("Search", filled = false) {
-                pauseVoice(); restoreIME = imeOpen
-                parentFollow = latest; parentCount = c.messages.size; latest = false
-                keyboard?.hide(); searching = true
-            }
-        }
+        ConversationHeader(c, onBack, focused, contextView, if (!focused && Messages.linked) ({
+            pauseVoice(); restoreIME = imeOpen
+            parentFollow = latest; parentCount = c.messages.size; latest = false
+            keyboard?.hide(); searching = true
+        }) else null)
         Box(Modifier.weight(1f).fillMaxWidth()) {
             // Room under the last message for the Latest pill, so it never covers the end of its words (the 0.7.6 walk),
             // but only while the pill is there: kept always, it left a strip of empty paper between the last message and
@@ -646,6 +641,7 @@ fun Thread(
                         val bare = part is Part.Attachment && m.files.any { visual(it) }
                         Balloon(
                             m,
+                            highlighted = m.id?.removeSuffix("#a") == matchTarget?.removeSuffix("#a") && matchTarget != null,
                             tail = tail && j == parts.lastIndex && !bare,
                             bare = bare,
                             timeOffset = { timeReveal },
@@ -805,6 +801,7 @@ fun Thread(
         // The first address in the words gets a preview tile, unless its tile was closed.
         val link = Parts.links(draft.text).firstOrNull { it !in pending.unlinked[c.id].orEmpty() }
         LaunchedEffect(link) { delay(300); link?.let { MacLink.preview(Parts.openable(it)) } }
+        navigation?.invoke()
         SomaComposer(
             draft,
             // Voice messages go through the Mac only: OpenBubbles' share sheet can't send one as a voice message.
@@ -1503,10 +1500,10 @@ private fun HoldMenu(
                 }
             }
         }
-        FlowRow(Modifier.widthIn(max = 360.dp).clip(shape).background(Pack.background, shape).border(2.dp, Pack.foreground, shape).padding(4.dp), horizontalArrangement = Arrangement.Center) {
+        Column(Modifier.width(300.dp).clip(shape).background(Pack.background, shape).border(2.dp, Pack.foreground, shape).padding(4.dp)) {
             // Remove only for a hand-off the owner didn't finish in OpenBubbles: nothing sent is ever taken back from here.
             (listOf("Reply" to onReply, "Copy" to onCopy) + listOfNotNull(onThread?.let { "Show replies" to it }, onEdit?.let { "Edit" to it }, onUnsend?.let { "Undo Send" to it }, onRemove?.let { "Remove" to it })).forEach { (label, act) ->
-                Box(Modifier.semantics { role = Role.Button }.clickable(onClick = act).padding(horizontal = 18.dp, vertical = 12.dp)) {
+                Box(Modifier.fillMaxWidth().semantics { role = Role.Button }.clickable(onClick = act).padding(horizontal = 18.dp, vertical = 12.dp)) {
                     BasicText(label, style = Pack.body(Pack.size.item).copy(fontWeight = FontWeight.SemiBold))
                 }
             }
@@ -1570,6 +1567,7 @@ private fun Balloon(
     m: Message,
     tail: Boolean,
     bare: Boolean = false,
+    highlighted: Boolean = false,
     flush: Boolean = false,
     timeOffset: () -> Float = { 0f },
     showTime: Boolean = true,
@@ -1599,7 +1597,7 @@ private fun Balloon(
     val shape = if (m.fromMe) RoundedCornerShape(corner, corner, tip, corner) else RoundedCornerShape(corner, corner, corner, tip)
     val fill = if (m.fromMe) Pack.foreground else if (inked) Pack.background else Pack.surface
     val ink = if (m.fromMe) Pack.background else Pack.foreground
-    val line = Pack.foreground
+    val line = if (highlighted) Pack.accent else Pack.foreground
     // Only the balloon itself takes the reply drag; a drag anywhere else in the conversation is the way back.
     val replyDrag = Modifier.onGloballyPositioned { rootLeft = it.boundsInRoot().left }
         .messageDrag(m.renderKey, { rootLeft }, with(density) { 24.dp.toPx() }, delta = { times, dx ->
@@ -1653,7 +1651,7 @@ private fun Balloon(
                         } else {
                             Modifier.clip(shape)
                                 .background(fill, shape)
-                                .then(if (!m.fromMe && inked) Modifier.border(2.dp, line, shape) else Modifier)
+                                .then(if (highlighted || (!m.fromMe && inked)) Modifier.border(if (highlighted) 3.dp else 2.dp, line, shape) else Modifier)
                                 .padding(horizontal = if (flush) 0.dp else 13.dp, vertical = if (flush) 0.dp else 8.dp)
                         },
                     ),
@@ -1704,3 +1702,22 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.tail(
 
 /** How long an error is said under a conversation before it goes by itself. */
 private const val NOTICE_MS = 8_000L
+
+@Composable internal fun ConversationHeader(c: Conversation, onBack: (() -> Unit)?, focused: Boolean = true,
+                                           contextView: Boolean = false, onSearch: (() -> Unit)? = null) {
+    Row(Modifier.fillMaxWidth().height(58.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (onBack != null) {
+                Box(
+                    Modifier.size(44.dp).clip(CircleShape).semantics { contentDescription = if (focused) "Back to conversation" else "Back to conversations"; role = Role.Button }.clickable(onClick = onBack),
+                    contentAlignment = Alignment.Center,
+                ) { BasicText("‹", style = Pack.body(30.sp)) }
+            }
+            Avatar(c.title, 32)
+            Spacer(Modifier.size(10.dp))
+            Column(Modifier.weight(1f)) {
+                BasicText(c.title, style = Pack.body(Pack.size.item).copy(fontWeight = FontWeight.SemiBold), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                BasicText(Pack.caption(if (contextView) "Search context" else if (focused) "Replies" else if (Messages.linked) "iMessage · from your Mac" else "iMessage · through OpenBubbles"), style = Pack.mono(Pack.size.small, Pack.muted))
+            }
+            if (onSearch != null) TextButton("Search", filled = false, onClick = onSearch)
+        }
+}

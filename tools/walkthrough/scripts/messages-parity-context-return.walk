@@ -26,7 +26,11 @@ expect Search context
 expect Long #29
 absent Latest
 shot search-context-cover card=messages-parity-search-context
-tap Earlier context
+# Context loads from a reader scroll at the edge; no paging-button stack.
+swipe 0.5 0.4 0.5 0.85 700
+swipe 0.5 0.4 0.5 0.85 700
+swipe 0.5 0.4 0.5 0.85 700
+wait 1200
 expect Long #29
 absent 1 new
 absent Latest

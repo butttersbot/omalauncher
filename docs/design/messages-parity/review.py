@@ -16,6 +16,7 @@ p.add_argument('manifest', type=Path)
 p.add_argument('--evidence', type=Path, required=True)
 p.add_argument('--out', type=Path, required=True)
 p.add_argument('--group', type=int, default=2)
+p.add_argument('--revision', type=int, default=1)
 p.add_argument('--title', default='Soma Messages: gestures and response')
 p.add_argument('--limits')
 a = p.parse_args()
@@ -57,7 +58,7 @@ if(c.clip){const v=document.createElement('video');v.controls=true;v.playsInline
 nav.querySelectorAll('button').forEach((b,j)=>b.setAttribute('aria-current',String(i===j)));select.value=String(i);}
 cards.forEach((c,i)=>{const b=document.createElement('button');b.textContent=c.title;b.onclick=()=>show(i);nav.append(b);const o=document.createElement('option');o.value=i;o.textContent=(i+1)+' / '+cards.length+' · '+c.title;select.append(o)});select.onchange=()=>show(Number(select.value));show(0);</script></html>'''
 a.out.parent.mkdir(parents=True, exist_ok=True)
-html = html.replace('group 2 review', f'group {a.group} review').replace('PARITY-G2-V1', f'PARITY-G{a.group}-V1').replace('Soma Messages: gestures and response', html_std.escape(a.title))
+html = html.replace('group 2 review', f'group {a.group} review').replace('PARITY-G2-V1', f'PARITY-G{a.group}-V{a.revision}').replace('Soma Messages: gestures and response', html_std.escape(a.title))
 if a.limits:
     start = html.index('<details class="note">')
     end = html.index('</details>', start) + len('</details>')

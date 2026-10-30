@@ -48,7 +48,11 @@ expect Long #28
 shot next-match
 tap Previous match
 expect Long #29
-tap Earlier context
+# Context loads from a reader scroll at the edge; no paging-button stack.
+swipe 0.5 0.4 0.5 0.85 700
+swipe 0.5 0.4 0.5 0.85 700
+swipe 0.5 0.4 0.5 0.85 700
+wait 1200
 wait 1000
 expect Long #29
 shot earlier-context

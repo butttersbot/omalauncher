@@ -1,0 +1,135 @@
+# canvas-app: soma-messages
+# Own ephemeral DEMO only; harness injects URL/token.
+shell cmd statusbar collapse
+key HOME
+shell cmd device_state state 0
+shell pm clear dev.omalauncher.messages
+shell pm grant dev.omalauncher.messages android.permission.READ_CONTACTS
+shell pm grant dev.omalauncher.messages android.permission.POST_NOTIFICATIONS
+shell pm grant dev.omalauncher.messages android.permission.RECORD_AUDIO
+shell am start -a android.intent.action.VIEW -d "'soma-messages://link?url=http%3A%2F%2F127.0.0.1%3A1&token=INJECT_EPHEMERAL_DEMO_TOKEN'" dev.omalauncher.messages
+wait 2500
+expect Get your iMessages from 100.120.219.46?
+tap Link
+wait 5000
+expect Ana Demo
+tap Ana Demo
+tap Message
+type Dinner at seven.
+key ENTER
+wait 3000
+closeime
+expectexact Dinner at seven.
+hold Dinner at seven.
+expect Undo Send
+shot eligible-message-actions card=messages-parity-edit-actions
+tap Edit
+replace "Edit message" Dinner at eight.
+expectexact Dinner at eight.
+shot inline-edit card=messages-parity-inline-edit
+tap Save edit
+expect Injected DEMO edit refusal
+expectexact Dinner at eight.
+shot edit-failed-draft-kept card=messages-parity-edit-recovery
+tap Save edit
+expect Edited
+closeime
+expectexact Dinner at eight.
+shot edit-retry-confirmed
+tap Edit history for: Dinner at eight.
+expect Edit history
+expectexact Dinner at seven.
+expectexact Dinner at eight.
+shot clean-edit-history card=messages-parity-edit-history
+tap Done
+key BACK
+expect Messages
+tap Long thread
+tap Open reply context
+expect Injected DEMO replies refusal
+expect Back to conversation
+shot thread-load-failed card=messages-parity-thread-recovery
+tap Retry
+expect Replies
+expect Long #5
+shot thread-retry-confirmed
+key BACK
+expect Long #120
+tap Message
+type Parent draft stays here.
+closeime
+tap Search
+expect Find
+tap Search in conversation
+type Long #2
+keyboard shown
+shot keyboard-search-key
+# Tap the native IME Search key on the cover display.
+tap 0.94 0.90
+expect Injected DEMO search refusal
+expect Done searching
+keyboard hidden
+shot search-failed card=messages-parity-search-recovery
+tap Retry
+expect 11 results
+keyboard hidden
+shot search-results card=messages-parity-conversation-search
+tap Long #29
+expect Search context
+expect 1 of 11
+expect Long #29
+absent Earlier context
+absent Later context
+absent Latest
+shot search-context card=messages-parity-search-context
+tap Next match
+expect 2 of 11
+expect Long #28
+tap Previous match
+expect 1 of 11
+expect Long #29
+# Scroll past the initial window's last message (49); this proves newer context loads without buttons.
+scrollto Long #65
+expect Long #65
+absent Latest
+shot context-scroll-newer
+tap Next match
+expect 2 of 11
+tap Previous match
+expect 1 of 11
+# Scroll upward through the private window; reaching the edge loads earlier context.
+swipe 0.5 0.4 0.5 0.85 700
+swipe 0.5 0.4 0.5 0.85 700
+swipe 0.5 0.4 0.5 0.85 700
+wait 1800
+shot context-scroll-paging
+absent Latest
+tap Results
+expect 11 results
+tap Clear search
+expect Search messages
+absent 11 results
+tap Search in conversation
+type No matching dinner here
+tap Find
+expect No results
+shot search-empty card=messages-parity-search-empty
+tap Clear search
+tap Search in conversation
+type Long #2
+tap Find
+expect 11 results
+shell cmd device_state state 2
+wait 2500
+# Changing workspace size currently closes the modal; reopen the settled unfolded search explicitly.
+expect Parent draft stays here.
+tap Search
+tap Search in conversation
+type Long #2
+tap Find
+expect 11 results
+expect Clear search
+shot search-unfolded card=messages-parity-conversation-search-unfolded
+tap Done searching
+expect Parent draft stays here.
+shot parent-draft-restored

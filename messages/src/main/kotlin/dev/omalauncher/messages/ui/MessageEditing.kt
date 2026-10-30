@@ -1,6 +1,9 @@
 package dev.omalauncher.messages.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -14,6 +17,8 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -43,20 +48,20 @@ import kotlinx.coroutines.delay
     val canSave = available && current!!.changes.canEdit(now) && pending == null &&
         draft.text.isNotBlank() && draft.text.trim() != current.text
     Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalAlignment = Alignment.End) {
-        Column(Modifier.widthIn(min = 220.dp, max = 300.dp).background(Pack.foreground, composerShape(20.dp)).padding(horizontal = 13.dp, vertical = 8.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f, fill = false).widthIn(min = 150.dp, max = 300.dp).background(Pack.foreground, RoundedCornerShape(20.dp, 20.dp, 5.dp, 20.dp)).padding(horizontal = 13.dp, vertical = 8.dp)) {
             BasicTextField(draft.text, { draft.text = it }, Modifier.fillMaxWidth().focusRequester(focus)
                 .semantics { contentDescription = "Edit message" }, enabled = pending == null, maxLines = 5,
                 textStyle = Pack.body(Pack.size.item, Pack.background), cursorBrush = SolidColor(Pack.background))
+        }
+        EditCircle("×", if (pending == null) "Cancel edit" else "Close edit", true, onCancel)
+        EditCircle("✓", "Save edit", canSave) { onSave(draft.text.trim()) }
         }
         if (!available) BasicText("Message unavailable. Your edit is still here.", Modifier.padding(top = 6.dp), style = Pack.body(Pack.size.small, Pack.accent))
         else if (!current!!.changes.canEdit(now) && pending == null) BasicText("This message can no longer be edited.", Modifier.padding(top = 6.dp), style = Pack.body(Pack.size.small, Pack.muted))
         draft.error?.let { BasicText(it, Modifier.padding(top = 6.dp), style = Pack.body(Pack.size.small, Pack.accent)) }
         if (pending != null) BasicText(if (pending.accepted) "Edit requested · waiting for update" else "Saving…", Modifier.padding(top = 6.dp), style = Pack.body(Pack.size.small, Pack.muted))
-        Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButton(if (pending == null) "Cancel edit" else "Close edit", filled = false, onClick = onCancel)
-            if (pending?.accepted == true) TextButton("Reload message", filled = false, onClick = onReload)
-            else TextButton("Save edit", filled = true, enabled = canSave) { onSave(draft.text.trim()) }
-        }
+        if (pending?.accepted == true) TextButton("Reload message", filled = false, onClick = onReload)
     }
 }
 
@@ -76,5 +81,13 @@ import kotlinx.coroutines.delay
             BasicText(message.text, style = Pack.body(Pack.size.body))
             TextButton("Done", filled = false, onClick = onDismiss)
         }
+    }
+}
+
+@Composable private fun EditCircle(glyph: String, label: String, enabled: Boolean, onClick: () -> Unit) {
+    Box(Modifier.size(44.dp).semantics { contentDescription = label; role = Role.Button }
+        .clickable(enabled = enabled, onClick = onClick).padding(5.dp)
+        .background(if (enabled) Pack.foreground else Pack.muted, CircleShape), contentAlignment = Alignment.Center) {
+        BasicText(glyph, style = Pack.body(Pack.size.item, Pack.background))
     }
 }

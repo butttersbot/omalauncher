@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import dev.omalauncher.messages.engine.*
@@ -65,15 +66,17 @@ import kotlinx.coroutines.launch
     MessageOverlay(onDismiss, dismissOnOutside = false) {
         Column(Modifier.fillMaxSize().background(Pack.paper).windowInsetsPadding(WindowInsets.safeDrawing)) {
             val current = slice
-            if (loading) BasicText("Loading replies…", Modifier.padding(14.dp), style = Pack.body(Pack.size.small, Pack.muted))
-            error?.let { text ->
-                BasicText(text, Modifier.padding(14.dp), style = Pack.body(Pack.size.body, Pack.accent))
-                Row(Modifier.padding(horizontal = 14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    TextButton("Retry", filled = false) { load() }
-                    if (current == null) TextButton("Back to conversation", filled = false, onClick = onDismiss)
+            if (current == null || error != null) {
+                ConversationHeader(book, onDismiss)
+                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        BasicText(error ?: "Loading replies…", style = Pack.body(Pack.size.body, if (error != null) Pack.accent else Pack.muted))
+                        if (error != null) TextButton("Retry", filled = false) { load() }
+                    }
                 }
             }
-            if (current != null) key(current.rootId) {
+            if (current != null && error == null) key(current.rootId) {
                 val storage = Replies.draftKey(book.id, current.rootId)
                 val draft = remember(storage) { ComposerState(Desk[storage].draft) }
                 val pending = remember(storage) {

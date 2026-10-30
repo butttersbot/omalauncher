@@ -3,89 +3,103 @@
     "id": "messages-parity-thread-context",
     "title": "Focused replies",
     "description": "Tap a quoted reply or Show replies to open its native thread, including ancestors outside the cached timeline and nested replies. The parent stays mounted. Loading, partial and unavailable context are explicit; no original message is invented.",
-    "image": "group3-search/context-final/walk/13-expect.png"
+    "image": "group3-search/context-final/walk/13-expect.png",
+    "revision": "parity-g3-v1 (unchanged)"
   },
   {
     "id": "messages-parity-thread-draft",
     "title": "Separate reply draft",
     "description": "A focused thread keeps its own draft and exact reply target. Returning preserves the parent draft and reading place; reopening restores the thread draft. Text, photos and voice use the same native target.",
-    "image": "group3-search/context-final/walk/27-focused-thread-context.png"
+    "image": "group3-search/context-final/walk/27-focused-thread-context.png",
+    "revision": "parity-g3-v1 (unchanged)"
   },
   {
     "id": "messages-parity-thread-recovery",
     "title": "Replies: failure and retry",
-    "description": "A failed thread request stays in the child view with Retry and Back to conversation. A successful retry restores actual context. These captures deliberately inject one refusal into the isolated DEMO.",
-    "image": "group3-search/recovery-reads/walk/22-thread-load-failed.png",
-    "after": "group3-search/recovery-reads/walk/26-thread-retry-confirmed.png"
+    "description": "Keep the normal conversation header and back control above a centered error and Retry. A successful retry restores the actual thread; the isolated DEMO deliberately refuses the first request.",
+    "image": "group3-v2/review-final/walk/49-thread-load-failed.png",
+    "after": "group3-v2/review-final/walk/53-thread-retry-confirmed.png",
+    "revision": "parity-g3-v2"
   },
   {
     "id": "messages-parity-edit-actions",
     "title": "Eligible message actions",
-    "description": "Edit and Undo Send appear only for your server-qualified iMessages within their allowed time and edit count. Expired or unverifiable actions are hidden. The menu wraps on the cover.",
-    "image": "group3-search/recovery-final/walk/26-eligible-message-actions.png"
+    "description": "A vertical action list sits below the reaction bar; no wrapped action grid. Edit and Undo Send still require server-qualified own iMessages within their allowed time and edit count.",
+    "image": "group3-v2/review-final/walk/23-eligible-message-actions.png",
+    "revision": "parity-g3-v2"
   },
   {
     "id": "messages-parity-inline-edit",
     "title": "Edit a bubble",
-    "description": "Edit the selected message inline, with Save and Cancel. The unsent conversation draft stays independent. The original bubble changes after a confirming server update, rather than treating transport acceptance as delivery.",
-    "image": "group3-search/recovery-final/walk/29-inline-edit.png"
+    "description": "Edit in a bubble with the sent bubble’s round corners and small circular cancel/confirm controls beside it. The parent composer draft remains independent; a real confirming update applies the edit.",
+    "image": "group3-v2/review-final/walk/27-inline-edit.png",
+    "revision": "parity-g3-v2"
   },
   {
     "id": "messages-parity-edit-history",
     "title": "Available edit history",
-    "description": "Tap Edited to review available earlier versions and the current text. A partial-history notice identifies missing versions; unavailable text is never invented. Five edits and restart persistence were also exercised in a separate native DEMO walk.",
-    "image": "group3-search/recovery-final/walk/43-latest-edit-history.png"
+    "description": "The existing edit-history sheet, recaptured with clean synthetic wording: “Coffee at nine.” becomes “Coffee at ten.” Missing versions remain explicit; no history is invented.",
+    "image": "group3-v2/review-final/walk/41-clean-edit-history.png",
+    "revision": "parity-g3-v2"
   },
   {
     "id": "messages-parity-edit-recovery",
     "title": "Edit: keep the rejected draft",
-    "description": "If the Mac refuses a change, keep the typed edit and old sent bubble. Show one persistent inline error, then let the owner retry or cancel. This DEMO retry is checked against exact server text and edit count.",
-    "image": "group3-search/recovery-final/walk/33-edit-failed-draft-kept.png",
-    "after": "group3-search/recovery-final/walk/38-edit-retry-confirmed.png"
+    "description": "A refusal keeps the exact clean edit draft and circular controls with one inline error. Retry changes the server text exactly once and retains the original version.",
+    "image": "group3-v2/review-final/walk/31-edit-failed-draft-kept.png",
+    "after": "group3-v2/review-final/walk/36-edit-retry-confirmed.png",
+    "revision": "parity-g3-v2"
   },
   {
     "id": "messages-parity-unsent-notice",
     "title": "Undo Send notice",
     "description": "A confirmed unsent fact replaces that message with a notice and clears its cached text, media, reactions and quoted content. A stale history page cannot resurrect it. Existing ordinary deletion remains separate. Recipient behavior is not established by this DEMO.",
-    "image": "group3-search/recovery-final/walk/54-latest-unsent-notice.png"
+    "image": "group3-search/recovery-final/walk/54-latest-unsent-notice.png",
+    "revision": "parity-g3-v1 (unchanged)"
   },
   {
     "id": "messages-parity-conversation-search",
     "title": "Search the full conversation",
-    "description": "Find messages through the Mac’s full-history search, including outside the first 50 cached messages. Highlight matching snippet text; show More results while a server scan is incomplete. Find dismisses the keyboard.",
-    "image": "group3-search/fixed/walk/15-server-search-results.png"
+    "description": "One top bar provides back, search field with inline clear, and Find, with 8dp gaps. The native keyboard Search key also runs the query. Full-history result rows and matching-text highlights are retained.",
+    "image": "group3-v2/review-final/walk/73-search-results.png",
+    "revision": "parity-g3-v2"
   },
   {
     "id": "messages-parity-search-context",
     "title": "Open an exact match",
-    "description": "Open a result at its exact native message ID with surrounding context. Previous/next matches and Earlier/Later context preserve the search. Returning keeps the parent draft and reading place. Context paging does not count as a new arrival or splice a gap into the main timeline.",
-    "image": "group3-search/cover-ready/walk/22-search-context-cover.png"
+    "description": "The normal conversation header stays at the top. An accent outline highlights the matched bubble; timestamp separators are retained. Match chevrons and “1 of 11” sit in a bottom bar above the composer. Scrolling loads older/newer context without paging buttons or false new-arrival pills.",
+    "image": "group3-v2/review-final/walk/81-search-context.png",
+    "revision": "parity-g3-v2"
   },
   {
     "id": "messages-parity-search-empty",
     "title": "No results and clear",
-    "description": "Only a completed server scan can say No results. Clear returns to the initial search field; empty partial scans retain a More results action. Unicode-safe snippets and an emoji/accented-text result are checked separately.",
-    "image": "group3-search/fixed/walk/55-search-no-results.png"
+    "description": "A completed scan can report no results. The same single search bar retains its inline clear; clearing resets the results. Incomplete scans still offer More results.",
+    "image": "group3-v2/review-final/walk/111-search-empty.png",
+    "revision": "parity-g3-v2"
   },
   {
     "id": "messages-parity-search-recovery",
     "title": "Search: failure and retry",
-    "description": "A refused search keeps the query, shows Retry and offers Done searching. Retrying fetches actual server results. Neither failure nor successful retry consumes the parent draft.",
-    "image": "group3-search/recovery-reads/walk/38-search-failed.png",
-    "after": "group3-search/recovery-reads/walk/42-search-retry-confirmed.png"
+    "description": "Keep the search bar/back and conversation scope above a centered error and Retry. The query and parent draft survive refusal and successful retry.",
+    "image": "group3-v2/review-final/walk/69-search-failed.png",
+    "after": "group3-v2/review-final/walk/73-search-results.png",
+    "revision": "parity-g3-v2"
   },
   {
     "id": "messages-parity-conversation-search-unfolded",
     "title": "Search · unfolded",
-    "description": "The unfolded size of the same full-history search. This is the existing conversation’s search flow, not another feature or a separate preference state.",
-    "image": "group3-search/unfolded-selected/walk/14-search-unfolded.png",
-    "frame": "unfolded"
+    "description": "The same revised single search bar at the unfolded size. Captured after explicitly reopening search in the settled workspace; this is not evidence of uninterrupted modal retention during folding.",
+    "image": "group3-v2/review-final/walk/126-search-unfolded.png",
+    "frame": "unfolded",
+    "revision": "parity-g3-v2"
   },
   {
     "id": "messages-parity-thread-context-unfolded",
     "title": "Replies · unfolded",
     "description": "The unfolded size of the same focused Replies pane and its separate saved draft. Returning restores the existing conversation workspace and Shared pane.",
     "image": "group3-search/unfolded-selected/walk/25-replies-unfolded.png",
-    "frame": "unfolded"
+    "frame": "unfolded",
+    "revision": "parity-g3-v1 (unchanged)"
   }
 ]

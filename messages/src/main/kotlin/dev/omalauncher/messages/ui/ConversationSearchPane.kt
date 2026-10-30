@@ -7,6 +7,12 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -95,36 +101,44 @@ import java.util.Date
     MessageOverlay(::back, dismissOnOutside = false) {
         val focus = androidx.compose.ui.platform.LocalFocusManager.current
         Column(Modifier.fillMaxSize().background(Pack.paper).windowInsetsPadding(WindowInsets.safeDrawing)) {
-            Row(Modifier.fillMaxWidth().padding(10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(if (selection == null) "Done searching" else "Results", filled = false, onClick = ::back)
-                if (selection == null) BasicText(book.title, Modifier.weight(1f).padding(top = 10.dp), style = Pack.body(Pack.size.item))
-            }
             if (selection == null) {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    BasicTextField(query, { query = it.takeCodePoints(512) }, Modifier.weight(1f).border(1.dp, Pack.foreground).padding(10.dp)
+                Row(Modifier.fillMaxWidth().padding(10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(44.dp).semantics { contentDescription = "Done searching"; role = Role.Button }.clickable { back() }, contentAlignment = Alignment.Center) {
+                        BasicText("‹", style = Pack.body(Pack.size.title))
+                    }
+                    BasicTextField(query, { query = it.takeCodePoints(512) }, Modifier.weight(1f).border(1.dp, Pack.foreground).padding(start = 10.dp)
                         .semantics { contentDescription = "Search in conversation" }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(onSearch = { focus.clearFocus(); runSearch() }),
                         textStyle = Pack.body(Pack.size.body), cursorBrush = SolidColor(Pack.foreground),
-                        decorationBox = { inner -> if (query.isEmpty()) BasicText("Search messages", style = Pack.body(Pack.size.body, Pack.muted)); inner() })
+                        decorationBox = { inner ->
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(Modifier.weight(1f).padding(vertical = 10.dp)) {
+                                    if (query.isEmpty()) BasicText("Search messages", style = Pack.body(Pack.size.body, Pack.muted))
+                                    inner()
+                                }
+                                if (query.isNotEmpty()) Box(Modifier.size(44.dp).semantics { contentDescription = "Clear search"; role = Role.Button }.clickable {
+                                    focus.clearFocus(); ++request; query = ""; searched = ""; page = null; loading = false; error = null
+                                }, contentAlignment = Alignment.Center) { BasicText("×", style = Pack.body(Pack.size.item)) }
+                            }
+                        })
                     TextButton("Find", filled = true, enabled = query.isNotBlank()) { focus.clearFocus(); runSearch() }
                 }
-                if (query.isNotEmpty()) Row(Modifier.padding(horizontal = 12.dp)) {
-                    TextButton("Clear search", filled = false) {
-                        focus.clearFocus(); ++request; query = ""; searched = ""; page = null; loading = false; error = null
+                BasicText(book.title, Modifier.padding(horizontal = 14.dp, vertical = 6.dp), style = Pack.body(Pack.size.item))
+            } else if (window == null || error != null) ConversationHeader(book, ::back, contextView = true)
+            if (error != null) {
+                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        BasicText(error!!, style = Pack.body(Pack.size.body, Pack.accent))
+                        TextButton("Retry", filled = false) { if (selection != null) context(selection!!) else runSearch() }
                     }
                 }
-            }
-            if (loading) BasicText(if (selection == null) "Searching…" else "Loading context…", Modifier.padding(12.dp), style = Pack.body(Pack.size.small, Pack.muted))
-            error?.let { message ->
-                BasicText(message, Modifier.padding(12.dp), style = Pack.body(Pack.size.body, Pack.accent))
-                Row(Modifier.padding(horizontal = 12.dp)) { TextButton("Retry", filled = false) {
-                    if (selection != null) context(selection!!) else runSearch()
-                } }
-            }
+            } else if (loading && window == null) BasicText(if (selection == null) "Searching…" else "Loading context…", Modifier.padding(12.dp), style = Pack.body(Pack.size.small, Pack.muted))
             val selected = selection
             if (selected == null) {
                 val current = page
                 if (current == null && !loading && error == null) BasicText("Search this conversation's history on your Mac.", Modifier.padding(12.dp), style = Pack.body(Pack.size.body, Pack.muted))
-                if (current != null) {
+                if (current != null && error == null) {
                     val hits = current.hits.filter { it.id !in deleted[book.id].orEmpty() && updates[book.id].orEmpty().none { u -> u.id == it.id && u.unsent } }.map { hit ->
                         val fact = updates[book.id].orEmpty().firstOrNull { it.id == hit.id && it.edited }
                         if (fact == null) hit else hit.copy(snippet = fact.text.takeCodePoints(180), edited = true)
@@ -145,22 +159,28 @@ import java.util.Date
                 }
             } else {
                 val hits = page?.hits.orEmpty(); val index = hits.indexOfFirst { it.id == selected }
-                Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton("Previous match", filled = false, enabled = index > 0 && !loading) { context(hits[index - 1].id) }
-                    TextButton("Next match", filled = false, enabled = index >= 0 && index < hits.lastIndex && !loading) { context(hits[index + 1].id) }
-                }
                 val current = window
-                if (current != null) {
-                    Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (current.hasOlder) TextButton("Earlier context", filled = false, enabled = !loading) { current.messages.firstOrNull()?.id?.let { context(it.removeSuffix("#a"), -1) } }
-                        if (current.hasNewer) TextButton("Later context", filled = false, enabled = !loading) { current.messages.lastOrNull()?.id?.let { context(it.removeSuffix("#a"), 1) } }
-                    }
+                if (current != null && error == null) {
                     val known = current.messages.mapNotNull { it.id?.removeSuffix("#a") }.toSet()
                     val shown = ThreadSlice.merge(current.messages, updates[book.id].orEmpty().filter { it.id?.removeSuffix("#a") in known })
                         .filter { it.id?.removeSuffix("#a") !in deleted[book.id].orEmpty() }
                     if (selected in deleted[book.id].orEmpty()) BasicText("Message unavailable", Modifier.padding(12.dp), style = Pack.body(Pack.size.body, Pack.muted))
                     Thread(book.copy(messages = shown), draft, pending, onBack = ::back, Modifier.weight(1f).fillMaxWidth(),
-                        focused = true, contextView = true, revealTarget = reveal, onJumpHandled = { reveal = null },
+                        focused = true, contextView = true, matchTarget = selected, revealTarget = reveal, onJumpHandled = { reveal = null },
+                        onContextEdge = { direction ->
+                            if (!loading && ((direction < 0 && current.hasOlder) || (direction > 0 && current.hasNewer))) {
+                                val edge = if (direction < 0) current.messages.firstOrNull() else current.messages.lastOrNull()
+                                edge?.id?.let { context(it.removeSuffix("#a"), direction) }
+                            }
+                        }, navigation = {
+                            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                TextButton("Results", filled = false, onClick = ::back)
+                                Spacer(Modifier.weight(1f))
+                                SearchArrow("⌃", "Previous match", index > 0 && !loading) { context(hits[index - 1].id) }
+                                BasicText("${index + 1} of ${hits.size}${if (page?.complete == false) "+" else ""}", style = Pack.body(Pack.size.small, Pack.muted))
+                                SearchArrow("⌄", "Next match", index >= 0 && index < hits.lastIndex && !loading) { context(hits[index + 1].id) }
+                            }
+                        },
                         onJumpTarget = { context(it) }, onSent = onSent)
                 }
             }
@@ -183,3 +203,10 @@ private fun highlight(text: String, query: String): AnnotatedString {
 }
 
 private fun String.takeCodePoints(limit: Int): String = substring(0, offsetByCodePoints(0, minOf(limit, codePointCount(0, length))))
+
+@Composable private fun SearchArrow(glyph: String, label: String, enabled: Boolean, onClick: () -> Unit) {
+    Box(Modifier.size(44.dp).semantics { contentDescription = label; role = Role.Button }
+        .clickable(enabled = enabled, onClick = onClick), contentAlignment = Alignment.Center) {
+        BasicText(glyph, style = Pack.body(Pack.size.item, if (enabled) Pack.foreground else Pack.muted))
+    }
+}

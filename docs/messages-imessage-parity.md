@@ -1,3 +1,5 @@
+> Scope update, 2026-10-30 00:15: Boss dropped item 11 effects entirely (Phone A mail 20261030-001500-a3ee63). The original audit below remains historical; effects are closed, with no implementation or feasibility work required.
+
 # Soma Messages: iPhone iMessage usability parity
 
 2026-10-29 — Luna. AUDIT + PROPOSED BUILD PLAN ONLY. Phone A review and Boss approval must precede implementation. No aesthetics changes; retain the active Soma theme.
