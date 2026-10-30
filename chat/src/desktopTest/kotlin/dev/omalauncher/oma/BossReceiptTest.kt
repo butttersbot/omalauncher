@@ -58,6 +58,23 @@ class BossReceiptTest : ChatScreenTestBase() {
         assertFalse(BossTouch.mayVouch())
     }
 
+    @Test fun hisWordsSayWhatTheyAnsweredSoABareOkApprovesNothingElse() {
+        val entries = listOf(ChatTask(1L, "Claude Code", "build it", result = "Proposed: connections-tile, connections-footer. Approve?", status = TaskStatus.Done),
+            ChatTask(2L, "Claude Code", "and now?", status = TaskStatus.Running))
+        val reply = BossWords.lastAnswer(entries)!!
+        assertEquals("task:1", reply.getString("messageId"))
+        assertEquals(CanvasReceipt.sha256(reply.getString("text").toByteArray()), reply.getString("textSha256"))
+        val r = BossReceipt.receipt(device, 3L, "n", BossWords.chat("soma", "ok", vouched = true, replyTo = reply))!!
+        assertTrue(r.getJSONObject("replyTo").getString("text").contains("connections-footer"))
+        assertNull(BossWords.lastAnswer(listOf(ChatTask(1L, "Claude Code", "x", status = TaskStatus.Running))))
+        // A question card's answer replies to the card itself, options and all.
+        val card = """{"questions":[{"question":"Approve these 2 designs?","header":"Designs","options":[{"label":"Approve all","description":"connections-tile, connections-footer"}]}]}"""
+        val answered = BossWords.answered("phone", "ticket-2", "Approve these 2 designs?", JSONObject().put("Approve these 2 designs?", "Approve all"), true, CanvasReceipt.canonical(JSONObject(card)))
+        val q = BossReceipt.receipt(device, 4L, "n2", answered)!!
+        assertEquals("ticket-2", q.getJSONObject("replyTo").getString("messageId"))
+        assertTrue(q.getJSONObject("replyTo").getString("text").contains("connections-footer"))
+    }
+
     @Test fun aQuestionAnswerHashesTheAnswersAsServerReadsThem() {
         val answers = JSONObject().put("Approve these 9 designs?", "Approve all").put("Which?", JSONArray().put("a").put("b"))
         val r = BossReceipt.receipt(device, 2L, "n", BossWords.answered("mac:t1", "ticket-1", "Approve these 9 designs?", answers, true))!!
@@ -113,6 +130,7 @@ class BossReceiptTest : ChatScreenTestBase() {
         host.sendWaitingAnswers("ticket-9", JSONObject().put("Approve these 9 designs?", "Approve all")) {}
         assertEquals("ticket-9", said.single().messageId)
         assertEquals("Approve these 9 designs?", said.single().question)
+        assertTrue(said.single().replyTo!!.getString("text").contains("Approve all"))
         assertTrue(said.single().vouched)
         host.sendWaitingAnswers("ticket-9", JSONObject().put("Approve these 9 designs?", QUESTION_SKIP_ANSWER)) {}
         assertEquals(1, said.size)

@@ -55,7 +55,7 @@ class Gate(unittest.TestCase):
         self.assertIn("1. Restart sits under the list", text)
         # Only a passed walk is published or checked: news failed, so its card never reaches Canvas.
         self.assertFalse(any("news" in c for c in self.calls()))
-        self.assertIn("publish soma " + str(self.wdir / "connections"), " ".join(self.calls()))
+        self.assertIn("publish soma-widgets " + str(self.wdir / "connections"), " ".join(self.calls()))  # its script in this checkout
         report = str(self.wdir / "design-report.json")
         self.assertEqual(3, gate.gate(report, "abc123456789"))
         # Boss waives it on Canvas after the walk: install asks again and lets it through.
@@ -127,7 +127,11 @@ class Gate(unittest.TestCase):
         s = self.t / "c.walk"; s.write_text("# canvas-app: soma-messages\nlaunch x\n")
         self.assertEqual("soma-messages", gate.canvas_app("chat", {"script": str(s)}))
         self.assertEqual("hunch", gate.canvas_app("hunch-wallet", {}))
-        self.assertEqual("soma", gate.canvas_app("connections", {}))
+        self.assertEqual("soma", gate.canvas_app("no-such-walk", {}))
+        # A lane's output read elsewhere: canvasApp from the walk itself wins over a path from the walking machine.
+        self.assertEqual("soma-widgets", gate.canvas_app("connections", {"script": "/Users/x/connections.walk", "canvasApp": "soma-widgets"}))
+        # Older output without it: the script of that name in this checkout.
+        self.assertEqual("soma-widgets", gate.canvas_app("connections", {"script": "/Users/x/Projects/connections.walk"}))
 
 if __name__ == "__main__":
     unittest.main()

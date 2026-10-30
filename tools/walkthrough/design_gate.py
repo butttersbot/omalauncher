@@ -53,13 +53,20 @@ def parse_check(card, code, out, err):
     return r
 
 def canvas_app(walk, results):
-    """The Canvas app a walk's cards belong to: '# canvas-app: X' in its script, else hunch* walks are hunch."""
-    try:
-        for line in open(results.get("script", ""), encoding="utf-8"):
-            if line.strip().startswith("# canvas-app:"):
-                return line.split(":", 1)[1].strip()
-    except OSError:
-        pass
+    """The Canvas app a walk's cards belong to. walk.py writes it into results.json (canvasApp) from the script's
+    '# canvas-app: X'; older output has only the script's path, which is the walking machine's (a lane's zip read on the
+    Fold, 2026-10-29: connections fell back to 'soma' and publish 404'd), so that path is tried, then the script of
+    that name in this checkout. Else hunch* walks are hunch, the rest soma."""
+    if results.get("canvasApp"):
+        return results["canvasApp"]
+    here = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts", walk + ".walk")
+    for path in (results.get("script", ""), here):
+        try:
+            for line in open(path, encoding="utf-8"):
+                if line.strip().startswith("# canvas-app:"):
+                    return line.split(":", 1)[1].strip()
+        except OSError:
+            pass
     return "hunch" if walk.startswith("hunch") else "soma"
 
 def passed(wdir):

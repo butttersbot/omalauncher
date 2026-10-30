@@ -88,13 +88,15 @@ internal fun ChatHost.sendWaitingAnswers(key: String, answers: JSONObject, done:
     }.getOrDefault("")
     // Whether his finger sent these is decided now, as he sends: a Mac's answer may come back seconds later.
     val vouched = BossTouch.mayVouch()
-    fun said(conversation: String, question: String) {
-        if (!dev.omalauncher.assist.questionAnswersSkipped(answers)) bossSaid(BossWords.answered(conversation, key, question, answers, vouched))
+    // The card as he saw it (its questions, headers and options), which is what his answer replies to.
+    fun card(input: String) = runCatching { CanvasReceipt.canonical(JSONObject(input)) }.getOrDefault("")
+    fun said(conversation: String, question: String, input: String) {
+        if (!dev.omalauncher.assist.questionAnswersSkipped(answers)) bossSaid(BossWords.answered(conversation, key, question, answers, vouched, card(input)))
     }
     macPending().firstOrNull { it.ticket == key }?.let { entry ->
         answerMacQuestions(entry.ticket, answers) {
             val notice = dev.omalauncher.assist.macApprovalNotice(it)
-            if (notice == null) said("mac:${entry.threadId}", asked(entry.request.input))
+            if (notice == null) said("mac:${entry.threadId}", asked(entry.request.input), entry.request.input)
             done(notice)
         }
         return
@@ -103,7 +105,7 @@ internal fun ChatHost.sendWaitingAnswers(key: String, answers: JSONObject, done:
         val outcome = runCatching { answerBuilderQuestions(entry, answers) }.getOrElse {
             done("These answers could not be sent. Review every question and try again."); return
         }
-        if (outcome == dev.omalauncher.assist.ApprovalOutcome.Decided) said("phone", asked(entry.approval.input.toString()))
+        if (outcome == dev.omalauncher.assist.ApprovalOutcome.Decided) said("phone", asked(entry.approval.input.toString()), entry.approval.input.toString())
         done(when (outcome) {
             dev.omalauncher.assist.ApprovalOutcome.Decided -> null
             dev.omalauncher.assist.ApprovalOutcome.Locked -> "Unlock your phone to answer"

@@ -29,12 +29,22 @@ class BossWords internal constructor(
     val messageId: String = UUID.randomUUID().toString(),
     /** Whether his finger sent it, decided at the moment of sending ([BossTouch.mayVouch]), not when it is signed. */
     val vouched: Boolean,
+    /**
+     * What he was answering, as it was in front of him: the agent's last message in that conversation, or the question
+     * card itself. Canvas approves only cards named there (taebc3f66, 2026-10-29), so a bare "ok" approves nothing.
+     */
+    val replyTo: JSONObject? = null,
 ) {
     internal companion object {
-        fun chat(conversation: String, text: String, vouched: Boolean = BossTouch.mayVouch()) =
-            BossWords("chat-message", conversation, text = text, vouched = vouched)
-        fun answered(conversation: String, key: String, question: String, answers: JSONObject, vouched: Boolean) =
-            BossWords("question-answer", conversation, question = question, answers = answers, messageId = key, vouched = vouched)
+        fun chat(conversation: String, text: String, vouched: Boolean = BossTouch.mayVouch(), replyTo: JSONObject? = null) =
+            BossWords("chat-message", conversation, text = text, vouched = vouched, replyTo = replyTo)
+        fun answered(conversation: String, key: String, question: String, answers: JSONObject, vouched: Boolean, card: String = "") =
+            BossWords("question-answer", conversation, question = question, answers = answers, messageId = key, vouched = vouched,
+                replyTo = BossReceipt.replyTo(key, card))
+
+        /** The agent's newest answer among [entries] (a tab's, oldest first), as what his words reply to; null for none. */
+        fun lastAnswer(entries: List<ChatTask>): JSONObject? =
+            entries.lastOrNull { it.result.isNotBlank() }?.let { BossReceipt.replyTo("task:${it.time}", it.result) }
     }
 }
 
@@ -66,11 +76,17 @@ object BossTouch {
 }
 
 object BossReceipt {
+    /** {messageId, textSha256, text}: what a receipt says he was answering; null when there is nothing. */
+    fun replyTo(messageId: String, text: String): JSONObject? = text.takeIf { it.isNotBlank() }?.let {
+        JSONObject().put("messageId", messageId).put("textSha256", CanvasReceipt.sha256(it.toByteArray(Charsets.UTF_8))).put("text", it)
+    }
+
     /** The receipt for [words], to be serialized with [CanvasReceipt.canonical] and signed; null for nothing to vouch for. */
     fun receipt(deviceId: String, at: Long, nonce: String, words: BossWords): JSONObject? {
         if (!words.vouched) return null
         val base = JSONObject().put("v", 1).put("kind", words.kind).put("deviceId", deviceId).put("nonce", nonce)
             .put("messageId", words.messageId).put("at", at).put("conversation", words.conversation)
+        words.replyTo?.let { base.put("replyTo", it) }
         return when (words.kind) {
             "chat-message" -> words.text.takeIf { it.isNotBlank() }?.let {
                 base.put("text", it).put("textSha256", CanvasReceipt.sha256(it.toByteArray(Charsets.UTF_8)))

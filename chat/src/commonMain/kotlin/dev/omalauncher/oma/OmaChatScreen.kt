@@ -297,6 +297,7 @@ private fun ChatScreen(
         // His own typed words, as he typed them, signed as his once they have gone (BossReceipt): not a terminal line.
         val his = draft
         val vouched = BossTouch.mayVouch()
+        val answering = BossWords.lastAnswer(tabEntries(host.tasks(), tab, book))
         when (out) {
             Outgoing.Nothing -> return
             is Outgoing.Refused -> {
@@ -323,7 +324,7 @@ private fun ChatScreen(
             is Outgoing.Mac -> host.sayToMac(out.prompt, out.thread, out.name, to.chat, images.map { it.file })
             is Outgoing.Terminal -> host.runInTerminal(out.prompt)
         }
-        if (out !is Outgoing.Terminal) host.bossSaid(BossWords.chat(to.conversation, his, vouched))
+        if (out !is Outgoing.Terminal) host.bossSaid(BossWords.chat(to.conversation, his, vouched, answering))
         // Sent files stay: the agent reads them while it works, and the saved task names them.
         drafts.remove(images.map { it.file })
         images = emptyList()

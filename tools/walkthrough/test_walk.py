@@ -124,6 +124,18 @@ class WholeLabelBounds(unittest.TestCase):
                 self.assertEqual(expected, ok)
 
 class CanvasCards(unittest.TestCase):
+    def test_results_carry_the_canvas_app_of_the_script(self):
+        import tempfile, json
+        with tempfile.TemporaryDirectory() as out:
+            script = Path(out) / "c.walk"; script.write_text("# canvas-app: soma-widgets\nshot tile card=conn-tile\n")
+            with patch.object(walk, "prepare"), patch.object(walk, "shot"), patch.object(walk.sys, "argv", ["walk.py", str(script), "--out", out]):
+                with self.assertRaises(SystemExit) as end:
+                    walk.main()
+            self.assertEqual(0, end.exception.code)
+            results = json.load(open(Path(out) / "results.json"))
+            self.assertEqual("soma-widgets", results["canvasApp"])
+            self.assertEqual({"01-tile": "conn-tile"}, json.load(open(Path(out) / "canvas.json")))
+
     def test_card_on_a_shot_is_kept_out_of_its_name_and_mapped_by_file_stem(self):
         import tempfile
         with tempfile.NamedTemporaryFile("w", suffix=".walk", delete=False) as f:

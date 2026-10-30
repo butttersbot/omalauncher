@@ -358,6 +358,8 @@ def main():
     serial = a[a.index("--serial") + 1] if "--serial" in a else "emulator-5554"
     out = a[a.index("--out") + 1] if "--out" in a else os.path.join("walk-out", os.path.splitext(os.path.basename(script))[0])
     steps = parse(script)
+    # The Canvas app its cards belong to, carried in the output, since the script's path means nothing on another machine.
+    app = next((l.split(":", 1)[1].strip() for l in open(script, encoding="utf-8") if l.strip().startswith("# canvas-app:")), "")
     if "--phone" in a:
         for s in steps:
             if s["where"] == "phone":
@@ -382,7 +384,8 @@ def main():
     looks = sum(r["result"] == "LOOK" for r in results)
     if looks:
         print(f"\n{looks} screenshots to look at before this walk counts: a LOOK is not a PASS.")
-    json.dump({"script": script, "failed": failed, "looks": looks, "steps": results}, open(os.path.join(out, "results.json"), "w"), indent=1)
+    json.dump({"script": script, "failed": failed, "looks": looks, "steps": results, **({"canvasApp": app} if app else {})},
+              open(os.path.join(out, "results.json"), "w"), indent=1)
     cards = canvas_map(results)
     if cards:
         json.dump(cards, open(os.path.join(out, "canvas.json"), "w"), indent=1)
