@@ -597,6 +597,15 @@ private fun ChatScreen(
                             },
                             // In the Oma stream the receipt is the way into its thread's tab; on that tab it would say where he already is.
                             onReceipt = receiptTab(task, book)?.takeIf { tab == OMA_TAB }?.let { key -> { pick(key) } },
+                            // Not while a question form of its thread waits, as for a builder's: Send now would end it unanswered.
+                            onSendNow = if (!host.macSendsNow(task.thread) || macPending.any { it.threadId == task.thread && questionInput(it.request.tool, it.request.input) }) null else ({
+                                host.sendMacNow(task.time) { said ->
+                                    notice = said
+                                    noticeFine = false
+                                    tick++
+                                }
+                                tick++
+                            }),
                         )
                         // No answer and no stop of its own yet: he can't tell it from a task the build lane has just begun.
                         // One the front agent has not come to says so, and can be taken back until it is read.
@@ -1371,7 +1380,7 @@ private fun TaskEntry(
                 BasicText(waiting.text, Modifier.weight(1f, fill = false), style = small.copy(color = Pack.accent), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 // Small and muted, as the other rare ways out under an entry are.
                 // Send now stops the turn ahead, so it reads in the accent, as what acts on the agent does.
-                if (waiting.cancel && onSendNow != null) BasicText("[ send now ]", Modifier.clickable(onClick = onSendNow).padding(horizontal = 8.dp, vertical = 8.dp), style = small.copy(color = Pack.accent))
+                if (waiting.sendNow && onSendNow != null) BasicText("[ send now ]", Modifier.clickable(onClick = onSendNow).padding(horizontal = 8.dp, vertical = 8.dp), style = small.copy(color = Pack.accent))
                 if (waiting.cancel && onCancel != null) BasicText("[ cancel ]", Modifier.clickable(onClick = onCancel).padding(horizontal = 8.dp, vertical = 8.dp), style = small)
             }
         }

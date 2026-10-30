@@ -41,6 +41,8 @@ Only exact Codex command scopes the owner explicitly saved may reuse that decisi
                                          remember saves only an eligible exact Codex command for this thread
   POST /threads/ID/command-approvals/clear {}   forgets that thread's saved command approvals
   POST /threads/ID/stop                  stops the task and drops what was waiting its turn; what was said stays
+  POST /threads/ID/send-now  {text}      those waiting words go next: the task ahead is stopped and gone first, the rest still wait;
+                                         {sent: "now"}, "next" (nothing to stop), "gone" (no longer waiting), "question" or "refused"
   POST /files?name=NAME   (the bytes)    a file from the phone, kept in ~/Downloads/From Fold; {path, bytes}
   GET  /projects                         the project registry (~/ClaudeSync/projects/_projects.json): {name, folders, handoff}
   GET  /projects/NAME/handoff            that project's HANDOFF.md or CURRENT-STATE.md, top section and Next section: {file, updated, text}
@@ -2817,6 +2819,8 @@ class Thread:
         self.folder = STATE / 'threads' / meta['id']
         self.events = []
         self.queue = meta.setdefault('queue', [])
+        self.sending_now = False  # the turn is being stopped for words sent now, so what waits stays (send_now)
+        self.left_behind = []  # what that turn's agent had started, to go with it
         self.worker = None
         self.process = None
         self.pending = {}  # approval id -> {'nonce', 'request', 'tool', 'input', 'explanation'}
@@ -3735,7 +3739,13 @@ def drain(thread):
                 artifacts_settle(thread)
             except Exception as problem:  # never in the way of the turn's own ending
                 log('artifacts could not be settled: %r' % (problem,))
-            if thread.stopped and not closing:
+            if thread.stopped and not closing and thread.sending_now:
+                gone_for_next(thread)
+            # Checked again: [ stop ] while the turn was going ends everything, as it says.
+            if thread.stopped and not closing and thread.sending_now:
+                thread.sending_now = False
+                thread.emit('stopped', dropped=0, kept=True)
+            elif thread.stopped and not closing:
                 dropped = len(thread.queue)
                 del thread.queue[:]
                 thread.emit('stopped', dropped=dropped)
@@ -4523,6 +4533,7 @@ def decide(thread, approval, body, device=None):
 
 def stop(thread):
     with changed:
+        thread.sending_now = False
         if getattr(thread, 'waiting_native', False):
             thread.stopped = True
             changed.notify_all()
@@ -4535,6 +4546,95 @@ def stop(thread):
         except (ProcessLookupError, PermissionError):  # macOS says EPERM for a group that has exited
             pass
         return True
+
+
+SEND_NOW_GRACE = 5  # seconds a stopped agent has to end by itself before it is killed, when words were sent now
+
+
+def send_now(thread, text):
+    """Send now (Boss, 2026-10-30, as on the phone): the owner's waiting words [text] go first, the turn ahead of them ends as
+    a stop ends it, and they start in the same conversation once that agent is gone. What else waited still waits."""
+    with changed:
+        if update_held():
+            return {'sent': 'refused', 'error': "this computer's runner is updating; send it again in a minute"}
+        if _services is not None and not _services.gate.admit():
+            return {'sent': 'refused', 'error': 'maintenance: an owner-approved service restart is in progress; try again shortly'}
+        # A question form waiting for him is only ended by answering it or by [ stop ] (Boss, 2026-10-29).
+        if any(entry.get('tool') == 'AskUserQuestion' or (entry.get('input') or {}).get('codex_request') == 'questions' for entry in thread.pending.values()):
+            return {'sent': 'question'}
+        # A hand-over was sent with a preface ahead of his words, and the entry may know only those.
+        waiting = [q for q in thread.queue if isinstance(q, str)]
+        words = next((q for q in waiting if q == text), None) or next((q for q in waiting if q.endswith('\n' + text)), None)
+        if words is None:
+            return {'sent': 'gone'}
+        thread.queue.remove(words)
+        thread.queue.insert(0, words)
+        process = thread.process
+        # Taken before the agent ends, while they are still known as its own: Claude Code runs a command in a group of its own,
+        # which outlives it (seen on a real Claude Code, 2026-10-30), and would run on beside the words sent now.
+        thread.left_behind = descendants(process.pid) if process is not None and process.poll() is None else []
+        stopping = stop(thread)
+        thread.sending_now = stopping
+        thread.save()
+        if stopping and process is not None:
+            timer = threading.Timer(SEND_NOW_GRACE, kill_group, (process,))
+            timer.daemon = True
+            timer.start()
+        return {'sent': 'now' if stopping else 'next'}
+
+
+def descendants(root):
+    """What [root] started and they started, as this moment has it; empty if it can't be told."""
+    try:
+        table = subprocess.run(['ps', '-A', '-o', 'pid=', '-o', 'ppid='], capture_output=True, text=True, timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    children = {}
+    for line in table.splitlines():
+        numbers = line.split()
+        if len(numbers) == 2 and numbers[0].isdigit() and numbers[1].isdigit():
+            children.setdefault(int(numbers[1]), []).append(int(numbers[0]))
+    found, looking = [], [root]
+    while looking:
+        for child in children.get(looking.pop(), []):
+            found.append(child)
+            looking.append(child)
+    return found
+
+
+def signal_all(pids, sent):
+    """Those of [pids] that take [sent], the ones gone by now left out."""
+    alive = []
+    for pid in pids:
+        try:
+            os.kill(pid, sent)
+            alive.append(pid)
+        except (ProcessLookupError, PermissionError):
+            pass
+    return alive
+
+
+def kill_group(process):
+    """A stopped agent that didn't end by itself. Never one that has gone: its number may be another's by now."""
+    if process.poll() is None:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+
+
+def gone_for_next(thread):
+    """Call with `changed` held, the turn just ended by send_now: returns once its agent is gone, so the words sent now never
+    run beside it (Boss, 2026-10-23) or go into a process on its way out. A kept process may say its last before it ends."""
+    kept = thread.kept
+    while kept is not None and not kept.done and not closing and thread.sending_now:
+        changed.wait(0.2)
+    left, thread.left_behind = signal_all(thread.left_behind, signal.SIGTERM), []
+    deadline = time.monotonic() + 2
+    while left and time.monotonic() < deadline and not closing:
+        changed.wait(0.2)
+        left = signal_all(left, 0)
+    signal_all(left, signal.SIGKILL)
 
 
 class Runner(BaseHTTPRequestHandler):
@@ -4603,7 +4703,7 @@ class Runner(BaseHTTPRequestHandler):
                 states = [thread.meta['status'] for thread in threads.values()]
             # Where this Mac's canvas service is, when it has one: a device asks here rather than guessing a port.
             return self.answer(200, {'ok': True, 'runner': 'oma-runner', **({'soma': SOMA_SERVICE} if SOMA_SERVICE else {}), 'threads': len(states), 'working': states.count('working'), 'waiting': states.count('waiting'),
-                                     'build': runner_build(), 'updating': update_held(), 'kinds': [kind for kind in KINDS if program(kind)], 'models': {'venice': venice_models()} if program('venice') else {}, 'files': True,
+                                     'build': runner_build(), 'updating': update_held(), 'send_now': True, 'kinds': [kind for kind in KINDS if program(kind)], 'models': {'venice': venice_models()} if program('venice') else {}, 'files': True,
                                      'bots': [{key: bot[key] for key in ('id', 'name', 'emoji', 'problem')} for bot in found.values()]})
         if parts == ['release'] or (len(parts) == 3 and parts[:2] in (['release', 'files'], ['release', 'engine'])):
             return self.release(parts)
@@ -4820,6 +4920,10 @@ class Runner(BaseHTTPRequestHandler):
             return self.answer(200, {'ok': True, 'thread': thread.view()})
         if parts[2:] == ['stop']:
             return self.answer(200, {'ok': True, 'stopped': stop(thread)})
+        if parts[2:] == ['send-now']:
+            if not isinstance(body.get('text'), str) or not body['text']:
+                return self.answer(400, {'ok': False, 'error': 'text is required'})
+            return self.answer(200, {'ok': True, **send_now(thread, body['text'])})
         if parts[2:] == ['command-approvals', 'clear']:
             with changed:
                 thread.meta.pop('command_grants', None)

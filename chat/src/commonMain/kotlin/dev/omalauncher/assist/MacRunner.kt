@@ -132,6 +132,9 @@ object MacRequests {
     /** The runner wants nothing in the body; an empty object is sent because a POST with none is not sent alike everywhere. */
     fun stop(threadId: String) = MacRequest("POST", "/threads/${part(threadId)}/stop", "{}")
 
+    /** Those waiting words go next: the turn ahead of them stops and what else waits still waits. */
+    fun sendNow(threadId: String, text: String) = MacRequest("POST", "/threads/${part(threadId)}/send-now", JSONObject().put("text", text).toString())
+
     /** How the thread runs from its next message, auto or manual (Soma's /mode); it answers nothing. */
     fun setMode(threadId: String, mode: String) = MacRequest("POST", "/threads/${part(threadId)}/mode", JSONObject().put("mode", mode).toString())
 
@@ -171,7 +174,7 @@ const val MAC_RUNNER_NAME = "oma-runner"
 const val PHONE_RUNNER_NAME = "oma-phone"
 
 /** What `/health` says. [kinds] are the agents installed on the Mac, as the runner names them; empty from a runner that does not say. */
-data class MacHealth(val threads: Int, val working: Int, val waiting: Int, val kinds: List<String> = emptyList(), val models: Map<String, List<String>> = emptyMap(), val phone: Boolean = false)
+data class MacHealth(val threads: Int, val working: Int, val waiting: Int, val kinds: List<String> = emptyList(), val models: Map<String, List<String>> = emptyMap(), val phone: Boolean = false, val sendNow: Boolean = false)
 // [phone]: the Fold's own runner (PHONE-RUNNER-SPEC). Its sessions are read, sent to, approved and stopped like a Mac's threads, but no
 // thread is made on it: no new chat and no switch of agent goes there (it answers POST /threads with 404).
 
@@ -310,7 +313,7 @@ fun parseMacHealth(reply: MacReply?): MacAnswer<MacHealth> = macAnswer(reply) { 
             macKindOf(agent) to (0 until (names?.length() ?: 0)).mapNotNull { (names?.opt(it) as? String)?.takeIf(String::isNotBlank) }
         }.orEmpty()
         MacHealth(json.macCount("threads"), json.macCount("working"), json.macCount("waiting"), (0 until (kinds?.length() ?: 0)).mapNotNull { (kinds?.opt(it) as? String)?.takeIf(String::isNotBlank) }, models,
-            phone = json.macText("runner") == PHONE_RUNNER_NAME)
+            phone = json.macText("runner") == PHONE_RUNNER_NAME, sendNow = json.optBoolean("send_now"))
     }
 }
 
@@ -355,6 +358,31 @@ fun parseMacDecision(reply: MacReply?): MacAnswer<MacDecision> = macAnswer(reply
 /** `POST /threads/ID/stop`: whether a task was running to be stopped. */
 fun parseMacStopped(reply: MacReply?): MacAnswer<Boolean> = macAnswer(reply) { json ->
     if (json.has("stopped")) json.optBoolean("stopped") else null
+}
+
+/** What became of words sent now; [why] is the runner's own reason when it [Refused] them. */
+sealed interface MacSentNow {
+    /** The turn ahead is stopping for them. */
+    data object Stopping : MacSentNow
+    /** Nothing was running: they are simply next. */
+    data object Next : MacSentNow
+    /** They no longer wait: taken, or dropped, meanwhile. */
+    data object Gone : MacSentNow
+    /** A question form of the thread waits for him; nothing changed. */
+    data object Question : MacSentNow
+    data class Refused(val why: String) : MacSentNow
+}
+
+/** `POST /threads/ID/send-now`. */
+fun parseMacSentNow(reply: MacReply?): MacAnswer<MacSentNow> = macAnswer(reply) { json ->
+    when (json.macText("sent")) {
+        "now" -> MacSentNow.Stopping
+        "next" -> MacSentNow.Next
+        "gone" -> MacSentNow.Gone
+        "question" -> MacSentNow.Question
+        "refused" -> MacSentNow.Refused(json.macText("error"))
+        else -> null
+    }
 }
 
 /** `GET /bots/ID`. */
@@ -468,6 +496,8 @@ class MacRunnerClient(private val config: MacRunnerConfig?, private val machine:
     }
 
     fun stop(threadId: String): MacAnswer<Boolean> = parseMacStopped(send(MacRequests.stop(own(threadId))))
+
+    fun sendNow(threadId: String, text: String): MacAnswer<MacSentNow> = parseMacSentNow(send(MacRequests.sendNow(own(threadId), text)))
 
     /** The mode the thread runs from its next message, as the runner took it. */
     /** The thread's mode now, or [MAC_MODE_ASKED] when auto waits for his OK on its card (manual to auto goes as an approval). */

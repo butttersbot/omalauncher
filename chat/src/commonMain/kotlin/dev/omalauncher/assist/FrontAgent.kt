@@ -352,8 +352,8 @@ class FrontQueue(private val limit: Int = MAX_WAITING) {
 /** As many requests as fit already wait for the front agent. The one that met this is nowhere: not filed, not sent. */
 class FrontQueueFull : IllegalStateException(FrontQueue.FULL)
 
-/** What an entry that waits says about where, and whether `[ cancel ]` stands beside it. */
-data class WaitingLine(val text: String, val cancel: Boolean)
+/** What an entry that waits says about where, and whether `[ cancel ]` and `[ send now ]` can stand beside it. */
+data class WaitingLine(val text: String, val cancel: Boolean, val sendNow: Boolean = cancel)
 
 /**
  * The line under [task] while it waits, null when it does not. One the front agent has not read says when it
@@ -364,7 +364,7 @@ data class WaitingLine(val text: String, val cancel: Boolean)
 fun waitingLine(task: ChatTask, ahead: Int = 0, macLabel: String = ""): WaitingLine? = when {
     task.status != TaskStatus.Queued -> null
     task.undecided -> WaitingLine(if (ahead <= 0) "Oma will read this next" else "Oma will read this after $ahead more", cancel = true)
-    task.mac -> WaitingLine(if (macQueuedLabel(macLabel)) "queued → ${task.threadName} · ${macLabel.replaceFirstChar { it.lowercaseChar() }}" else "$macLabel…", cancel = false)
+    task.mac -> WaitingLine(if (macQueuedLabel(macLabel)) "queued → ${task.threadName} · ${macLabel.replaceFirstChar { it.lowercaseChar() }}" else "$macLabel…", cancel = false, sendNow = macQueuedLabel(macLabel))
     else -> WaitingLine("queued → " + if (task.builderId == BuilderId.A) BUILDER else builderCalled(task.builderId), cancel = true)
 }
 

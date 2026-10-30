@@ -206,6 +206,12 @@ interface ChatHost {
     /** Stops the Mac thread [thread]; [said] gets what there is to tell him. */
     fun stopMac(thread: String, said: (String?) -> Unit)
 
+    /** Whether words waiting behind a turn of the Mac thread [thread] can be sent now from here. */
+    fun macSendsNow(thread: String): Boolean = false
+
+    /** Stops the turn ahead of the words filed at [time] in their Mac thread and sends them next; [said] gets what there is to tell him. */
+    fun sendMacNow(time: Long, said: (String?) -> Unit) {}
+
     /** Moves the Mac thread [thread] to another agent or model, with a handoff (cockpit/DESIGN.md §4). */
     fun switchMac(thread: String, to: dev.omalauncher.assist.MacPick)
 

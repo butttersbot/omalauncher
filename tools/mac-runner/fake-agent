@@ -17,7 +17,7 @@ and, as Claude Code 2.1 does, first runs a turn of its own about it (a task_noti
 no user_message_uuid) before the owner's message. Results of the owner's turns name the uuid he sent as Claude Code
 does, unless the prompt says "old" (a Claude Code from before those fields).
 """
-import json, os, pathlib, queue, sys, threading, time, uuid
+import json, os, pathlib, queue, signal, sys, threading, time, uuid
 
 
 speaking = threading.RLock()  # one turn at a time on stdout, as Claude Code runs them
@@ -102,6 +102,13 @@ def handle(given):
             out({'type': 'assistant', 'message': {'role': 'assistant', 'content': ['not a block']}})
         if 'slow' in prompt:
             time.sleep(3)
+        if 'stubborn' in prompt:  # a turn that won't end for a SIGTERM (send now); says its number first
+            import subprocess
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+            # And a command in a session of its own, as Claude Code runs one, that won't end for a SIGTERM either.
+            helper = subprocess.Popen(['/bin/sh', '-c', 'trap "" TERM; while :; do sleep 1; done'], start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            said('Stubborn: %d %d' % (os.getpid(), helper.pid))
+            time.sleep(120)
         if 'question-json:' in prompt:  # a form the test gives (test-linked.py: duplicates across threads)
             form = json.loads(prompt.split('question-json:', 1)[1])
             out({'type': 'control_request', 'request_id': 'q-' + uuid.uuid4().hex[:8], 'request': {'subtype': 'can_use_tool', 'tool_name': 'AskUserQuestion', 'input': form}})

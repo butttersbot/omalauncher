@@ -5,6 +5,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.longClick
@@ -126,6 +127,66 @@ class DesktopEndToEndTest {
         val shot = onRoot().captureToImage()
         File("build/render").mkdirs()
         javax.imageio.ImageIO.write(shot.toAwtImage(), "png", File("build/render/desktop-e2e.png"))
+    }
+
+    /**
+     * Send now on the desktop (Boss, 2026-10-30), the phone's button: under his words the runner holds behind a turn; tapped,
+     * the turn stops, those words answer next in the same thread, and what else waited still waits and then runs.
+     */
+    @Test fun sendNowStopsTheTurnAheadAndSendsThoseWordsNext() = runComposeUiTest {
+        val notices = Notices()
+        val machine = MacMachine("testhost", "Test box", MacRunnerConfig("http://127.0.0.1:$port", key))
+        val platform = DesktopThreadsPlatform(notices) { listOf(machine) }
+        val engine = MacThreadsEngine(platform)
+        val host = DesktopChatHost(platform, engine, DesktopFrontAgent(engine, platform, notices, places = emptyList()), notices)
+        engine.open()
+        var wanted: String? by androidx.compose.runtime.mutableStateOf<String?>(null)
+        mainClock.autoAdvance = false
+        setContent { OmaChatScreen(host, prefill = null, onPrefilled = {}, wanted = wanted, onTab = { wanted = it.takeIf { tab -> tab != OMA_TAB } }) }
+        fun settle(ms: Long = 1_200) = mainClock.advanceTimeBy(ms)
+        fun waitFor(what: String, seconds: Int = 30, ok: () -> Boolean) {
+            val deadline = System.currentTimeMillis() + seconds * 1000
+            while (!ok()) {
+                assertTrue("waited for $what: ${platform.chatLog().tasks.map { it.prompt to it.status }}", System.currentTimeMillis() < deadline)
+                Thread.sleep(250); settle(500)
+            }
+        }
+        fun say(words: String) {
+            onNode(androidx.compose.ui.test.hasSetTextAction()).performTextInput(words); settle()
+            onNodeWithText("[ send ]").performClick(); settle()
+        }
+        fun shot(name: String) {
+            File("build/render").mkdirs()
+            javax.imageio.ImageIO.write(onRoot().captureToImage().toAwtImage(), "png", File("build/render/$name.png"))
+        }
+        fun status(words: String) = platform.chatLog().tasks.firstOrNull { it.prompt == words }?.status
+        settle()
+        onNodeWithContentDescription("Show the tabs").performClick(); settle()
+        onNodeWithContentDescription("New chat").performClick(); settle()
+        say("stubborn one")
+        waitFor("the turn to run") { status("stubborn one") == dev.omalauncher.oma.TaskStatus.Running && platform.chatLog().tasks.first { it.prompt == "stubborn one" }.result.contains("Stubborn") }
+        say("go now")
+        say("behind")
+        val queued = dev.omalauncher.oma.TaskStatus.Queued
+        waitFor("both to be held on the computer") {
+            settle(100)
+            status("go now") == queued && status("behind") == queued && onAllNodesWithText("[ send now ]").fetchSemanticsNodes().size == 2
+        }
+        shot("desktop-send-now-offered")
+        // The upper of the two is "go now": the list runs newest first in its tree.
+        val buttons = onAllNodesWithText("[ send now ]")
+        buttons[(0..1).minBy { buttons[it].fetchSemanticsNode().boundsInRoot.top }].performClick(); settle()
+        waitFor("the turn to stop") { status("stubborn one") == dev.omalauncher.oma.TaskStatus.Stopped }
+        val done = dev.omalauncher.oma.TaskStatus.Done
+        waitFor("the words sent now, then the rest") { status("go now") == done && status("behind") == done }
+        settle()
+        val ran = platform.chatLog().tasks.first { it.prompt == "stubborn one" }.thread
+        assertEquals("all in one thread", setOf(ran), platform.chatLog().tasks.map { it.thread }.toSet())
+        assertEquals("one thread on the runner", 1, engine.view.threads.count { it.id == ran })
+        val said = java.net.URI("http://127.0.0.1:$port/threads/${ran.substringAfter('/')}/events").toURL().openConnection().apply { setRequestProperty("Authorization", "Bearer $key") }.getInputStream().bufferedReader().readText()
+        val messages = org.json.JSONObject(said).getJSONArray("events").let { all -> (0 until all.length()).map { all.getJSONObject(it) }.filter { it.getString("type") == "message" }.map { it.getString("text") } }
+        assertEquals(listOf("stubborn one", "go now", "behind"), messages)
+        shot("desktop-send-now-done")
     }
 
     /**

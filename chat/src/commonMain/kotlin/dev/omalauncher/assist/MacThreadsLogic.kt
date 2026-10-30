@@ -373,7 +373,7 @@ fun macApply(given: List<ChatTask>, threadId: String, event: MacEvent, inFlight:
             when {
                 it.thread != threadId -> it
                 it.status == TaskStatus.Running -> it.over(TaskStatus.Stopped, it.result)
-                it.status == TaskStatus.Queued && it.time !in inFlight -> it.over(TaskStatus.Stopped, MAC_STOPPED_UNTAKEN)
+                it.status == TaskStatus.Queued && !event.kept && it.time !in inFlight -> it.over(TaskStatus.Stopped, MAC_STOPPED_UNTAKEN)
                 else -> it
             }
         }
@@ -463,9 +463,10 @@ const val MAC_MAKING = "Starting a new thread on the Mac"
  * What stands beside an entry of a computer's while it is not over; [fresh] while a new thread is made for it. [on] is
  * the computer its thread runs on, as he calls it ("MG1"), so a thread on one box never says it works on another.
  */
-fun macEntryLabel(status: TaskStatus, sending: Boolean, reachable: Boolean, approvals: Boolean, fresh: Boolean = false, on: String = "the Mac"): String = when {
+fun macEntryLabel(status: TaskStatus, sending: Boolean, reachable: Boolean, approvals: Boolean, fresh: Boolean = false, on: String = "the Mac", stoppingForNext: Boolean = false): String = when {
     status == TaskStatus.Queued && fresh -> if (on == "the Mac") MAC_MAKING else "Starting a new thread on $on"
     status == TaskStatus.Queued -> if (sending) "Sending to $on" else if (reachable) (if (on == "the Mac") MAC_QUEUED else "Queued on $on") else "Sent; $on is out of reach"
+    stoppingForNext -> "Stopping for your message"
     approvals -> "Approval needed"
     reachable -> "Working on $on"
     else -> "${if (on == "the Mac") "Mac" else on} out of reach; still working there"

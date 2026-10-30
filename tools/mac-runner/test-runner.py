@@ -337,7 +337,7 @@ try:
     calling_as('phone')
     check('unpair leaves every other device in', call('GET', '/health')[0] == 200)
     code, health = call('GET', '/health')
-    check('/health answers, naming the agents the Mac has (Venice, which has a key)', code == 200 and health.pop('models', None) is not None and health.pop('bots', None) is not None and health.pop('build', 0) is None and health.pop('updating', None) is False and health == {'ok': True, 'runner': 'oma-runner', 'soma': environment['OMA_RUNNER_SOMA_SERVICE'], 'threads': 6, 'working': 0, 'waiting': 0, 'kinds': ['claude', 'codex', 'cursor', 'grok', 'venice'], 'files': True})
+    check('/health answers, naming the agents the Mac has (Venice, which has a key)', code == 200 and health.pop('models', None) is not None and health.pop('bots', None) is not None and health.pop('build', 0) is None and health.pop('updating', None) is False and health.pop('send_now', None) is True and health == {'ok': True, 'runner': 'oma-runner', 'soma': environment['OMA_RUNNER_SOMA_SERVICE'], 'threads': 6, 'working': 0, 'waiting': 0, 'kinds': ['claude', 'codex', 'cursor', 'grok', 'venice'], 'files': True})
     check('a project outside the roots is refused', call('POST', '/threads', {'name': 'x', 'project': str(outside)})[0] == 403)
     check('a path that climbs out of a root is refused', call('POST', '/threads', {'name': 'x', 'project': str(project / '..' / '..' / 'outside')})[0] == 403)
     (root / 'link').symlink_to(outside)
@@ -674,6 +674,68 @@ try:
     check('stop stops the task', call('POST', '/threads/%s/stop' % thread)[1]['stopped'])
     stopped = stream(thread, after=last, until=('stopped',))[-1]
     check('what was waiting its turn is dropped, what was said stays', stopped['dropped'] == 1 and settle(thread, 'idle') and starts()[-1]['prompt'] == 'slow again')
+
+    def turn_held(thread, after):
+        # The events up to the fake agent's word that it holds its turn, whatever else it says first.
+        heard, deadline = [], time.monotonic() + 30
+        while not any(event['type'] == 'text' and event['text'].startswith('Stubborn:') for event in heard):
+            assert time.monotonic() < deadline, 'the turn never held: %r' % (heard,)
+            heard += stream(thread, after=heard[-1]['id'] if heard else after, until=('text',))
+        return heard
+
+    # Send now (Boss, 2026-10-30): the turn ends, those words go next, what else waited still waits, and no agent runs beside it.
+    check('the runner says it can send now', call('GET', '/health')[1].get('send_now') is True)
+    check('words that wait nowhere are not sent now', call('POST', '/threads/%s/send-now' % thread, {'text': 'nowhere'})[1]['sent'] == 'gone')
+    check('send now wants its words', call('POST', '/threads/%s/send-now' % thread, {})[0] == 400)
+    last = call('GET', '/threads/' + thread)[1]['thread']['last_event']
+    call('POST', '/threads/%s/messages' % thread, {'text': 'stubborn one'})
+    call('POST', '/threads/%s/messages' % thread, {'text': 'behind'})
+    call('POST', '/threads/%s/messages' % thread, {'text': 'go now'})
+    heard = turn_held(thread, last)
+    stubborn, helper = map(int, next(event['text'] for event in heard if event['type'] == 'text' and event['text'].startswith('Stubborn:')).split(': ')[1].split())
+    began = time.monotonic()
+    check('send now stops the turn ahead', call('POST', '/threads/%s/send-now' % thread, {'text': 'go now'})[1]['sent'] == 'now')
+    events = stream(thread, after=heard[-1]['id'], until=('stopped',))
+    stopped = events[-1]
+    def alive(pid):
+        try:
+            os.kill(pid, 0)
+            return subprocess.run(['ps', '-o', 'stat=', '-p', str(pid)], capture_output=True, text=True).stdout.strip()[:1] not in ('', 'Z')
+        except ProcessLookupError:
+            return False
+    check('the stopped turn says all that waited still waits', stopped['dropped'] == 0 and stopped['kept'] is True)
+    check('an agent that ignores the stop is gone before anything else starts', not alive(stubborn) and time.monotonic() - began < 15)
+    check('and so is a command it left in a session of its own', not alive(helper))
+    while [event['type'] for event in events].count('result') < 2:
+        events += stream(thread, after=events[-1]['id'])
+    check('the words sent now go first, then what else waited', [event['text'] for event in events if event['type'] == 'message'] == ['go now', 'behind'])
+    check('in the same conversation', [(entry['prompt'], entry['resumed']) for entry in starts()[-2:]] == [('go now', True), ('behind', True)])
+
+    settle(thread, 'idle')
+    last = call('GET', '/threads/' + thread)[1]['thread']['last_event']
+    call('POST', '/threads/%s/messages' % thread, {'text': 'stubborn two'})
+    call('POST', '/threads/%s/messages' % thread, {'text': 'dropped by stop'})
+    heard = turn_held(thread, last)
+    call('POST', '/threads/%s/send-now' % thread, {'text': 'dropped by stop'})
+    check('stop after send now still stops everything', call('POST', '/threads/%s/stop' % thread)[1]['stopped'])
+    stopped = stream(thread, after=heard[-1]['id'], until=('stopped',))[-1]
+    # A plain stop leaves such a command as it always has; this test's own isn't left behind.
+    for said in heard:
+        if said['type'] == 'text' and said['text'].startswith('Stubborn:'):
+            try:
+                os.kill(int(said['text'].split()[2]), signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+    check('what stop dropped is not sent', stopped['dropped'] == 1 and not stopped.get('kept') and settle(thread, 'idle') and starts()[-1]['prompt'] == 'stubborn two')
+
+    last = call('GET', '/threads/' + thread)[1]['thread']['last_event']
+    call('POST', '/threads/%s/messages' % thread, {'text': 'question-form please'})
+    call('POST', '/threads/%s/messages' % thread, {'text': 'while it asks'})
+    card = stream(thread, after=last, until=('approval',))[-1]
+    check('send now does not end a question waiting for him', call('POST', '/threads/%s/send-now' % thread, {'text': 'while it asks'})[1]['sent'] == 'question' and status_of(thread) == 'waiting')
+    call('POST', '/threads/%s/stop' % thread)
+    stream(thread, after=card['id'], until=('stopped',))
+    settle(thread, 'idle')
 
     last = call('GET', '/threads/' + thread)[1]['thread']['last_event']
     (project / 'written.txt').unlink()

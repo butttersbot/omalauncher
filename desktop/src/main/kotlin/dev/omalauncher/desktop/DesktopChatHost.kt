@@ -140,6 +140,10 @@ class DesktopChatHost(
 
     override fun stopMac(thread: String, said: (String?) -> Unit) = engine.stop(thread, said)
 
+    override fun macSendsNow(thread: String) = engine.sendsNow(thread)
+
+    override fun sendMacNow(time: Long, said: (String?) -> Unit) = engine.sendNow(time, said)
+
     override fun botFiles(thread: String, told: (dev.omalauncher.assist.MacBotFiles?) -> Unit) = engine.botFiles(thread, told)
 
     override fun freshBot(thread: String, said: (String) -> Unit) = engine.freshBot(thread, said)

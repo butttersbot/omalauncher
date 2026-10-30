@@ -186,7 +186,7 @@ class FrontAgentTest {
         assertEquals(WaitingLine("queued → the builder", cancel = true), waitingLine(built(5, "x", status = TaskStatus.Queued)))
         // The runner on the Mac cannot take one waiting request back, so none of the Mac's is ever offered a cancel.
         val onMac = toThread(6, "x", "t1a2b3c4d", TaskStatus.Queued)
-        assertEquals(WaitingLine("queued → FF4 mod · queued on the Mac", cancel = false), waitingLine(onMac, macLabel = MAC_QUEUED))
+        assertEquals(WaitingLine("queued → FF4 mod · queued on the Mac", cancel = false, sendNow = true), waitingLine(onMac, macLabel = MAC_QUEUED))
         assertEquals(WaitingLine("Sending to the Mac…", cancel = false), waitingLine(onMac, macLabel = macEntryLabel(TaskStatus.Queued, sending = true, reachable = true, approvals = false)))
         assertEquals(WaitingLine("Sent; the Mac is out of reach…", cancel = false), waitingLine(onMac, macLabel = macEntryLabel(TaskStatus.Queued, sending = false, reachable = false, approvals = false)))
         assertEquals(MAC_QUEUED, macEntryLabel(TaskStatus.Queued, sending = false, reachable = true, approvals = false))

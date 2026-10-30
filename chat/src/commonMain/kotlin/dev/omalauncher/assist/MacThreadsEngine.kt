@@ -36,6 +36,10 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
     @Volatile private var kinds: Map<String, List<String>> = emptyMap()
     // The computers whose runner is the Fold's own (MacHealth.phone): nothing is made there.
     @Volatile private var phones: Set<String> = emptySet()
+    @Volatile private var sendNowMachines: Set<String> = emptySet()
+
+    /** The threads whose turn is stopping for his words sent now, until they say it has. */
+    @Volatile private var stoppingForNext: Set<String> = emptySet()
     @Volatile private var offered: Map<String, Map<String, List<String>>> = emptyMap()
     /** How many threads each computer said it has at its last `/health`: a change (a thread or bot made elsewhere) is listed at once. */
     @Volatile private var counts: Map<String, Int> = emptyMap()
@@ -46,6 +50,9 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
      * is sent on exactly as it went. In memory only: after a restart the same is made again from the thread.
      */
     private val sentWords = HashMap<Long, String>()
+
+    /** What the computer was given for an entry, pictures' places and all: how [sendNow] names them to it. */
+    private val heldWords = HashMap<Long, String>()
 
     /** The pictures sent with the entry filed at a time, on their way to the Mac with its words (and again on `[ try again ]`). */
     private val pictures = HashMap<Long, List<java.io.File>>()
@@ -238,7 +245,10 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
 
     /** What stands beside [task], an entry of the Mac's, while it is not over. */
     fun label(task: ChatTask): String =
-        macEntryLabel(task.status, task.time in sending, view.reachableFor(task.thread), pending.any { it.threadId == task.thread }, task.fresh, computerOf(task.thread))
+        macEntryLabel(task.status, task.time in sending, view.reachableFor(task.thread), pending.any { it.threadId == task.thread }, task.fresh, computerOf(task.thread), task.thread in stoppingForNext)
+
+    /** Whether the computer [threadId] runs on has said it can stop a turn for waiting words (runners before it stop and drop them). */
+    fun sendsNow(threadId: String): Boolean = macMachineOf(threadId) in sendNowMachines
 
     /** The computer [threadId] runs on, as he named it when it was set up ("MG1"); "the Mac" while that isn't known. */
     fun computerOf(threadId: String): String = machine(threadId)?.name?.takeIf { it.isNotBlank() } ?: "the Mac"
@@ -248,6 +258,7 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
         var changed = false
         if (health is MacHealthResult.Up) {
             kinds = kinds + (machine to health.health.kinds)
+            sendNowMachines = if (health.health.sendNow) sendNowMachines + machine else sendNowMachines - machine
             offered = offered + (machine to health.health.models)
             phones = if (health.health.phone) phones + machine else phones - machine
             changed = counts[machine].let { it != null && it != health.health.threads }
@@ -602,6 +613,7 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
             sending = sending + time
             // Only the entries the chat still keeps can be sent on.
             sentWords.keys.retainAll(kept)
+            heldWords.keys.retainAll(kept)
             pictures.keys.retainAll(kept)
             sentWords[time] = text
         }
@@ -620,7 +632,9 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
                         val kept = attached.map { client.upload(it) }
                         if (kept.any { it == null }) MAC_IMAGES_NOT_SENT
                         else {
-                            val taken = client.sendMessage(threadId, withPictures(text, kept.filterNotNull()))
+                            val words = withPictures(text, kept.filterNotNull())
+                            synchronized(this) { heldWords[time] = words }
+                            val taken = client.sendMessage(threadId, words)
                             if (taken is MacAnswer.Ok && taken.value == MacTaken.Now) log.update(time, save = true, change = ::macTaken)
                             macUnsentReason(taken)
                         }
@@ -864,7 +878,7 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
                 if (gone != null) platform.withdrawCard(gone)
             }
             is MacEvent.Result, is MacEvent.Error, is MacEvent.Stopped -> {
-                val gone = synchronized(this) { book.ended(threadId, event.id).also { published() } }
+                val gone = synchronized(this) { stoppingForNext = stoppingForNext - threadId; book.ended(threadId, event.id).also { published() } }
                 gone.forEach { platform.withdrawCard(it) }
                 // A request of his that just ended comes to him as the phone builder's does; one he stopped says nothing more.
                 // Dropped here when every agent was at its limit or the turn ended empty, which needs him as a failure does.
@@ -1264,6 +1278,35 @@ class MacThreadsEngine(private val platform: ThreadsPlatform) {
                 else -> "The Mac did not stop it."
             }
             follow(threadId)
+            platform.post { told(said) }
+        }
+    }
+
+    /**
+     * `[ send now ]` under his words the computer holds behind a turn (Boss, 2026-10-30, as on the phone): the computer stops
+     * that turn, as a stop would, and takes these next, in the same conversation, once its agent has gone. What else
+     * waited still waits. The words themselves name them, as a `message` event does; [told] gets what there is to tell him.
+     */
+    fun sendNow(time: Long, told: (String?) -> Unit) {
+        restore()
+        val task = platform.chatLog().tasks.firstOrNull { it.time == time && it.mac && it.status == TaskStatus.Queued } ?: return told(null)
+        val words = synchronized(this) { heldWords[time] } ?: task.prompt
+        thread(name = "oma-mac-send-now", isDaemon = true) {
+            val on = computerOf(task.thread)
+            val answer = client(task.thread).sendNow(task.thread, words)
+            if (answer is MacAnswer.Ok && answer.value == MacSentNow.Stopping) synchronized(this) { stoppingForNext = stoppingForNext + task.thread }
+            val said = when (answer) {
+                is MacAnswer.Ok -> when (val sent = answer.value) {
+                    MacSentNow.Stopping, MacSentNow.Next -> null
+                    MacSentNow.Gone -> "That message is no longer waiting."
+                    MacSentNow.Question -> "A question waits for your answer: send or skip it first"
+                    is MacSentNow.Refused -> sent.why.ifEmpty { "$on did not take it." }
+                }
+                MacAnswer.Unreachable -> "$on is unreachable. It is still working there."
+                else -> "$on did not take it."
+            }
+            follow(task.thread)
+            refresh()
             platform.post { told(said) }
         }
     }

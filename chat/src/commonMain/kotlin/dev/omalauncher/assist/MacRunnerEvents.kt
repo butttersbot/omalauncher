@@ -76,8 +76,8 @@ sealed interface MacEvent {
         val state: String, val note: String = "", val settled: Boolean = false,
     ) : MacEvent
 
-    /** The task was stopped; [dropped] messages that were waiting their turn went with it. */
-    data class Stopped(override val id: Long, override val time: Long, val dropped: Int) : MacEvent
+    /** The task was stopped; [dropped] messages that were waiting their turn went with it. [kept]: stopped for words sent now, so all that waited still waits. */
+    data class Stopped(override val id: Long, override val time: Long, val dropped: Int, val kept: Boolean = false) : MacEvent
 
     /**
      * [code] is the agent's exit code when it ended without an answer, and null when it never started or the
@@ -126,7 +126,7 @@ internal fun macEvent(json: JSONObject, lineId: Long? = null, lineType: String? 
         "approval_result" -> MacEvent.ApprovalResult(id, time, json.macText("approval"), MacDecision.of(json.macText("decision")), json.macText("device"), json.optBoolean("skipped") || questionAnswersSkipped(json.optJSONObject("answers")))
         "result" -> MacEvent.Result(id, time, json.macText("text"), json.optBoolean("failed"), json.macText("kind"), json.macText("model"))
         "note" -> json.macText("text").trim().takeIf { it.isNotEmpty() }?.let { MacEvent.Note(id, time, it) } ?: MacEvent.Other(id, time, type)
-        "stopped" -> MacEvent.Stopped(id, time, (json.macWhole("dropped") ?: 0L).toInt())
+        "stopped" -> MacEvent.Stopped(id, time, (json.macWhole("dropped") ?: 0L).toInt(), json.optBoolean("kept"))
         "artifact" -> json.macText("name").takeIf { it.isNotBlank() && it.length <= 80 && '/' !in it }?.let {
             MacEvent.Artifact(id, time, it, (json.macWhole("version") ?: 0L).toInt(), json.macText("title").take(80), json.macText("mime"), json.macText("state"),
                 json.macText("note").take(200), json.opt("settled") == true)

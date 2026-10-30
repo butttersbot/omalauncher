@@ -48,6 +48,7 @@ Plain HTTP with JSON over the tailnet is enough; server-sent events or a kept-op
 - `POST /threads/ID/approvals/APPROVAL`: allow or deny one request, once, with the nonce the request came
   with. See "Approvals".
 - `POST /threads/ID/stop`: stop the task; what was said stays.
+- `POST /threads/ID/send-now` `{text}`: those waiting words go next; the task ahead stops and its agent is gone first; the rest still wait.
 
 ## Approvals
 The phone runs Claude Code with `--permission-prompt-tool stdio` and shows each request to Boss as a card that
@@ -156,6 +157,9 @@ Bodies and answers are JSON; every answer has `ok`.
   request goes on waiting); 404 once answered or gone.
 - `POST /threads/ID/stop` -> `{stopped}`. Messages waiting their turn are dropped; the `stopped` event says how
   many.
+- `POST /threads/ID/send-now {text}` -> `{sent}`: `now`, `next` (nothing to stop), `gone` (no longer waiting), `question`
+  (a form waits; nothing changed) or `refused` with `error`. The stopped agent gets 5 s, then is killed; the `stopped` event
+  says `kept: true`, then those words start, in the same conversation. `/health` says `send_now: true`.
 
 Event types: `status {status}`; `message {text}` (the owner's words, when taken); `text {text}`; `step {text,
 tool}` (one line, written as `ClaudeProtocol.step` writes it); `approval {approval, nonce, tool, input,
