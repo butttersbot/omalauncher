@@ -36,8 +36,8 @@ key HOME
 wait 1000
 shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --es waitingQuestion builder --ez queuedBehind true
 wait 1000
-expect Questions waiting
-tap answer questions
+# Coming back, the form is still open where he left it.
+expect Before I continue
 expect Keep the Manga look
 # A restart of the app: the draft is read back from disk.
 shell am force-stop dev.omalauncher.artifactpreview

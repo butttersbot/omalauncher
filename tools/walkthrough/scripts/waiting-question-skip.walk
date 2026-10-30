@@ -34,7 +34,11 @@ expect Send answers
 expect skip
 nolog waiting question answer
 shot question-form-inner-skip
+# Unfolded, the chat card's [ skip ] shows beside the form's. The card's asks first and then reads [ skip it ],
+# so "[ skip ]" below is the form's own footer skip, which answers at once as before.
 tap skip
+expect Skip this question?
+tap [ skip ]
 absent Questions waiting
 absent Before I continue
 expect skipped
