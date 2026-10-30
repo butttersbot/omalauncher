@@ -8,6 +8,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import dev.omalauncher.assist.RelayOutcome
+import dev.omalauncher.linux.ShellResult
 import dev.omalauncher.widgets.lang.Compiler
 import dev.omalauncher.widgets.lang.Null
 import dev.omalauncher.widgets.lang.Value
@@ -15,7 +16,6 @@ import dev.omalauncher.widgets.render.WidgetContent
 import dev.omalauncher.widgets.runtime.Dictation
 import dev.omalauncher.widgets.runtime.DictationMic
 import dev.omalauncher.widgets.runtime.Services
-import dev.omalauncher.widgets.runtime.ShellResult
 import dev.omalauncher.widgets.runtime.WidgetInstance
 import dev.omalauncher.widgets.runtime.WidgetTerminal
 import kotlinx.coroutines.flow.Flow
