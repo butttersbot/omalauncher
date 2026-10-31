@@ -166,9 +166,13 @@ class PhoneBridge(private val context: Context, private val proot: Proot) {
         Managed.text(File(proot.rootfs, "usr/local/bin/oma-phone"), Policy.Owned, executable = true) {
             context.assets.open("oma-phone.sh").bufferedReader().use { it.readText() }.replace("__SOCKET__", socketName)
         },
-        Managed.text(File(proot.home, ".local/share/omalauncher/phone-control.md"), Policy.Owned) { INSTRUCTIONS },
+        Managed.text(File(proot.home, RULES_FILE), Policy.Owned) { INSTRUCTIONS },
     )
     companion object {
+        /** Where [INSTRUCTIONS] are kept in the guest home. */
+        private const val RULES_FILE = ".local/share/omalauncher/phone-control.md"
+        /** What a message on a resumed session carries instead of [INSTRUCTIONS]: its first message had them, and a compaction may have dropped them. */
+        const val RULES_POINTER = "Your standing rules for asking Boss and for phone control are in /root/$RULES_FILE. If they are no longer in this conversation, read that file before asking Boss anything or using oma-phone."
         val INSTRUCTIONS = """
             When you need Boss's choice, use a native question card (AskUserQuestion) or an artifact question form with Submit. Do not leave a decision as a plain-text question; Submit must deliver the choices to the waiting agent. If the decision is one another thread already asks or will ask him (a peer mailed you about it), link yours: add "metadata": {"source": "link:THREAD"} to AskUserQuestion, THREAD being that peer's thread (a Mac thread id like t1703ae4f, or phone:A to phone:D); his answer to either then answers both.
             Android phone control is available through the `oma-phone` command in Bash. Run `oma-phone help` for commands.

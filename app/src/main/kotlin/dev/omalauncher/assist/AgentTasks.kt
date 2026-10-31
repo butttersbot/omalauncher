@@ -465,13 +465,13 @@ class Builder(val id: BuilderId) {
         val model = if (id == BuilderId.D) PHONE_D_CODEX_MODEL else builderModel(if (errand) ERRAND_MODEL else null, chosenModel(context, agent.bin), choice.model)
         val seen = if (screen != null) "\n\nThe attached image is the screen I was looking at when I asked." else ""
         val imagePrompt = earlier + (if (agent.bin == "claude" && images.isNotEmpty()) prompt + "\n\nRead these attached images before answering:\n" + images.joinToString("\n") else prompt) + seen
-        val fullPrompt = if (id == BuilderId.D) PHONE_D_INSTRUCTIONS + "\n\n" + imagePrompt else imagePrompt + "\n\n" + PhoneBridge.INSTRUCTIONS + "\n" + GROKBOT_RULE + "\n" + MODEL_COMMAND_RULE + "\nAndroid build tools, when installed, are in /opt/android-sdk. Run oma-build-check to check the toolchain. Run Gradle as `oma-gradle TASKS` (oma-build does): one build at a time and small, so Android does not kill the app for memory. Use the approval UI for blocked tools; never ask for blanket permission bypass.\n" + dev.omalauncher.oma.PhoneArtifacts.INSTRUCTIONS + "\n"
         val resumed = when {
             errand -> null
             agent.bin == "claude" -> thread?.takeUnless { it.startsWith(CodexProtocol.THREAD_PREFIX) }
             agent.bin == "codex" -> thread?.takeIf { it.startsWith(CodexProtocol.THREAD_PREFIX) }?.removePrefix(CodexProtocol.THREAD_PREFIX)
             else -> null
         }
+        val fullPrompt = builderPrompt(id, imagePrompt, resumed != null)
         // Decided as it starts, not as it was sent: work that waited may now run alone, or beside the other builder.
         val worktree = builderWorktree(id).takeIf { builderWorktreeWanted(id, AgentTasks.builders.associate { it.id to it.working }, agent.bin == "claude" || agent.bin == "codex") }
         // Claude gets the screenshot inside the message, so its file goes now. Codex can only read a file, which lasts until its task ends.
@@ -1003,6 +1003,15 @@ const val ERRAND_MODEL = "sonnet"
 
 fun claudeStreamCommand(resume: String? = null, model: String? = null): String = "claude -p " + (resume?.takeIf(SESSION_ID::matches)?.let { "--resume $it " } ?: "") +
     (model?.let { "--model ${modelArg(it)} " } ?: "") + "--input-format stream-json --output-format stream-json --verbose --permission-mode auto --permission-prompt-tool stdio --allowedTools ${shellQuote("Bash(oma-phone *)")} Read"
+
+/**
+ * What a builder is sent: [words] and its standing guidance. The phone rules are about 10 KB and a session keeps every
+ * message for good, so only a new session gets them whole; a resumed one is told where they are. An agent with no
+ * sessions is never resumed, so each of its messages has them.
+ */
+fun builderPrompt(id: BuilderId, words: String, resumed: Boolean): String =
+    if (id == BuilderId.D) PHONE_D_INSTRUCTIONS + "\n\n" + words
+    else words + "\n\n" + (if (resumed) PhoneBridge.RULES_POINTER else PhoneBridge.INSTRUCTIONS) + "\n" + GROKBOT_RULE + "\n" + MODEL_COMMAND_RULE + "\nAndroid build tools, when installed, are in /opt/android-sdk. Run oma-build-check to check the toolchain. Run Gradle as `oma-gradle TASKS` (oma-build does): one build at a time and small, so Android does not kill the app for memory. Use the approval UI for blocked tools; never ask for blanket permission bypass.\n" + dev.omalauncher.oma.PhoneArtifacts.INSTRUCTIONS + "\n"
 
 /**
  * A builder's command with what its `soma-artifact` needs (features/artifact-panel/PLAN.md, slice 3): its thread's key in
