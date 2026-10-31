@@ -220,7 +220,9 @@ object ChatHistory {
      * never anyone's follow-up: it loads as interrupted with his words kept, as one it was reading does. One that
      * waited for a new thread to be made on the Mac was sent nowhere: it says so and can be sent again.
      */
-    fun afterRestart(tasks: List<ChatTask>) = tasks.map { saved ->
+    fun afterRestart(tasks: List<ChatTask>, keepQueued: Set<Long> = emptySet()) = tasks.map { saved ->
+        // Agent mail that waited is kept across the restart (QueuedMail) and sent when its builder is free: it stays waiting.
+        if (saved.time in keepQueued && saved.status == TaskStatus.Queued && !saved.mac) return@map saved
         // Making a new thread for it ended with the process, before anything was sent: his to send again.
         if (saved.mac && saved.fresh && saved.status == TaskStatus.Queued) return@map saved.copy(status = TaskStatus.Dropped, result = FRESH_UNMADE)
         if (saved.mac) return@map saved.copy(approvals = saved.approvals.filter { it.answer != ApprovalAnswer.Waiting }.map { it.copy(key = "") })
@@ -297,13 +299,13 @@ class ChatStore(private val file: File, private val maxBytes: Long = ChatHistory
     @Synchronized fun runnerAppend(id: String, event: JSONObject) { runner.append(id, event); save() }
 
     /** Reads the thread a previous run left, as [ChatHistory.afterRestart] sees it. */
-    @Synchronized fun load() {
+    @Synchronized fun load(keepQueued: Set<Long> = emptySet()) {
         val text = runCatching { if (file.length() <= maxBytes) file.readText() else "" }.getOrDefault("")
         val saved = runCatching { ChatHistory.decode(text) }.getOrDefault(emptyList())
         val journal = runCatching { JSONObject(text).optJSONObject("phoneRunner") }.getOrNull()
         runner = PhoneTaskEvents(journal)
         if (journal == null) runner.changed(emptyList(), saved)
-        tasks = ChatHistory.afterRestart(saved)
+        tasks = ChatHistory.afterRestart(saved, keepQueued)
         runner.changed(saved, tasks)
     }
 

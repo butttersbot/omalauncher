@@ -8,6 +8,8 @@ import dev.omalauncher.oma.ChatApproval
 import dev.omalauncher.oma.bundledMailHistory
 import dev.omalauncher.oma.ChatHistory
 import dev.omalauncher.oma.ChatLog
+import dev.omalauncher.oma.QueuedMail
+import android.util.Log
 import dev.omalauncher.oma.ChatTask
 import dev.omalauncher.oma.FollowUp
 import dev.omalauncher.oma.FollowUpQueue
@@ -82,7 +84,7 @@ object AgentTasks {
         if (restored) return
         restored = true
         builders.forEach { it.restore(context) }
-        AgentMailReceipts.interrupted(context)
+        AgentMailReceipts.interrupted(context, builders.flatMap { it.restoredMail }.toSet())
         AgentNotices.clearStale(context)
     }
 
@@ -335,6 +337,25 @@ class Builder(val id: BuilderId) {
         answer = saved.getString("answer", "") ?: ""
         label = saved.getString("label", "Ready") ?: "Ready"
         thread = saved.getString("thread", null)
+        restoreMail(context)
+    }
+    /** The task times of the mail that was waiting when the app last ended and is waiting again now: its receipts stay queued. */
+    @Volatile var restoredMail: Set<Long> = emptySet(); private set
+    private fun mailFile(context: Context) = File(context.filesDir, dev.omalauncher.oma.queuedMailFile(id))
+    /** Saves the mail that waits (and only mail), so a restart keeps it; called under the lock whenever the queue changes. */
+    private fun saveMail(context: Context) {
+        runCatching { QueuedMail.save(mailFile(context), followUps.waiting) }.onFailure { Log.w("agent-mail", "Could not keep the waiting mail", it) }
+    }
+    /** Puts back the mail that waited when the app ended, once: those whose task the thread still shows waiting. */
+    private fun restoreMail(context: Context) {
+        val log = ChatLog.of(context)
+        val back = QueuedMail.read(mailFile(context)).filter { m -> log.tasks.any { it.time == m.time && it.status == TaskStatus.Queued } }
+        back.forEach { followUps.add(it) }
+        restoredMail = back.map { it.time }.toSet()
+        saveMail(context)
+        if (back.isNotEmpty()) android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            synchronized(lock) { if (!working) advance(context, TaskStatus.Done) }
+        }, 3_000)
     }
     /**
      * [screen] is the screenshot behind the "this screen" chip, and only that: once this returns the file is
@@ -377,6 +398,7 @@ class Builder(val id: BuilderId) {
             mailTask = routing["task"].orEmpty(), supersedes = routing["supersedes"].orEmpty())
         val replaced = followUps.supersededBy(incoming)
         check(followUps.add(incoming)) { FollowUpQueue.FULL }
+        saveMail(context)
         replaced?.let {
             dropped(context, listOf(it), "Superseded by agent mail ${incoming.mailId} before delivery.")
             AgentMailReceipts.state(context, listOf(it.time), "superseded")
@@ -680,6 +702,7 @@ class Builder(val id: BuilderId) {
      */
     private fun advance(context: Context, status: TaskStatus): Boolean {
         val handoff = if (sendingNow) followUps.afterSendNow().also { sendingNow = false } else followUps.after(status)
+        saveMail(context) // what was taken out is no longer waiting
         dropped(context, handoff.dropped, FollowUpQueue.FAILED)
         val next = handoff.next ?: return false
         return try {
@@ -699,6 +722,7 @@ class Builder(val id: BuilderId) {
     }
     /** Marks follow-ups that will never be sent, with the [reason] where their answer would have been. A screenshot that waited with one goes. */
     private fun dropped(context: Context, unsent: List<FollowUp>, reason: String) {
+        saveMail(context)
         val log = ChatLog.of(context)
         AgentMailReceipts.state(context, unsent.map { it.time }, "not-delivered")
         unsent.forEach { followUp ->

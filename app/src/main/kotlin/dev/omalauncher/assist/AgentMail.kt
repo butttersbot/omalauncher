@@ -260,10 +260,11 @@ object AgentMailReceipts {
     /** What the phone has recorded for the mail that came to it, for Connections. */
     @Synchronized fun all(context: Context): List<dev.omalauncher.connections.MailReceipt> = read(context).let { rows -> (0 until rows.length()).map { rows.getJSONObject(it) }.map { r ->
         dev.omalauncher.connections.MailReceipt(r.optString("id"), r.optString("sender"), r.optLong("time"), r.optString("state"), r.optLong("updated")) } }
-    @Synchronized fun interrupted(context: Context) = runCatching {
+    /** Everything still queued when the app ended is not delivered, except [kept]: mail restored to its queue and sent when its builder is free. */
+    @Synchronized fun interrupted(context: Context, kept: Set<Long> = emptySet()) = runCatching {
         val rows = read(context)
         save(context, (0 until rows.length()).map { rows.getJSONObject(it).also { row ->
-            if (row.optString("state") == "queued") row.put("state", "not-delivered").put("updated", System.currentTimeMillis())
+            if (row.optString("state") == "queued" && row.optLong("time") !in kept) row.put("state", "not-delivered").put("updated", System.currentTimeMillis())
         } })
     }.onFailure { Log.w("agent-mail", "Could not reconcile queued receipts", it) }.let { }
 

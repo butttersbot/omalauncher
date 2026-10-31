@@ -75,7 +75,7 @@ fun mailReading(receipts: List<MailReceipt>, builderBusy: Boolean, now: Long): C
     val routes = bad.map { it.sender.ifBlank { "unknown sender" } }.distinct().joinToString(", ")
     val oldest = bad.minOf { it.updated }
     val words = (if (stuck.isNotEmpty()) "${stuck.size} mail from $routes has waited ${ageWords(now - stuck.minOf { it.updated })} with nothing working to take it. " else "") +
-        (if (lost.isNotEmpty()) "${lost.size} mail was dropped when the app restarted before it was delivered (${lost.map { it.sender.ifBlank { "unknown sender" } }.distinct().joinToString(", ")}); it is not sent again, so the sender has to resend it. " else "") +
+        (if (lost.isNotEmpty()) "${lost.size} mail was lost before it was delivered: ${lost.take(3).joinToString(", ") { "${it.id.take(24)} from ${it.sender.ifBlank { "an unknown sender" }}" }}${if (lost.size > 3) " and ${lost.size - 3} more" else ""}. The sender has to resend it. " else "") +
         "Oldest: ${ageWords(now - oldest)} ago."
     val check = ConnectionCheck("mail_delivery", "phone", result = "fail", fields = mapOf("code" to if (stuck.isNotEmpty()) "mail_stuck" else "mail_undelivered", "routes" to routes.take(200)))
     return ConnectionReading(Capability.Mail, ConnectionState.Failed, words.trim(), now, "mail:phone", checks = listOf(check))
