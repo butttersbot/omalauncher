@@ -106,7 +106,8 @@ object MacLink {
     @Volatile var messageActionsSupported: Boolean = false
         private set
     @Volatile private var ownHandles: Set<String> = emptySet()
-    private fun normalized(handle: String) = handle.removePrefix("tel:").removePrefix("mailto:").lowercase()
+    @Volatile private var handlesKept: android.content.SharedPreferences? = null
+    private fun normalized(handle: String) = MacWire.normalized(handle)
 
     @Synchronized fun expireTyping(now: Long = System.currentTimeMillis()) { typing.value = typing.value.expire(now) }
     @Synchronized private fun takeTyping(o: JSONObject) {
@@ -141,8 +142,14 @@ object MacLink {
         to: MacAddress,
     ) {
         app = context.applicationContext
-        if (address != to) { previews.value = emptyMap(); previewAt.clear(); richLinksSupported = false; actionRepeatsSafe = false; threadsSupported = false; searchSupported = false; messageActionsSupported = false; ownHandles = emptySet(); knownNames = emptyMap(); typing.value = TypingState() }
+        if (address != to) { previews.value = emptyMap(); previewAt.clear(); richLinksSupported = false; actionRepeatsSafe = false; threadsSupported = false; searchSupported = false; messageActionsSupported = false; ownHandles = emptySet(); MacWire.ownHandles = emptySet(); knownNames = emptyMap(); typing.value = TypingState() }
         address = to
+        // His handles as last heard, so one failed health call doesn't make his own reactions someone else's.
+        handlesKept = context.getSharedPreferences("mac-link", Context.MODE_PRIVATE)
+        if (ownHandles.isEmpty()) {
+            ownHandles = handlesKept?.getStringSet(to.base, null).orEmpty()
+            MacWire.ownHandles = ownHandles
+        }
         if (running) return
         running = true
         thread(name = "mac-link", isDaemon = true) { loop() }
@@ -283,6 +290,8 @@ object MacLink {
             messageActionsSupported = health.optJSONObject("capabilities")?.optBoolean("guardedMessageActions") == true && health.optBoolean("sendReady")
             val handles = health.optJSONObject("account")?.optJSONArray("handles")
             ownHandles = if (handles == null) emptySet() else (0 until handles.length()).map { normalized(handles.optString(it)) }.toSet()
+            MacWire.ownHandles = ownHandles
+            handlesKept?.edit()?.putStringSet(at.base, ownHandles)?.apply()
         }
         val chats = MacWire.chats(get(at, "/v1/chats?limit=50"))
         knownNames = MacWire.participantNames(chats).mapKeys { normalized(it.key) }

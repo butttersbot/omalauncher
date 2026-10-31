@@ -1,0 +1,68 @@
+# canvas-app: soma-messages
+# Boss, 0.8.11: "Now I am seeing double icons... and then I tried to do tap backs on other messages, and some of them did not even register."
+# Isolated DEMO fixtures only, behind tools/walkthrough/messages-own-handle-proxy.py: the Mac names his reactions by another of his
+# handles, fromMe false, as the live service did. INJECT_EPHEMERAL_DEMO_TOKEN, INJECT_DEMO_HOST, INJECT_DEMO_PORT.
+fold folded
+wait 1200
+shell cmd statusbar collapse
+shell pm clear dev.omalauncher.messages
+shell pm grant dev.omalauncher.messages android.permission.READ_CONTACTS
+shell pm grant dev.omalauncher.messages android.permission.POST_NOTIFICATIONS
+shell am start -a android.intent.action.VIEW -d "'soma-messages://link?url=http%3A%2F%2FINJECT_DEMO_HOST%3AINJECT_DEMO_PORT&token=INJECT_EPHEMERAL_DEMO_TOKEN'" dev.omalauncher.messages
+wait 2500
+tap Link
+wait 20000
+expect Ana Demo
+tap Ana Demo
+wait 1500
+expect Perfect, see you there
+# His first, then a switch to another: one chip for him the whole way.
+clearlog
+doubletap Perfect, see you there
+tap Tapback laugh
+log tapback shown me:laugh
+wait 1500
+doubletap Perfect, see you there
+tap Tapback emphasize
+log tapback shown me:emphasize
+wait 2000
+# Reopening fetches the Mac's copy, which names him by the other handle.
+key BACK
+wait 800
+tap Ana Demo
+wait 2500
+nolog tapback doubled
+nolog tapback left
+shot switched-one-chip card=messages-parity-reaction-menu
+# Fast across other messages: each tap leaves its reaction, and none is shown twice.
+clearlog
+doubletap Are we still on for dinner?
+tap Tapback love
+doubletap Yes! 7pm
+tap Tapback like
+doubletap Edit this demo message
+tap Tapback question
+log tapback shown me:love
+log tapback shown me:like
+log tapback shown me:question
+wait 2000
+key BACK
+wait 800
+tap Ana Demo
+wait 2500
+nolog tapback doubled
+nolog tapback left
+shot fast-across-messages card=messages-parity-reaction-menu
+# A second tap on his own takes it off, because it is known as his.
+clearlog
+doubletap Yes! 7pm
+tap Tapback like
+log tapback left
+wait 2000
+key BACK
+wait 800
+tap Ana Demo
+wait 2500
+nolog tapback shown
+nolog tapback doubled
+shot taken-off card=messages-parity-reaction-menu

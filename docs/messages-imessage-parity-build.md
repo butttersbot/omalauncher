@@ -307,3 +307,9 @@ The Latest pill makes no room at all (the band in 0.8.10 read as a white row), s
 A lone photo started at a guessed shape and resized when decoded, again each time it scrolled back in; the Mac's width and height were ignored. `PictureShapes` keeps each shape, from the Mac then from the picture, on the phone. `PictureCache` keeps decoded pictures, posters and link images in memory. A kept video's frame takes its place from the start, and X posts read earlier have their card size at once.
 
 Walk: `messages-images-steady.walk`, on `Fold8-ParityBuild` with a fresh demo holding the fixture from `~/Projects/msg-bugs-evidence/images/fixture.py`, behind `tools/walkthrough/messages-slow-images-proxy.py`. Numbers in that evidence folder. Frame times did not change, and a text-only chat has the same ones, so on the emulator they are not from pictures.
+
+## 0.8.13: his own tapback is his, whichever handle names it, 2026-10-30
+
+Live metadata, on Boss's own OK and deleted afterwards: the Direct service sends from his number, but chat.db's rows name his reactions by his email, and the service compares with the send address only, so they arrived `fromMe: false`. 0.8.10's outlined chip became a plain one when the Mac's copy arrived: that was the "lands, disappears, lands again". 0.8.11's hold then kept both. Each of the 3 tapbacks seen produced one POST and one reaction event about a second later.
+
+`MacWire` now counts a reaction as his when its sender is any handle in health, and the phone keeps those handles between runs. Walk: `messages-tapback-chips.walk`, on `Fold8-ParityBuild` with a fresh demo behind `tools/walkthrough/messages-own-handle-proxy.py`. It reopens the chat to force the Mac's copy.

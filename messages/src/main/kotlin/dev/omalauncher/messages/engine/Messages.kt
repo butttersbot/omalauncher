@@ -577,6 +577,9 @@ object Messages {
         tapbacksShown.keys.filter { it.startsWith("$id\u0000") }.forEach { key ->
             val message = messages.firstOrNull { it.id == key.substringAfter('\u0000') } ?: return@forEach
             val mine = message.tapbacks.firstOrNull { it.startsWith("me:") }
+            if (mine != null && message.tapbacks.count { it.removePrefix("me:") == mine.removePrefix("me:") } > 1) {
+                android.util.Log.i("SomaWalk", "tapback doubled $mine")
+            }
             if (mine != tapbacksShown[key]) {
                 android.util.Log.i("SomaWalk", if (mine == null) "tapback left" else "tapback shown $mine")
                 tapbacksShown[key] = mine

@@ -68,6 +68,16 @@ object MacWire {
 
     private fun JSONObject.str(key: String): String? = if (!has(key) || isNull(key)) null else optString(key).ifEmpty { null }
 
+    /**
+     * The owner's handles, from the Mac. He can send from his number while Messages records his reactions under his email
+     * (seen live, 0.8.11), and the Mac then says they aren't his. Any of them is him.
+     */
+    @Volatile var ownHandles: Set<String> = emptySet()
+
+    fun normalized(handle: String) = handle.removePrefix("tel:").removePrefix("mailto:").lowercase()
+
+    private fun isOwn(sender: String) = sender.isNotEmpty() && normalized(sender) in ownHandles
+
     fun msg(o: JSONObject): Msg {
         val list = o.optJSONArray("attachments") ?: JSONArray()
         return Msg(
@@ -92,14 +102,14 @@ object MacWire {
             delivery = if (!o.optBoolean("fromMe")) null else when { o.optBoolean("read") -> Delivery.Read; o.optBoolean("delivered") -> Delivery.Delivered; else -> Delivery.Sent },
             failed = o.optBoolean("failed"),
             richLinks = RichLink.read(o.optJSONArray("richLinks")),
-            reactions = Reaction.read(o.optJSONArray("tapbacks")),
+            reactions = Reaction.read(o.optJSONArray("tapbacks")).map { if (it.fromMe || isOwn(it.sender)) it.copy(fromMe = true) else it },
             edited = o.optBoolean("edited"), editedAt = o.optLong("editedAt").takeIf { o.has("editedAt") && !o.isNull("editedAt") },
             editCount = o.optInt("editCount").takeIf { o.has("editCount") && !o.isNull("editCount") },
             editHistory = MessageRevision.read(o.optJSONArray("editHistory")), editHistoryComplete = o.optBoolean("editHistoryComplete"),
             unsentAt = o.optLong("unsentAt").takeIf { o.has("unsentAt") && !o.isNull("unsentAt") }, changes = AllowedChanges.read(o.optJSONObject("actions")),
             tapbacks =
                 (o.optJSONArray("tapbacks") ?: JSONArray()).let { t ->
-                    (0 until t.length()).mapNotNull { t.optJSONObject(it) }.map { (if (it.optBoolean("fromMe")) "me:" else "") + it.optString("kind") }.filter { !it.endsWith(":") && it.isNotEmpty() }
+                    (0 until t.length()).mapNotNull { t.optJSONObject(it) }.map { (if (it.optBoolean("fromMe") || isOwn(it.optString("sender"))) "me:" else "") + it.optString("kind") }.filter { !it.endsWith(":") && it.isNotEmpty() }
                 },
         )
     }
