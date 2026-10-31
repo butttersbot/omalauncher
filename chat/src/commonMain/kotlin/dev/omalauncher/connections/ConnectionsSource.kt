@@ -19,6 +19,8 @@ object ConnectionsSource {
     var alerts by mutableStateOf("Monitoring is not configured on this screen.")
     var enabled by mutableStateOf(false)
     var paused by mutableStateOf(false)
+    /** herd's machines, read on the tailnet while the sheet is open (set by the phone; the desktop has none and the section says so). */
+    var readMachines: suspend () -> dev.omalauncher.canvas.HerdSnapshot? = { null }
     var refresh: () -> Unit = {}
     var restore: () -> Unit = {}
     var toggleAlerts: () -> Unit = {}

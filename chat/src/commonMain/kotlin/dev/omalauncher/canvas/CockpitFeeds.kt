@@ -17,7 +17,9 @@ const val COCKPIT_TAILSHARE_PORT = 8480
 const val COCKPIT_POCKET_HOST = "jacks-mac-pro"
 
 /** A machine as herd sees it: whether it is [online], its load, and its GPU when it has one (the MG1). */
-data class HerdMachine(val name: String, val online: Boolean, val load: Double? = null, val gpu: String? = null, val address: String = "")
+data class HerdMachine(val name: String, val online: Boolean, val load: Double? = null, val gpu: String? = null, val address: String = "",
+    /** From the machine's own report: each absent when it can't say (a phone has no CPU figure until it runs the newer oma-herd). */
+    val cpuPercent: Double? = null, val ramUsedMb: Long? = null, val ramTotalMb: Long? = null)
 
 /** A session herd lists: a Claude Code session (CLI or desktop app), a runner thread, a Codex or Grok session. */
 data class HerdSession(
@@ -54,7 +56,10 @@ fun herdSnapshot(text: String?): HerdSnapshot? = runCatching {
         val report = m.optJSONObject("report")
         val info = report?.optJSONObject("machine")
         val gpu = info?.optJSONObject("gpu")?.let { g -> "GPU ${g.optInt("used_mb") / 1024}/${g.optInt("total_mb") / 1024} GB" }
-        ms += HerdMachine(name.take(64), m.optBoolean("online"), info?.takeIf { it.has("load") }?.optDouble("load"), gpu, m.optString("address").take(64))
+        ms += HerdMachine(name.take(64), m.optBoolean("online"), info?.takeIf { it.has("load") }?.optDouble("load"), gpu, m.optString("address").take(64),
+            cpuPercent = info?.takeIf { it.has("cpu_percent") && !it.isNull("cpu_percent") }?.optDouble("cpu_percent")?.takeIf { it in 0.0..100.0 },
+            ramUsedMb = info?.takeIf { it.has("ram_used_mb") && !it.isNull("ram_used_mb") }?.optLong("ram_used_mb"),
+            ramTotalMb = info?.takeIf { it.has("ram_total_mb") && !it.isNull("ram_total_mb") }?.optLong("ram_total_mb")?.takeIf { it > 0 })
         val sessions = report?.optJSONArray("sessions") ?: JSONArray()
         for (j in 0 until sessions.length()) {
             val s = sessions.optJSONObject(j) ?: continue

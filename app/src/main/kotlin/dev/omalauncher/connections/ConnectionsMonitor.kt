@@ -70,6 +70,8 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
             }
         }
         nm.createNotificationChannel(NotificationChannel(channel, "Connections outages & recovery", NotificationManager.IMPORTANCE_DEFAULT))
+        // Read only while the sheet is open (the sheet asks): herd's machines with their CPU and RAM, off the main thread.
+        ConnectionsSource.readMachines = { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { dev.omalauncher.canvas.cockpitFeeds().herd() } }
         ConnectionsSource.refresh = { check(false) }
         ConnectionsSource.restore = { restorer.start() }
         ConnectionsSource.togglePause = {

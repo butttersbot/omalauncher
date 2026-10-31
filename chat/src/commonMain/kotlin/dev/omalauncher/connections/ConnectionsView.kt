@@ -346,19 +346,54 @@ private fun ConnectionsInventory(snapshot: ConnectionsSnapshot, now: Long) {
     val incidents = snapshot.incidents(now)
     SectionHead("All capabilities", "${rows.size} groups")
     for (row in rows) {
-        if (row.capability == Capability.Models) ModelsSection(row, connectionStatus(row, incidents), snapshot.readings.filter { it.capability == Capability.Models }.map { it.current(now) })
-        else ConnectionDisclosure(row, connectionStatus(row, incidents))
+        if (row.capability == Capability.Models) {
+            ModelsSection(row, connectionStatus(row, incidents), snapshot.readings.filter { it.capability == Capability.Models }.map { it.current(now) })
+            MachinesSection()
+        } else ConnectionDisclosure(row, connectionStatus(row, incidents))
     }
 }
+/**
+ * Machines: one line per computer with its CPU and RAM, from herd. Information only (no incidents, no status). It collapses like the other
+ * sections and starts collapsed; herd is read only while this sheet is open.
+ */
+@Composable
+private fun MachinesSection() {
+    var open by remember { mutableStateOf(false) }
+    var machines by remember { mutableStateOf<List<MachineRow>>(machineRows(null)) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            machines = machineRows(runCatching { ConnectionsSource.readMachines() }.getOrNull())
+            kotlinx.coroutines.delay(MACHINES_EVERY_MS)
+        }
+    }
+    val online = machines.count { it.state == MachineState.Online }
+    Column(Modifier.fillMaxWidth().rule(bottom = true)) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { open = !open }
+            .semantics { contentDescription = "Machines: $online online"; stateDescription = if (open) "Expanded" else "Collapsed" }, verticalAlignment = Alignment.CenterVertically) {
+            Words("Machines", sans(13.sp), modifier = Modifier.weight(1f))
+            Words(if (machines.all { it.state == MachineState.Unread }) "–" else "$online of ${machines.size} online", plainMono(10.sp, Pack.muted), 1)
+        }
+        if (open) for (m in machines) {
+            Row(Modifier.fillMaxWidth().padding(bottom = 10.dp).semantics { contentDescription = "${m.name}: ${m.text}" }, verticalAlignment = Alignment.CenterVertically) {
+                Words(m.name, sans(12.sp, Pack.foreground), modifier = Modifier.weight(1f))
+                Words(m.text, plainMono(10.sp, Pack.muted), 1)
+            }
+        }
+    }
+}
+private const val MACHINES_EVERY_MS = 20_000L
 /** Models: the row, then a line under it for each agent on the phone, named with its model where known, and its health word. */
 @Composable
 private fun ModelsSection(row: ConnectionReading, status: ConnectionStatus, lines: List<ConnectionReading>) {
+    // Collapses like the other sections and starts collapsed as they do: it had no toggle at all, it simply listed its lines.
+    var open by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().rule(bottom = true)) {
-        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).semantics { contentDescription = "${row.capability.title}: ${status.word}" }, verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { open = !open }
+            .semantics { contentDescription = "${row.capability.title}: ${status.word}"; stateDescription = if (open) "Expanded" else "Collapsed" }, verticalAlignment = Alignment.CenterVertically) {
             Words(row.capability.title, sans(13.sp), modifier = Modifier.weight(1f))
             StatusWord(status)
         }
-        for (line in lines) {
+        if (open) for (line in lines) {
             val word = modelWord(line)
             val lineStatus = if (line.state == ConnectionState.Failed || line.state == ConnectionState.Auth) ConnectionStatus(line.state.mark, word, ConnectionTone.Bad)
                 else connectionStatus(line, emptyList()).copy(word = word)

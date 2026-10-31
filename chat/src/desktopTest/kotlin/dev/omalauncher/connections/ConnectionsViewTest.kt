@@ -109,7 +109,7 @@ class ConnectionsViewTest {
         try {
             setContent { ConnectionsDialog(clock) {} }
             onNodeWithContentDescription("Device connections: Connected").assertExists()
-            onNodeWithContentDescription("Models: Healthy").assertExists()
+            onNodeWithContentDescription("Models: Healthy").assertExists().assertHasClickAction()
             onNodeWithText("Agent runs", ignoreCase = true).assertDoesNotExist()
             // The flag is the button, collapsed first; its words and place are unchanged.
             onNodeWithText("Everything is ready.").assertDoesNotExist()
@@ -131,10 +131,38 @@ class ConnectionsViewTest {
         ConnectionsSource.snapshot = ConnectionsSnapshot(readyEverywhere(clock).readings.filter { it.capability != Capability.Models } + lines, clock)
         try {
             setContent { ConnectionsDialog(clock) {} }
+            // Collapsed like the other sections until tapped, and collapsible again.
+            onNodeWithContentDescription("Claude Code: No recent run").assertDoesNotExist()
+            onNodeWithContentDescription("Models:", substring = true).performClick()
             onNodeWithContentDescription("Claude Code: No recent run").assertExists()
+            onNodeWithContentDescription("Models:", substring = true).performClick()
+            onNodeWithContentDescription("Claude Code: No recent run").assertDoesNotExist()
+            onNodeWithContentDescription("Models:", substring = true).performClick()
             onNodeWithContentDescription("Codex: Usage limit. You've hit your usage limit. Try later.").assertExists()
             onNodeWithContentDescription("Grok: Missing").assertExists()
             onNodeWithContentDescription("Connection check: 2 incidents").assertExists()
         } finally { ConnectionsSnapshot().let { ConnectionsSource.snapshot = it }; ConnectionsSource.clock = { System.currentTimeMillis() } }
+    }
+
+    @Test fun machinesAreOneCollapsedSectionWithTheirNumbersAndNoIncidents() = runComposeUiTest {
+        val clock = 1_000_000_000L
+        ConnectionsSource.clock = { clock }
+        ConnectionsSource.snapshot = readyEverywhere(clock)
+        ConnectionsSource.readMachines = {
+            dev.omalauncher.canvas.HerdSnapshot(listOf(
+                dev.omalauncher.canvas.HerdMachine("jacks-mac-pro", true, cpuPercent = 23.4, ramUsedMb = 8_000, ramTotalMb = 16_000),
+                dev.omalauncher.canvas.HerdMachine("macbook-pro", true, ramUsedMb = 4_000, ramTotalMb = 16_000),
+                dev.omalauncher.canvas.HerdMachine("omarchy-mg1", false)), emptyList())
+        }
+        try {
+            setContent { ConnectionsDialog(clock) {} }
+            onNodeWithContentDescription("Mac Pro: CPU 23%  RAM 50%").assertDoesNotExist() // collapsed until tapped
+            onNodeWithContentDescription("Machines:", substring = true).performScrollTo().performClick()
+            onNodeWithContentDescription("Mac Pro: CPU 23%  RAM 50%").assertExists()
+            onNodeWithContentDescription("MacBook: CPU –  RAM 25%").assertExists()   // no CPU figure: a dash
+            onNodeWithContentDescription("MG1: offline").assertExists()
+            onNodeWithContentDescription("Fold: offline").assertExists()              // herd does not list it
+            onNodeWithContentDescription("Connection check: All ready").assertExists() // numbers never change the status or raise an incident
+        } finally { ConnectionsSource.snapshot = ConnectionsSnapshot(); ConnectionsSource.readMachines = { null }; ConnectionsSource.clock = { System.currentTimeMillis() } }
     }
 }

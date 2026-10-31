@@ -85,6 +85,14 @@ fun ConnectionsPreview() {
         ConnectionsSource.alerts = "Fixture only: no real alerts or configuration changes."
         // The cards' sample state: outage alerts on (the walk turns them off and on again).
         ConnectionsSource.enabled = true
+        // Fictional herd: Mac Pro with both numbers, MacBook with no RAM figure, MG1 offline, the Fold with RAM only (not yet on the newer herd).
+        ConnectionsSource.readMachines = {
+            dev.omalauncher.canvas.HerdSnapshot(listOf(
+                dev.omalauncher.canvas.HerdMachine("jacks-mac-pro", true, cpuPercent = 23.0, ramUsedMb = 7_700, ramTotalMb = 16_000),
+                dev.omalauncher.canvas.HerdMachine("macbook-pro", true, cpuPercent = 9.0),
+                dev.omalauncher.canvas.HerdMachine("omarchy-mg1", false),
+                dev.omalauncher.canvas.HerdMachine("galaxy-z-fold8", true, ramUsedMb = 6_000, ramTotalMb = 12_000)), emptyList())
+        }
     }
     Column(Modifier.fillMaxSize().background(Pack.background).windowInsetsPadding(WindowInsets.safeDrawing).padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         BasicText("Connections fixture · no live actions", style = Pack.mono(Pack.size.small))

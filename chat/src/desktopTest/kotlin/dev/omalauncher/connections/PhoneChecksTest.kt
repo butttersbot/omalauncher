@@ -139,3 +139,28 @@ class RestartWordingAndDnsTest {
         assertTrue(resolvesWithin("mac", 200) { "1.2.3.4" })
     }
 }
+
+class MachinesTest {
+    private fun herd(vararg m: dev.omalauncher.canvas.HerdMachine) = dev.omalauncher.canvas.HerdSnapshot(m.toList(), emptyList())
+    @Test fun eachMachineReadsItsCpuAndRamAsPercentWithDashesAndOffline() {
+        val rows = machineRows(herd(
+            dev.omalauncher.canvas.HerdMachine("jacks-mac-pro", true, cpuPercent = 61.9, ramUsedMb = 12_000, ramTotalMb = 16_000),
+            dev.omalauncher.canvas.HerdMachine("macbook-pro", true),
+            dev.omalauncher.canvas.HerdMachine("omarchy-mg1", false, cpuPercent = 5.0),
+            dev.omalauncher.canvas.HerdMachine("galaxy-z-fold8", true, ramUsedMb = 6_000, ramTotalMb = 12_000)))
+        assertEquals(listOf("Mac Pro", "MacBook", "MG1", "Fold"), rows.map { it.name })
+        assertEquals("CPU 61%  RAM 75%", rows[0].text)
+        assertEquals("CPU –  RAM –", rows[1].text)   // online, can't say either
+        assertEquals("offline", rows[2].text)        // reported offline: its numbers are not shown
+        assertEquals("CPU –  RAM 50%", rows[3].text) // the phone before the newer herd: RAM only
+        assertEquals("offline", machineRows(herd()).first().text) // not listed
+        assertTrue(machineRows(null).all { it.text == "–" }) // herd itself unread: nothing is claimed
+    }
+    @Test fun herdsMachineBlockIsReadForCpuAndRamAndOutOfRangeIsDropped() {
+        val json = """{"machines":[{"name":"jacks-mac-pro","online":true,"report":{"machine":{"load":1.0,"cpu_percent":42,"ram_used_mb":9000,"ram_total_mb":18000},"sessions":[]}},
+            {"name":"macbook-pro","online":true,"report":{"machine":{"cpu_percent":150,"ram_total_mb":0},"sessions":[]}}]}"""
+        val m = dev.omalauncher.canvas.herdSnapshot(json)!!.machines
+        assertEquals(42.0, m[0].cpuPercent!!, 0.01); assertEquals(9000L, m[0].ramUsedMb); assertEquals(18000L, m[0].ramTotalMb)
+        assertNull(m[1].cpuPercent); assertNull(m[1].ramTotalMb)
+    }
+}

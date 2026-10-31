@@ -17,11 +17,25 @@ tap Connections
 expect All capabilities
 absent Restart the agent runner
 expect Models
+# Models and Machines are sections like the others: collapsed first, and each opens and closes (Boss, 2026-10-30).
+absent Claude Code
+expect Device connections: Needs repair
+shot connections-collapsed-cover
+tap Models:
 expect Claude Code
 expect Codex · GPT-6.1 Terra
 expect No recent run
-expect Device connections: Needs repair
-shot connections-collapsed-cover
+shot connections-models-open-cover
+tap Models:
+absent Claude Code
+tap Machines:
+expect Mac Pro: CPU 23%
+expect MacBook: CPU 9%
+expect MG1: offline
+expect Fold: CPU –
+shot connections-machines-cover
+tap Machines:
+absent MG1: offline
 tap Connection check:
 expect Device connections
 expect Your Fictional Mac is connected.
@@ -110,6 +124,7 @@ key BACK
 tap Models trouble
 tap Connections
 expect Models
+tap Models:
 expect Codex · GPT-6.1 Terra
 expect Usage limit
 expect hit your usage limit
@@ -146,6 +161,10 @@ tap Connection check:
 expect All capabilities
 expect Your Fictional Mac is connected.
 shot connections-expanded-unfolded card=connections-expanded-unfolded
+scrollto Machines:
+tap Machines:
+expect MG1: offline
+shot connections-machines-unfolded
 scrollto Notify me about unexpected outages and recovery
 expect After 60 seconds · one alert per incident
 shot connections-expanded-unfolded-footer
