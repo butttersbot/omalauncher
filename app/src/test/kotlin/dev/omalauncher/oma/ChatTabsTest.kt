@@ -335,4 +335,16 @@ class ChatTabsTest {
         assertNull(lastTurnTab(listOf(builderA, front), book))
         assertNull(lastTurnTab(emptyList(), book))
     }
+
+    /** Boss, 2026-10-30: a plain open comes back to the tab he had; what names a thread goes there; entries change nothing. */
+    @Test fun aPlainOpenComesBackToHisLastTab() {
+        val book = TabMeta().started("c1", 5).onMac("c1", "t-new")
+        assertEquals(PHONE_THREAD_B, openedTab(null, PHONE_THREAD_B, book))
+        assertEquals("mac:t-pond", openedTab("mac:t-pond", PHONE_THREAD_B, book))
+        // A thread a chat has moved onto since: its chat.
+        assertEquals(chatKey("c1"), openedTab(null, macThreadKey("t-new"), book))
+        // None remembered: Soma. One that is gone: asked for, and openTab shows Soma, never a blank tab.
+        assertNull(openedTab(null, null, book))
+        assertEquals(OMA_TAB, openTab(openedTab(null, "mac:t-gone", book), listOf(AgentThread(PHONE_THREAD, "Phone", ThreadState.Idle, "", "idle"))))
+    }
 }

@@ -3,7 +3,7 @@ widget "oma" {
   order: 3
   size: 3x2
   minSize: 2x1
-  meta { description: "What Oma is doing: working, waiting for your OK, or the last thing it finished. Tap it for the chat"; version: "1.1"; license: "MIT"; category: "agents"; owl: 5 }
+  meta { description: "What Oma is doing: working, waiting for your OK, or the last thing it finished. Tap it for the chat"; version: "1.2"; license: "MIT"; category: "agents"; owl: 5 }
 
   // Written by the launcher whenever the agent's task or the Mac's work changes; no polling and no shell.
   // `mac` is the Mac's work by thread when that is what is told: "Working on the Mac · FF4 better menu mod".
@@ -21,9 +21,8 @@ widget "oma" {
   let tint = state == "waiting" || state == "failed" ? red : busy ? accent : foreground
   let answer = agent == null ? "" : trim(agent.answer ?? "")
 
-  // The chat opens on the tab of what the tile shows (Boss, 2026-10-20).
-  let thread = agent == null ? "" : (agent.thread ?? "")
-  onTap: launcher(thread != "" ? "oma:" + thread : "oma")
+  // The chat opens on the tab he last had open, not on whichever agent the tile shows (Boss, 2026-10-30).
+  onTap: launcher("oma")
 
   Column {
     gap: 4

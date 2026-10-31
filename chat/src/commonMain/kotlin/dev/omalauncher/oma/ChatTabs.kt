@@ -295,10 +295,15 @@ fun askedTab(extra: String?, meta: TabMeta = TabMeta()): String? {
 }
 
 /**
- * The tab of the last turn among [tasks], where the chat opens when nothing names a thread (Boss, 2026-10-20: the chat
- * widget "should open to the specific chat that the last turn came from"; opened on Soma, his next words went to
- * whichever builder the front agent picked): a new chat's, a phone builder's, or a Mac thread's (its chat's, when a
- * chat lives on it). Null, and so the Soma tab, when the last turn was the front agent's own or is still undecided.
+ * The tab the chat opens on: the thread [named] by what opened it, else the tab he [last] had open, whatever has come in
+ * since (Boss, 2026-10-30: "Just remember which tab I'm on and come back to it"). Null for neither, the Soma tab, and
+ * [openTab] takes one that is no longer there to the Soma tab too.
+ */
+fun openedTab(named: String?, last: String?, meta: TabMeta = TabMeta()): String? = askedTab(named, meta) ?: askedTab(last, meta)
+
+/**
+ * The tab of the last turn among [tasks], which the home status file names: a new chat's, a phone builder's, or a Mac
+ * thread's (its chat's, when a chat lives on it). Null when the last turn was the front agent's own or is still undecided.
  */
 fun lastTurnTab(tasks: List<ChatTask>, meta: TabMeta = TabMeta()): String? {
     val last = tasks.lastOrNull { !it.undecided } ?: return null
