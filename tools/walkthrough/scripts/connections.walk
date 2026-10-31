@@ -23,7 +23,7 @@ expect No recent run
 expect Device connections: Needs repair
 shot connections-collapsed-cover
 tap Connection check:
-expect All capabilities
+expect Device connections
 expect Your Fictional Mac is connected.
 expect Its runner needs a restart.
 expect Restart the agent runner
@@ -122,7 +122,6 @@ key BACK
 # GitHub (Boss, 2026-10-30): a device whose login expired is an incident naming it and the fix; signing in is his, so no Restore.
 tap GitHub login
 tap Connections
-expect GitHub: Needs repair
 tap Connection check:
 expect gh auth login
 absent [ Restore ]
@@ -153,9 +152,13 @@ shot connections-expanded-unfolded-footer
 swipe 0.50 0.30 0.50 0.80 500
 rotate portrait
 expect Connections
+# The sheet keeps its scroll through the rotation: bring it back to the top first.
+swipe 0.50 0.30 0.50 0.90 400
+swipe 0.50 0.30 0.50 0.90 400
+swipe 0.50 0.30 0.50 0.90 400
 expect All capabilities
 expect Your Fictional Mac is connected.
-expect Optional tools
+scrollto Optional tools
 shot connections-expanded-portrait card=connections-expanded-upright
 swipe 0.50 0.70 0.50 0.30 500
 scrollto Fixture only

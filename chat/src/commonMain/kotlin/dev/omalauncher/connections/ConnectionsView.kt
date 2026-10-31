@@ -320,8 +320,9 @@ private fun RestoreBlock(stage: Int, steps: List<String>, restorable: Boolean = 
     // A login, free space or an agent to install is his to fix: Restore is not offered for it.
     if (restorable) ConnectionAction(if (ConnectionsSource.checking) "Checking…" else "Restore", { ConnectionsSource.restore() }, size = 16.sp)
     ConnectionsSource.repair?.let { Words(it, sans(13.sp).copy(lineHeight = 19.5.sp), modifier = Modifier.padding(top = 2.dp, bottom = 12.dp)) }
-    ProgressRail(stage, Modifier.fillMaxWidth())
-    Column(Modifier.padding(top = 12.dp)) {
+    // Nothing here repairs itself, so an owner-only incident has no progress bars: just what he does, set clear of the words above.
+    if (restorable) ProgressRail(stage, Modifier.fillMaxWidth())
+    Column(Modifier.padding(top = if (restorable) 12.dp else 14.dp)) {
         steps.forEachIndexed { i, step ->
             val done = stage > i
             val current = stage == i
