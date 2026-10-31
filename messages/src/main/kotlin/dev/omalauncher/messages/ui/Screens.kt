@@ -604,11 +604,11 @@ fun Thread(
             )
             // A short conversation sits down on the composer too, as in Messages, not up under the name with paper below.
             LazyColumn(
-                Modifier.fillMaxSize().padding(horizontal = 12.dp)
+                // The pill's room comes off the list itself, so no message runs under the pill (0.8.8 walk, unfolded).
+                Modifier.fillMaxSize().padding(start = 12.dp, end = 12.dp, bottom = pillRoom)
                     .messageDrag(c.id, { 0f }, with(density) { 24.dp.toPx() }, allowReply = false,
                         delta = { _, dx -> onTimeDelta(dx) }, end = { _, _ -> onTimeEnd() }),
                 state = list,
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = pillRoom),
                 verticalArrangement = Arrangement.Bottom,
             ) {
                 itemsIndexed(c.messages, key = { _, m -> m.renderKey }) { i, m ->
@@ -683,10 +683,11 @@ fun Thread(
                     }
                     if (m.failed && next?.failed != true) {
                         // Words can go again from here; photos are picked again.
-                        val again = Parts.of(m.text).none { it is Part.Attachment } || m.files.any { it.startsWith("local:") }
+                        val again = !m.notConfirmed && (Parts.of(m.text).none { it is Part.Attachment } || m.files.any { it.startsWith("local:") })
                         BasicText(
-                            Pack.caption(if (again) "Not sent · tap to try again" else "Not sent"),
-                            Modifier.fillMaxWidth().clickable(enabled = again) { Messages.retry(context, c.id, m) }.padding(top = 4.dp, end = 6.dp),
+                            Pack.caption(if (m.notConfirmed) "Not confirmed · tap to check" else if (again) "Not sent · tap to try again" else "Not sent"),
+                            // Unconfirmed, a tap asks the Mac for the conversation again; it never sends.
+                            Modifier.fillMaxWidth().clickable(enabled = again || m.notConfirmed) { if (m.notConfirmed) Messages.read(c.id) else Messages.retry(context, c.id, m) }.padding(top = 4.dp, end = 6.dp),
                             style = Pack.mono(Pack.size.small, Pack.accent).copy(textAlign = androidx.compose.ui.text.style.TextAlign.End),
                         )
                     }

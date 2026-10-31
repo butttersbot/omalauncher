@@ -62,6 +62,7 @@ data class MacAddress(
  * keeps the event stream open while the app runs, and picks it up again after the network drops.
  */
 object MacLink {
+    private const val ACTION_RETRY_MS = 1_500L
     private const val TAG = "SomaMessages"
 
     /** The conversations fetched with their history when the stream (re)connects; the rest load when opened. */
@@ -77,6 +78,8 @@ object MacLink {
     private val previewAt = java.util.concurrent.ConcurrentHashMap<String, Long>()
     private val previewRequests = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     @Volatile private var richLinksSupported = false
+    /** The Mac answers a repeated clientId with its first answer, doing nothing twice. */
+    @Volatile private var actionRepeatsSafe = false
 
     fun preview(url: String) {
         val cached = previews.value[url]
@@ -138,7 +141,7 @@ object MacLink {
         to: MacAddress,
     ) {
         app = context.applicationContext
-        if (address != to) { previews.value = emptyMap(); previewAt.clear(); richLinksSupported = false; threadsSupported = false; searchSupported = false; messageActionsSupported = false; ownHandles = emptySet(); knownNames = emptyMap(); typing.value = TypingState() }
+        if (address != to) { previews.value = emptyMap(); previewAt.clear(); richLinksSupported = false; actionRepeatsSafe = false; threadsSupported = false; searchSupported = false; messageActionsSupported = false; ownHandles = emptySet(); knownNames = emptyMap(); typing.value = TypingState() }
         address = to
         if (running) return
         running = true
@@ -190,7 +193,7 @@ object MacLink {
     ): String {
         val c = open(at, path)
         try {
-            if (c.responseCode !in 200..299) throw IllegalStateException(error(c))
+            if (c.responseCode !in 200..299) throw refusal(c)
             return c.inputStream.bufferedReader().use { it.readText() }
         } finally {
             c.disconnect()
@@ -203,20 +206,19 @@ object MacLink {
         path: String,
         body: JSONObject = JSONObject(),
         timeout: Int = 60_000,
-        once: Boolean = false,
     ): JSONObject {
         val c = open(at, path, "POST", timeout = timeout)
         try {
             c.doOutput = true
             c.setRequestProperty("Content-Type", "application/json")
             val bytes = body.toString().toByteArray()
-            if (once) {
+            if (body.has("clientId")) {
                 // Android's HTTP stack silently posts a buffered body again when a connection dies before the answer,
                 // and the Mac has often sent it by then: a doubled real message. A streamed body is never repeated.
                 c.setFixedLengthStreamingMode(bytes.size)
             }
             c.outputStream.use { it.write(bytes) }
-            if (c.responseCode !in 200..299) throw IllegalStateException(error(c))
+            if (c.responseCode !in 200..299) throw refusal(c)
             return answer(c)
         } finally {
             c.disconnect()
@@ -226,19 +228,28 @@ object MacLink {
     private fun answer(c: HttpURLConnection): JSONObject {
         val text = c.inputStream.bufferedReader().use { it.readText() }
         val o = runCatching { JSONObject(text) }.getOrDefault(JSONObject())
-        if (!o.optBoolean("ok", true)) throw IllegalStateException(o.optString("error").ifEmpty { "Your Mac said no." })
+        if (!o.optBoolean("ok", true)) throw MacRefusal.of(c.responseCode, o.optString("error").ifEmpty { "Your Mac said no." }, o.optString("code"))
         return o
     }
 
     /** The service's own words when it says no: {ok:false, error, code}. */
-    private fun error(c: HttpURLConnection): String {
+    /**
+     * A tapback, edit, unsend or read mark, which isn't left for him to try again as a send is. When no answer comes and
+     * the Mac honours ids, asks once more with the same id: done already, it says so; not yet, it is done once.
+     */
+    private fun postAction(at: MacAddress, path: String, body: JSONObject): JSONObject =
+        try {
+            post(at, path, body, timeout = 10_000)
+        } catch (e: java.io.IOException) {
+            if (!actionRepeatsSafe || !body.has("clientId")) throw e
+            Thread.sleep(ACTION_RETRY_MS)
+            post(at, path, body, timeout = 10_000)
+        }
+
+    private fun refusal(c: HttpURLConnection): MacRefusal {
         val text = runCatching { c.errorStream?.bufferedReader()?.use { it.readText() } }.getOrNull().orEmpty()
         val o = runCatching { JSONObject(text) }.getOrNull()
-        return when (o?.optString("code")) {
-            "unauthorized" -> "Your Mac didn't take this phone's token."
-            "read_only" -> "Sending is off on your Mac."
-            else -> o?.optString("error")?.ifEmpty { null } ?: "Your Mac answered ${c.responseCode}."
-        }
+        return MacRefusal.of(c.responseCode, o?.optString("error"), o?.optString("code"))
     }
 
     private fun path(id: String) = URLEncoder.encode(id, "UTF-8").replace("+", "%20")
@@ -266,6 +277,7 @@ object MacLink {
         runCatching {
             val health = JSONObject(get(at, "/v1/health"))
             richLinksSupported = health.optJSONObject("capabilities")?.optBoolean("richLinks") == true
+            actionRepeatsSafe = health.optJSONObject("capabilities")?.optBoolean("clientIdDeduplication") == true
             searchSupported = health.optJSONObject("capabilities")?.optBoolean("conversationSearch") == true
             threadsSupported = health.optJSONObject("capabilities")?.optString("replyThreads") == "paged-history-scan"
             messageActionsSupported = health.optJSONObject("capabilities")?.optBoolean("guardedMessageActions") == true && health.optBoolean("sendReady")
@@ -315,7 +327,7 @@ object MacLink {
         c.setRequestProperty("Accept", "text/event-stream")
         stream.lastId?.let { c.setRequestProperty("Last-Event-ID", it) }
         try {
-            if (c.responseCode !in 200..299) throw IllegalStateException(error(c))
+            if (c.responseCode !in 200..299) throw refusal(c)
             stream.reset()
             c.inputStream.bufferedReader().useLines { lines ->
                 for (line in lines) {
@@ -365,19 +377,19 @@ object MacLink {
         clientId: String,
         hiddenLinks: Set<String> = emptySet(),
         onAccepted: () -> Unit = {},
-        onFail: (String) -> Unit,
+        onFail: (ActionFailure) -> Unit,
     ) {
-        val at = address ?: return onFail("Not linked to a Mac.")
+        val at = address ?: return onFail(ActionFailure("Not linked to a Mac.", Outcome.Refused))
         sends.execute {
             runCatching {
                 val body = JSONObject().put("text", text).put("clientId", clientId)
                 replyTo?.let { body.put("replyTo", it) }
                 linkPreviewSelection(text, hiddenLinks)?.let { body.put("linkPreview", it) }
-                post(at, "/v1/chats/${path(chat)}/messages", body, once = true)
+                post(at, "/v1/chats/${path(chat)}/messages", body)
                 onAccepted()
             }.onFailure {
                 Log.w(TAG, "sending", it)
-                onFail(reason(at, it))
+                onFail(ActionFailure(reason(at, it), MacRefusal.outcomeOf(it)))
             }
         }
     }
@@ -390,11 +402,11 @@ object MacLink {
         clientId: String,
         replyTo: String? = null,
         onAccepted: () -> Unit = {},
-        onFail: (String) -> Unit,
+        onFail: (ActionFailure) -> Unit,
     ) {
-        val at = address ?: return onFail("Not linked to a Mac.")
+        val at = address ?: return onFail(ActionFailure("Not linked to a Mac.", Outcome.Refused))
         val target = Replies.target(replyTo)
-        if (replyTo != null && target == null) return onFail("Reply target is not ready.")
+        if (replyTo != null && target == null) return onFail(ActionFailure("Reply target is not ready.", Outcome.Refused))
         val resolver = context.contentResolver
         sends.execute {
             runCatching {
@@ -413,7 +425,7 @@ object MacLink {
                         resolver.openInputStream(photo)!!.use { it.copyTo(out) }
                         out.write("\r\n--$boundary--\r\n".toByteArray())
                     }
-                    if (c.responseCode !in 200..299) throw IllegalStateException(error(c))
+                    if (c.responseCode !in 200..299) throw refusal(c)
                     answer(c)
                     onAccepted()
                 } finally {
@@ -421,7 +433,7 @@ object MacLink {
                 }
             }.onFailure {
                 Log.w(TAG, "sending a photo", it)
-                onFail(reason(at, it))
+                onFail(ActionFailure(reason(at, it), MacRefusal.outcomeOf(it)))
             }
         }
     }
@@ -437,11 +449,11 @@ object MacLink {
         clientId: String,
         replyTo: String? = null,
         onAccepted: () -> Unit = {},
-        onFail: (String) -> Unit,
+        onFail: (ActionFailure) -> Unit,
     ) {
-        val at = address ?: return onFail("Not linked to a Mac.")
+        val at = address ?: return onFail(ActionFailure("Not linked to a Mac.", Outcome.Refused))
         val target = Replies.target(replyTo)
-        if (replyTo != null && target == null) return onFail("Reply target is not ready.")
+        if (replyTo != null && target == null) return onFail(ActionFailure("Reply target is not ready.", Outcome.Refused))
         sends.execute {
             runCatching {
                 val boundary = "soma" + System.nanoTime()
@@ -458,7 +470,7 @@ object MacLink {
                         caf.inputStream().use { it.copyTo(out) }
                         out.write("\r\n--$boundary--\r\n".toByteArray())
                     }
-                    if (c.responseCode !in 200..299) throw IllegalStateException(error(c))
+                    if (c.responseCode !in 200..299) throw refusal(c)
                     answer(c)
                     onAccepted()
                 } finally {
@@ -466,7 +478,7 @@ object MacLink {
                 }
             }.onFailure {
                 Log.w(TAG, "sending a voice message", it)
-                onFail(reason(at, it))
+                onFail(ActionFailure(reason(at, it), MacRefusal.outcomeOf(it)))
             }
         }
     }
@@ -476,6 +488,7 @@ object MacLink {
         at: MacAddress,
         e: Throwable,
     ): String {
+        if (e is MacRefusal && e.theMacs) return e.message.orEmpty()
         val locked = runCatching { JSONObject(get(at, "/v1/health")).optBoolean("screenLocked") }.getOrDefault(false)
         return if (locked) "your Mac is locked. Unlock it and tap to try again." else e.message.orEmpty().ifEmpty { "your Mac didn't take it." }
     }
@@ -486,22 +499,24 @@ object MacLink {
         id: String,
         kind: String,
         remove: Boolean,
-        onFail: (String) -> Unit,
+        clientId: String,
+        onFail: (ActionFailure) -> Unit,
     ) {
-        val at = address ?: return onFail("Not linked to a Mac.")
+        val at = address ?: return onFail(ActionFailure("Not linked to a Mac.", Outcome.Refused))
         actions.execute {
-            runCatching { post(at, "/v1/messages/${path(id)}/tapback", JSONObject().put("kind", kind).put("remove", remove).put("chatId", chat), timeout = 10_000) }
+            runCatching { postAction(at, "/v1/messages/${path(id)}/tapback", JSONObject().put("kind", kind).put("remove", remove).put("chatId", chat).put("clientId", clientId)) }
                 .onFailure {
                     Log.w(TAG, "tapback", it)
-                    onFail(it.message.orEmpty())
+                    onFail(ActionFailure(it.message.orEmpty(), MacRefusal.outcomeOf(it)))
                 }
         }
     }
 
-    fun setRead(chat: String, read: Boolean, onDone: (String?) -> Unit = {}) {
+    /** With [clientId] for one he asked for. Opening a chat sends none: it is harmless twice, and would use up the Mac's list of recent actions. */
+    fun setRead(chat: String, read: Boolean, clientId: String? = null, onDone: (String?) -> Unit = {}) {
         val at = address ?: return onDone("Not linked to a Mac.")
         actions.execute {
-            val failure = runCatching { post(at, "/v1/chats/${path(chat)}/${if (read) "read" else "unread"}", timeout = 10_000) }.exceptionOrNull()
+            val failure = runCatching { postAction(at, "/v1/chats/${path(chat)}/${if (read) "read" else "unread"}", JSONObject().apply { clientId?.let { put("clientId", it) } }) }.exceptionOrNull()
             onDone(failure?.let { it.message ?: "Your Mac did not take the action." })
         }
     }
@@ -556,16 +571,16 @@ object MacLink {
     }
 
     /** No fallback to the old unguarded endpoint: an old Mac must refuse rather than silently downgrade. */
-    fun changeMessage(chat: String, message: String, text: String?, onDone: (String?) -> Unit) {
-        val at = address ?: return onDone("Not linked to a Mac.")
-        if (!messageActionsSupported) return onDone("Message changes aren't available from this Mac yet.")
+    fun changeMessage(chat: String, message: String, text: String?, clientId: String, onDone: (ActionFailure?) -> Unit) {
+        val at = address ?: return onDone(ActionFailure("Not linked to a Mac.", Outcome.Refused))
+        if (!messageActionsSupported) return onDone(ActionFailure("Message changes aren't available from this Mac yet.", Outcome.Refused))
         actions.execute {
             val result = runCatching {
-                val body = JSONObject().put("chatId", chat)
+                val body = JSONObject().put("chatId", chat).put("clientId", clientId)
                 text?.let { body.put("text", it) }
-                post(at, "/v1/messages/${path(message)}/actions/${if (text == null) "unsend" else "edit"}", body, timeout = 10_000)
+                postAction(at, "/v1/messages/${path(message)}/actions/${if (text == null) "unsend" else "edit"}", body)
             }
-            onDone(result.exceptionOrNull()?.let { conversationProblem(reason(at, it)) })
+            onDone(result.exceptionOrNull()?.let { ActionFailure(conversationProblem(reason(at, it)), MacRefusal.outcomeOf(it)) })
         }
     }
 

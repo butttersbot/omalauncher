@@ -43,6 +43,10 @@ data class Message(
     val unsent: Boolean = false,
     val unsentAt: Long? = null,
     val changes: AllowedChanges = AllowedChanges(),
+    /** A failed send that got no answer: it may have gone, so trying again keeps its id. */
+    val unanswered: Boolean = false,
+    /** A failed send the Mac can't vouch for either way: never sent again by a tap. */
+    val notConfirmed: Boolean = false,
 ) {
     val fromMe get() = sender.isEmpty()
     val renderKey get() = uiKey ?: id ?: "legacy:$time:$sender:$text"
@@ -296,9 +300,12 @@ class ConversationBook(
     fun failed(
         id: String,
         clientId: String,
+        outcome: Outcome = Outcome.Refused,
     ): ConversationBook {
         val old = byId[id] ?: return this
-        return ConversationBook(byId + (id to old.copy(messages = old.messages.map { if (it.id == "c:$clientId") it.copy(failed = true) else it })))
+        return ConversationBook(byId + (id to old.copy(messages = old.messages.map {
+            if (it.id == "c:$clientId") it.copy(failed = true, unanswered = outcome == Outcome.NoAnswer, notConfirmed = outcome == Outcome.NotConfirmed) else it
+        })))
     }
 
     /** Takes [message] out of [id]: a failed send about to be tried again. */
@@ -360,6 +367,8 @@ class ConversationBook(
                                             if (m.handedOff) put("off", true)
                                             m.id?.let { put("id", it) }
                                             if (m.failed) put("failed", true)
+                                            if (m.unanswered) put("unanswered", true)
+                                            if (m.notConfirmed) put("notConfirmed", true)
                                             if (m.files.isNotEmpty()) put("files", JSONArray(m.files))
                                             if (m.reactions.isNotEmpty()) put("reactions", JSONArray(m.reactions.map { it.json() }))
                                             if (m.tapbacks.isNotEmpty()) put("tapbacks", JSONArray(m.tapbacks))
@@ -414,6 +423,8 @@ class ConversationBook(
                                 richLinks = RichLink.read(m.optJSONArray("richLinks")),
                                 hiddenLinks = m.optJSONArray("hiddenLinks")?.let { a -> (0 until a.length()).map { a.optString(it) }.toSet() }.orEmpty(),
                                 reactions = Reaction.read(m.optJSONArray("reactions")),
+                                unanswered = m.optBoolean("unanswered"),
+                                notConfirmed = m.optBoolean("notConfirmed"),
                                 replyTo = m.optString("replyTo").ifEmpty { null },
                                 edited = m.optBoolean("edited"), editedAt = m.optLong("editedAt").takeIf { m.has("editedAt") },
                                 editCount = m.optInt("editCount").takeIf { m.has("editCount") },

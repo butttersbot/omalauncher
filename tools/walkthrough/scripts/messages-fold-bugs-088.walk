@@ -66,7 +66,7 @@ key ENTER
 wait 3500
 closeime
 wait 800
-# Item 5: the newest of mine. A live send here says Sent; the demo's history says Delivered, read on a fresh start.
+# Item 5: the newest of mine. A live send may still say Sent here; the demo's history says Delivered, read on a fresh start.
 shot cover-sent-beside-tail card=messages-parity-status
 shell am force-stop dev.omalauncher.messages
 shell am start -n dev.omalauncher.messages/.MainActivity

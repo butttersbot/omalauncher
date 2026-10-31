@@ -283,3 +283,13 @@ Phone-only; no iMessage service, account or pairing change, no real message; ric
 A logging proxy between the app and an isolated DEMO recorded each send's `clientId`. Android's `HttpURLConnection` re-POSTs a buffered body when a connection dies before the answer. The first POST has usually been sent by then, and `POST /v1/chats/:chat/messages` does not check `clientId`, so one tap becomes two messages. Sends now stream with `setFixedLengthStreamingMode`, which the stack does not repeat. Photo and voice uploads already stream. A send whose answer is lost now reports failure instead of repeating, and the existing echo match clears that when the Mac's copy arrives.
 
 Open: what closed the connections in the natural case; the service still has no `clientId` idempotency, and adding it needs a service deployment. Evidence: `~/Projects/msg-bugs-evidence/dup-trace/`.
+
+## 0.8.10: an id on every action, and the Mac's answers about them, 2026-10-30
+
+For the service's replay ledger (`docs/client-id-replay.md` on service branch `messages/client-id-dedup`, 8d710f81). Tapbacks, edit, unsend and the read/unread he asks for now carry a `clientId`. Opening a chat sends its read mark with none: a repeat is harmless, and the ledger holds 4096 ids for seven days, with a full ledger refusing new sends. Any POST with an id streams, so the HTTP stack never repeats it. Non-send actions retry once by themselves, with the same id, only when health advertises `clientIdDeduplication`. Sends wait for his tap.
+
+A failed send remembers how it failed (`unanswered`, `notConfirmed`, kept across restarts). No answer: the tap keeps the id. An answered no: the tap uses a new id, because the Mac replays the answer for an id. `client_id_conflict`, anything `*_do_not_resend` and `request_state_unavailable`: "Not confirmed · tap to check", which re-reads the chat and never sends. `request_ledger_full`: "Not sent", nothing went.
+
+Latest pill: its room now comes off the list rather than off the list's content padding, so no message runs under it.
+
+Proof on the emulator against a demo built from 8d710f81: `~/Projects/msg-bugs-evidence/client-ids/`. The 409 and 503 answers were played by a test proxy, except the direct `client_id_conflict` from the demo.

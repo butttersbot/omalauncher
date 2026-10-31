@@ -94,7 +94,7 @@ object Messages {
         readIntents[id] = intent
         publish(real.unreadCount(id, target))
         app?.let { Alerts.clear(it, id) }
-        MacLink.setRead(id, !unread) { failure -> finishRead(id, intent, failure) }
+        MacLink.setRead(id, !unread, java.util.UUID.randomUUID().toString()) { failure -> finishRead(id, intent, failure) }
     }
 
     @Synchronized private fun finishRead(id: String, intent: ReadIntent, failure: String?) {
@@ -284,6 +284,7 @@ object Messages {
         quote: String? = null,
         hiddenLinks: Set<String> = emptySet(),
         replyTo: String? = null,
+        sameId: String? = null,
     ): Sent {
         if (samples.value) {
             _book.value = _book.value.sent(id, text, System.currentTimeMillis(), quote)
@@ -294,13 +295,10 @@ object Messages {
             if (missingReply(id, quote, target, requested = replyTo != null)) return Sent.MissingReplyTarget
             // A new try: the last one's error is old news.
             clearNotice(id)
-            val clientId = java.util.UUID.randomUUID().toString()
+            val clientId = sameId ?: java.util.UUID.randomUUID().toString()
             markEntrance(id, clientId)
             publish(real.waiting(id, clientId, text, System.currentTimeMillis(), quote, Parts.links(text).mapNotNull { MacLink.previews.value[Parts.openable(it)]?.takeUnless { r -> r.url in hiddenLinks } }, hiddenLinks, target))
-            MacLink.send(id, text, target, clientId, hiddenLinks = hiddenLinks, onAccepted = { accepted(id, clientId) }) { why ->
-                failed(id, clientId)
-                warn(id, "Not sent: $why")
-            }
+            MacLink.send(id, text, target, clientId, hiddenLinks = hiddenLinks, onAccepted = { accepted(id, clientId) }) { failure -> failed(id, clientId, "Not sent", failure) }
             return Sent.Sent
         }
         val h = handles[id]
@@ -386,6 +384,7 @@ object Messages {
         summaries: List<String>,
         quote: String?,
         replyTo: String? = null,
+        sameId: String? = null,
     ): Boolean {
         val target = replyTarget(id, replyTo)
         if (missingReply(id, quote, target, requested = replyTo != null)) return false
@@ -394,24 +393,18 @@ object Messages {
         // Each photo, and the words, go on their own: one the Mac can't take doesn't stop the rest. Until the Mac shows a
         // photo back, the picked one stands for it.
         photos.forEachIndexed { i, uri ->
-            val clientId = java.util.UUID.randomUUID().toString()
+            val clientId = sameId ?: java.util.UUID.randomUUID().toString()
             val type = context.contentResolver.getType(uri) ?: "image/jpeg"
             markEntrance(id, clientId)
             val waiting = real.waiting(id, clientId, summaries.getOrElse(i) { "1 Photo" }, now + i, if (i == 0) quote else null, replyTo = target)
             publish(waiting.withFiles(id, "c:$clientId", listOf("local:$uri|$type")))
-            MacLink.sendFile(context, id, uri, clientId, replyTo = target, onAccepted = { accepted(id, clientId) }) { why ->
-                failed(id, clientId)
-                warn(id, "Photo not sent: $why")
-            }
+            MacLink.sendFile(context, id, uri, clientId, replyTo = target, onAccepted = { accepted(id, clientId) }) { failure -> failed(id, clientId, "Photo not sent", failure) }
         }
         if (text.isNotBlank()) {
             val clientId = java.util.UUID.randomUUID().toString()
             markEntrance(id, clientId)
             publish(real.waiting(id, clientId, text, now + photos.size, replyTo = target))
-            MacLink.send(id, text, target, clientId, onAccepted = { accepted(id, clientId) }) { why ->
-                failed(id, clientId)
-                warn(id, "Not sent: $why")
-            }
+            MacLink.send(id, text, target, clientId, onAccepted = { accepted(id, clientId) }) { failure -> failed(id, clientId, "Not sent", failure) }
         }
         return true
     }
@@ -458,10 +451,7 @@ object Messages {
             val waiting = real.waiting(id, clientId, VOICE, System.currentTimeMillis(), quote, replyTo = replyTo)
             publish(waiting.withFiles(id, "c:$clientId", listOf("local:${ogg.path}|$VOICE_MIME")))
         }
-        MacLink.sendVoice(id, caf, clientId, replyTo = replyTo, onAccepted = { accepted(id, clientId) }) { why ->
-            failed(id, clientId)
-            warn(id, "Voice message not sent: $why")
-        }
+        MacLink.sendVoice(id, caf, clientId, replyTo = replyTo, onAccepted = { accepted(id, clientId) }) { failure -> failed(id, clientId, "Voice message not sent", failure) }
     }
 
     /** How a voice message is summed up, as the Mac does: Parts knows it as an attachment. */
@@ -474,7 +464,12 @@ object Messages {
     private fun failed(
         id: String,
         clientId: String,
-    ) = publish(real.failed(id, clientId))
+        lead: String,
+        failure: ActionFailure,
+    ) {
+        publish(real.failed(id, clientId, failure.outcome))
+        warn(id, failure.told(lead))
+    }
 
     /**
      * What went wrong last, said once on screen in the conversation it happened in ([noticeFor]), until the next try
@@ -517,17 +512,26 @@ object Messages {
         clearNotice(id)
         val pending = PendingMessageChange(target, text)
         pendingChanges.value = pendingChanges.value + (key to pending)
-        MacLink.changeMessage(id, target, text) { failure ->
+        // The same change tried again after no answer, or an unconfirmed one, keeps its id; any other is a new action.
+        val attempt = "$key|${text ?: UNSEND}"
+        val clientId = changeIds.getOrPut(attempt) { java.util.UUID.randomUUID().toString() }
+        MacLink.changeMessage(id, target, text, clientId) { result ->
+            val failure = result?.why
+            if (result == null || result.outcome == Outcome.Refused) changeIds.remove(attempt)
             val confirmed = synchronized(this) {
                 val found = key !in pendingChanges.value
                 if (!found) pendingChanges.value = if (failure == null) pendingChanges.value + (key to pending.copy(accepted = true)) else pendingChanges.value - key
                 found
             }
             if (failure != null && !confirmed) warn(id, failure)
+            if (result?.outcome == Outcome.NotConfirmed) reloadChange(id, target)
             if (failure == null && !confirmed) reloadChange(id, target)
             onDone(if (confirmed) null else failure)
         }
     }
+
+    private val changeIds = ConcurrentHashMap<String, String>()
+    private const val UNSEND = "\u0000unsend"
 
     fun reloadChange(id: String, target: String) {
         MacLink.messageContext(id, target) { result ->
@@ -552,7 +556,7 @@ object Messages {
         val changed = message.copy(tapbacks = message.tapbacks.filterNot { it.startsWith("me:") } + listOfNotNull(mine.takeIf { !remove }),
             reactions = message.reactions.filterNot { it.fromMe } + if (remove) emptyList() else listOf(Reaction(kind, "", true, "You")))
         publish(real.fromMac(id, null, null, listOf(changed), counting = false))
-        MacLink.tapback(id, macId, kind, remove) { why -> warn(id, "Tapback not sent: $why") }
+        MacLink.tapback(id, macId, kind, remove, java.util.UUID.randomUUID().toString()) { failure -> warn(id, failure.told("Tapback not sent")) }
     }
 
     private val loadingEarlier = ConcurrentHashMap.newKeySet<String>()
@@ -579,8 +583,12 @@ object Messages {
         id: String,
         message: Message,
     ) {
+        if (message.notConfirmed) return
         val target = replyTarget(id, message.replyTo)
         if (linked && missingReply(id, message.quote, target, requested = message.replyTo != null)) return
+        // No answer came, so it may have gone: the same id, and the Mac won't send it twice. An answered no is replayed
+        // for that id, so a try after one needs its own.
+        val sameId = message.id?.takeIf { message.unanswered && it.startsWith("c:") }?.removePrefix("c:")
         publish(real.without(id, message))
         val local = message.files.firstOrNull { it.startsWith("local:") }
         // A voice message recorded here: the same recording, rewrapped again.
@@ -588,6 +596,7 @@ object Messages {
             val ogg = java.io.File(local.removePrefix("local:").substringBeforeLast('|'))
             val caf = java.io.File(ogg.path.removeSuffix(".ogg") + ".caf")
             if (ogg.isFile && caf.isFile) {
+                if (sameId != null) return sendVoiceFile(id, sameId, ogg, caf, message.quote, target)
                 val clientId = java.util.UUID.randomUUID().toString()
                 val o = java.io.File(ogg.parentFile, "$clientId.ogg").also { ogg.renameTo(it) }
                 val c = java.io.File(ogg.parentFile, "$clientId.caf").also { caf.renameTo(it) }
@@ -597,10 +606,10 @@ object Messages {
         }
         if (local != null) {
             val uri = android.net.Uri.parse(local.removePrefix("local:").substringBeforeLast('|'))
-            sendPhotos(context, id, listOf(uri), "", listOf(message.text), message.quote, target)
+            sendPhotos(context, id, listOf(uri), "", listOf(message.text), message.quote, target, sameId)
             return
         }
-        send(context, id, message.text, message.quote, hiddenLinks = message.hiddenLinks, replyTo = target)
+        send(context, id, message.text, message.quote, hiddenLinks = message.hiddenLinks, replyTo = target, sameId = sameId)
     }
 
     /** Notes in [id] what was handed to OpenBubbles to send, so the conversation shows it waiting there. */
