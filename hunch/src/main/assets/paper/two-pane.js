@@ -11,54 +11,36 @@ function paneIsUpright(){const orientation=window.screen.orientation?.type;retur
 function paneStateKey(){return Hunch.selected?.id||(paneIsUpright()?Hunch.chapter:'bets')}
 function showTwoPane(){if(Paper.active?.name==='TwoPane'){Paper.render();return}paneShown=null;Paper.custom('TwoPane',buildTwoPane,paneSize,root=>{const key=paneStateKey();if(key!==paneShown){root.querySelector('.right,.cvbody').scrollTop=paneScroll.get(key)||0;paneShown=key}})}
 function paneChoose(m){choose(m)}
-function paneMarkets(upright=false){
- const inner=paneNode('div','inner'),search=paneNode('label','search');
- const input=paneNode('input');input.type='search';input.placeholder='Search teams, coins, people…';input.setAttribute('aria-label','Search markets');input.value=Hunch.query;
- event(input,'input',e=>{Hunch.query=e.target.value;Hunch.limit=100;Paper.schedule()});search.append(input);inner.append(search);
- const chips=paneNode('div','chips');chips.setAttribute('aria-label','Market categories');
- ['ALL',...new Set(Hunch.rows.map(m=>m.category.toUpperCase()))].forEach(cat=>{const count=Hunch.rows.filter(m=>cat==='ALL'||m.category.toUpperCase()===cat).length;const b=paneButton(cat+' '+count,'chip'+(Hunch.category===cat?' on':''),()=>{Hunch.category=cat;Hunch.limit=100;Paper.schedule()});b.setAttribute('aria-pressed',String(Hunch.category===cat));chips.append(b)});inner.append(chips);
- const rows=liveRows(),hero=rows[0];
- if(hero){const b=paneButton('','hero'+(Hunch.selected?.id===hero.id?' sel':''),()=>paneChoose(hero));
- listingIdentity(b,hero);const art=paneNode('div','stadium');art.innerHTML=HUNCH_STADIUM;b.append(...art.childNodes);
- b.append(paneNode('span','tag','PUBLIC MARKETS · '+rows.length+' LISTED'));
- const card=paneNode('span','card');const headline=paneNode('div','quote-head');headline.append(paneNode('b','',hero.title),paneNode('b','chance',listingPercent(hero)));card.append(headline,paneNode('span','',hero.category+' · '+hero.venue+' · '+hero.date));b.append(card);inner.append(b);
- }else inner.append(paneNode('p','empty',Hunch.error?'Markets could not be loaded. Check your connection.':Hunch.rows.length?'No matching markets.':'Loading listings…'));
- if(upright&&rows[1]){const gut=paneButton('','gut',()=>paneChoose(rows[1]));const title=paneNode('span','t');title.append(paneNode('small','','GUT CHECK'),paneNode('b','',rows[1].title),paneNode('span','','Open it to inspect the live order book.'));gut.append(title,paneNode('span','q','?'));inner.append(gut)}
- const heading=paneHeading('MORE MARKETS');heading.append(paneNode('span','',upright?'TAP TO OPEN':'TAP TO OPEN ON THE RIGHT'));inner.append(heading);
- const list=paneNode('div','market-list');const limit=Hunch.limit||100;
- rows.slice(upright?2:1,limit).forEach(m=>{const b=paneButton('','mkt'+(Hunch.selected?.id===m.id?' sel':''),()=>paneChoose(m));const title=paneNode('span','t');title.append(paneNode('b','',m.title),paneNode('small','',m.category+' · '+m.venue+' · '+m.date));listingIdentity(b,m);const p=paneNode('span','p');p.append(paneNode('b','',listingPercent(m)),paneNode('small','',listingPrice(m)));b.append(title,p);list.append(b)});
- if(rows.length>limit)list.append(paneButton('Show more markets','rtab',()=>{Hunch.limit=limit+100;Paper.schedule()}));
- inner.append(list,paneButton('Refresh markets','rtab',()=>sendNative({type:'markets'})));return inner;
-}
+function paneMarkets(){return buildDiscovery()}
 function paneBets(){
- const inner=paneNode('div','inner'),strip=paneNode('div','mstrip');
- ['CASH TO BET','IN PLAY','COULD PAY','P&L'].forEach((title,i)=>{const cell=paneNode('div',i?'':'ink');cell.append(paneNode('small','',title),paneNode('b','','—'));strip.append(cell)});inner.append(strip);
- const links=paneNode('div','mlinks');links.append(paneNode('span','','TRADING NOT CONNECTED'),paneButton('OPEN WALLET','',()=>sendNative({type:'wallet'})));inner.append(links);
- inner.append(paneNode('h2','h1','My bets'),paneBox('NO TRADING ACCOUNT','No trading account is connected. Real bets and trading balances are not connected yet.'));
+ const inner=paneNode('div','inner'),heading=paneNode('div','bets-heading');
+ heading.append(paneNode('h2','h1','My bets'),paneButton('OPEN WALLET','rtab',()=>sendNative({type:'wallet'})));inner.append(heading,paneBox('NO TRADING ACCOUNT','No trading account is connected. Real bets and trading balances are not connected yet.'));
  inner.append(paneHeading('SETTLES NEXT'),paneNode('p','empty','No connected bets to show.'));
- inner.append(paneHeading('OPEN BETS'),paneNode('p','empty','Choose a market to inspect its live order book. Betting is not enabled.'));
+ inner.append(paneHeading('OPEN BETS'),paneNode('p','empty','Choose a market to inspect its live order book and review an order.'));
  inner.append(paneHeading('SETTLED'),paneNode('p','empty','No settled bets are connected.'));
  return inner;
 }
 function paneSlip(upright=false){
  const m=Hunch.selected,fragment=document.createDocumentFragment(),tabs=paneNode('div','rtabs');
  tabs.append(paneButton(upright?'← BACK':'← MY BETS','rtab back',()=>{Hunch.selected=null;clearTimeout(bookTimer);showLive()}));
- const label=paneNode('span','rtab on mk');label.append(paneNode('span','',m.title));tabs.append(label);if(upright){const art=paneNode('div','cvart');art.innerHTML=HUNCH_STADIUM;art.append(paneNode('span','tag',m.category+' · PUBLIC MARKET'));const back=tabs.querySelector('button');back.className='back';art.append(back);fragment.append(art)}else fragment.append(tabs);
+ const label=paneNode('span','rtab on mk');label.append(paneNode('span','',m.title));tabs.append(label);if(upright){const art=paneNode('div','cvart');art.innerHTML=HUNCH_STADIUM;art.append(paneNode('span','tag',m.category+' · PUBLIC MARKET'));fragment.append(tabs,art)}else fragment.append(tabs);tabs.append(watchButton(m));
  const inner=paneNode('div','inner');inner.append(paneNode('div','kicker',m.category+' · '+m.venue+' · '+m.date),paneNode('h2','h1',m.title));
  const received=Hunch.book,b=received&&(!received.valid||Date.now()-received.time<=60000)?received:null;
- const sides=paneNode('div','sides');m.sides.forEach((name,i)=>{const quoted=i===Hunch.side&&b?.valid;const button=paneButton('','sidebtn'+(Hunch.side===i?' on':''),()=>{Hunch.side=i;requestBook();Paper.schedule()});button.setAttribute('aria-pressed',String(Hunch.side===i));button.append(paneNode('b','',name),paneNode('span','c',quoted?(Number(b.ask)*100).toFixed(2)+'¢':'—'),paneNode('small','',quoted?'LIVE ASK':'NO VERIFIED QUOTE'));sides.append(button)});inner.append(sides);
+ const sides=paneNode('div','sides');m.sides.forEach((name,i)=>{const quoted=i===Hunch.side&&b?.valid;const button=paneButton('','sidebtn'+(Hunch.side===i?' on':''),()=>{Hunch.side=i;requestBook();Paper.schedule()});button.setAttribute('aria-pressed',String(Hunch.side===i));button.append(paneNode('b','',name),paneNode('span','c',detailPrice(i)),paneNode('small','',detailStatus(i)));sides.append(button)});inner.append(sides);
  const amounts=paneNode('div','putin');amounts.append(paneNode('span','','PUT IN'));[5,10,20,50].forEach(amt=>{const b=paneButton('$'+amt,'amt'+(amt===Hunch.budget?' on':''),()=>{Hunch.budget=amt;requestBook();Paper.schedule()});b.setAttribute('aria-pressed',String(amt===Hunch.budget));amounts.append(b)});inner.append(amounts);
  inner.append(paneNode('div','payout','$'+Hunch.budget+' → '+(b?.valid?b.payout:'—')));
  const status=b?.valid?(b.complete?'Full preview at current depth.':'Partial fill at current depth.'):b?'No verified executable quote.':received?'Quote expired. Refresh preview.':'Loading live order book…';
  inner.append(paneNode('p','cap',status+' Depth preview only; this does not place an order.'));
  inner.append(paneButton('REVIEW AN ORDER','place',()=>sendNative({type:'trade',id:Hunch.selected.id,side:Hunch.side})),paneButton('READ ONLY · REFRESH','refresh',()=>{requestBook();Paper.schedule()}),paneNode('p','after','Opening the order ticket sends nothing. Review your exact size, then Confirm to sign.'));
+ inner.append(paneNode('p','market-volume','24H VOLUME '+dollars(marketVolume(m))+' · ASK DEPTH '+m.sides.map((name,i)=>name+' '+dollars(detailQuote(i)?.depth==null?null:Number(detailQuote(i).depth))).join(' / ')));
  const rules=paneNode('section','box');rules.append(paneNode('h4','','HOW IT SETTLES'));termEntries(m.terms).forEach(([k,v])=>rules.append(paneNode('p','',k+': '+v)));inner.append(rules);fragment.append(inner);return fragment;
 }
+function paneMetrics(){const strip=paneNode('div','mstrip header-metrics');strip.setAttribute('aria-label','Trading summary');['CASH TO BET','IN PLAY','COULD WIN','P&L'].forEach(title=>{const cell=paneNode('div');cell.append(paneNode('small','',title),paneNode('b','','—'));strip.append(cell)});return strip}
 function buildTwoPane(){
  const old=document.querySelector('.hunch-two-pane .right,.hunch-two-pane .cvbody');if(old&&paneShown!==null)paneScroll.set(paneShown,old.scrollTop);
  const size=paneSize();if(paneIsUpright())return buildUpright(size);
  const root=paneNode('div','hunch-two-pane');root.style.width=size.width+'px';root.style.height=size.height+'px';
- const top=paneNode('header','top');top.append(paneNode('h1','brand','HUNCH'),paneButton('CASH —','cashbtn',()=>{Hunch.selected=null;showLive()}));root.append(top);
+ const top=paneNode('header','top');top.append(paneNode('h1','brand','HUNCH'),paneMetrics());root.append(top);
  const panes=paneNode('div','panes side');
  const left=paneNode('section','pane left');left.setAttribute('aria-label','Markets');left.append(paneMarkets());
  const right=paneNode('section','pane right');right.setAttribute('aria-label',Hunch.selected?'Market details':'My bets');right.append(Hunch.selected?paneSlip():paneBets());panes.append(left,right);root.append(panes);return root;

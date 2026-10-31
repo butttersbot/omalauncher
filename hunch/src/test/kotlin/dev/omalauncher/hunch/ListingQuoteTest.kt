@@ -27,4 +27,11 @@ class ListingQuoteTest {
         val q=ListingQuote.read(market,JSONObject().put("coin","#10").put("time",now).put("levels",org.json.JSONArray().put(org.json.JSONArray()).put(org.json.JSONArray())),now)
         assertFalse(q.getBoolean("valid"));assertFalse(q.has("percent"))
     }
+    @Test fun noAskComesFromItsOwnCoinAndDepthUsesNotional() {
+        val q=ListingQuote.read(market,book(coin="#11",ask="0.62"),now,1)
+        assertTrue(q.getBoolean("valid"));assertEquals("No",q.getString("side"));assertEquals("0.62",q.getString("ask"))
+        assertEquals(0,q.getString("depth").toBigDecimal().compareTo(java.math.BigDecimal("18.60")))
+        assertFalse(ListingQuote.read(market,book(coin="#10"),now,1).getBoolean("valid"))
+    }
+
 }

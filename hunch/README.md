@@ -1,3 +1,8 @@
+> Current development checkpoint: **0.8.0 / code18**, emulator-tested discovery
+> and pane fixes: [details](../docs/hunch/discovery-fixes.md). Trading scope and
+> owner-test limits: [owner order checkpoint](../docs/hunch/owner-first-order.md).
+> The older slice descriptions below are historical, not a current feature inventory.
+
 # Hunch · owner-confirmed order development slice
 
 Current staged development build 0.7.2/code17 adds a separate exact-size Hyperliquid outcome ticket with

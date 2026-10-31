@@ -7,10 +7,12 @@ document.getElementById('leave-reference').onclick=()=>sendNative({type:design?'
 document.addEventListener('click',e=>{const a=e.target.closest('a[href]');if(!a)return;e.preventDefault();const match=/([A-Za-z]+)\.dc\.html/.exec(a.getAttribute('href'));if(design&&match)reference(match[1]);else notice('This action is not connected yet.')});
 window.receiveNative=async data=>{try{
  if(data.type==='config'){if(started)return;started=true;Hunch.chapter=data.chapter||'today';if(design)await reference(design);else{if(data.fixture){document.body.classList.add('reference');const ribbon=document.getElementById('reference');ribbon.hidden=false;ribbon.firstChild.nodeValue=data.fixture==='demo'?'FICTIONAL MARKET DEMO · NO REAL MONEY ':'OFFLINE TEST · NO REAL MONEY ';document.getElementById('leave-reference').textContent='CLOSE DEMO';ribbonSize()}await showLive()}}
+ if(data.type==='watchlist'){Hunch.watchlist=data.ids||[];Paper.schedule()}
+ if(data.type==='volumes'){Hunch.volumes=Object.fromEntries((data.rows||[]).map(v=>[v.id,v]));Hunch.volumesLoaded=true;Hunch.volumeError=data.error;Paper.schedule()}
  if(data.type==='markets'){Hunch.rows=data.rows;Hunch.updated=data.updated;Hunch.error=false;Paper.schedule()}
  if(data.type==='listingQuote'){listingQuotes.set(data.quote.id,data.quote);Paper.schedule()}
  if(data.type==='marketError'){Hunch.error=true;Paper.schedule()}
- if(data.type==='book'&&Hunch.selected?.id===data.id&&Hunch.side===data.side&&Hunch.budget===data.budget){Hunch.book=data;Paper.schedule()}
+ if(data.type==='book'&&Hunch.selected?.id===data.id&&Hunch.budget===data.budget){Hunch.books[data.side]=data;if(Hunch.side===data.side)Hunch.book=data;Paper.schedule()}
  if(data.type==='wallet'){accountMode=true;clearTimeout(resizeTimer);await showWallet(data)}
  if(data.type==='auth'){accountMode=true;clearTimeout(resizeTimer);await showAccount(data)}
  }catch(e){paperError(e)}};
@@ -19,4 +21,4 @@ window.paperBack=()=>{if(design||accountMode)return false;if(Hunch.selected){Hun
 sendNative({type:'ready'});
 
 // Expired depth must disappear even while the owner leaves the page open.
-setInterval(()=>{window.requestListingQuotes?.();let expired=false;for(const q of listingQuotes.values()){if(q.valid&&(Date.now()-q.time>60000||Date.now()-q.time< -5000)){q.valid=false;expired=true}}if(expired)Paper.schedule();if(Hunch.selected&&Hunch.book?.time&&Date.now()-Hunch.book.time>60000)Paper.schedule()},1000);
+setInterval(()=>{window.requestListingQuotes?.();let expired=false;for(const snapshot of listingQuotes.values()){for(const q of snapshot.quotes||[snapshot]){if(q.valid&&(Date.now()-q.time>60000||Date.now()-q.time< -5000)){q.valid=false;expired=true}}}if(expired)Paper.schedule();if(Hunch.selected&&Hunch.book?.time&&Date.now()-Hunch.book.time>60000)Paper.schedule()},1000);

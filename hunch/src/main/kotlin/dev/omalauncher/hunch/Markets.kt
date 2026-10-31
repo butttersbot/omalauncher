@@ -7,7 +7,30 @@ import java.util.Locale
 
 data class Market(val id: Long, val venue: String, val template: String, val fields: Map<String,String>, val quote: String,
     val sides: List<String> = listOf("Yes", "No"), val question: String = "") {
-    val category get() = when { template.startsWith("sports") -> "Sports"; template.contains("Price",true)||template.startsWith("Recurring") -> "Prices"; template.startsWith("company") -> "Companies"; template.startsWith("policy") -> "Rates"; else -> "Events" }
+    // Parent terms classify fallback outcomes too: a soccer "other result" is still sport.
+    val category get() = when {
+        template.startsWith("sports",true) || fields["sport"] != null || fields["participantA"] != null -> "Sports"
+        template.contains("Price",true) || template.startsWith("Recurring") || fields["perp"] != null -> "Prices"
+        template.startsWith("companyIpo",true) || fields["company"] != null -> "Pre-IPO"
+        template.startsWith("policy",true) -> "Rates"
+        else -> "Events"
+    }
+    val section: String get() = when(category) {
+        "Sports" -> fields["competition"]?.trim()?.let {
+            if(it.contains("National Football League",true)) "NFL" else it
+        }?.takeIf { it.isNotBlank() } ?: fields["sport"]?.trim()?.replaceFirstChar { it.uppercase() } ?: "Other sports"
+        "Prices" -> fields["perp"]?.substringAfter(':') ?: "Other prices"
+        "Pre-IPO" -> fields["company"] ?: "Other companies"
+        "Rates" -> fields["officialSource"] ?: "Policy rates"
+        else -> fields["award"] ?: "Other events"
+    }
+    val eventTitle get() = listOfNotNull(fields["participantA"],fields["participantB"]).joinToString(" vs ").ifBlank {
+        if(category=="Sports") fields["tournament"] ?: fields["competition"] ?: section else section
+    }
+    val priceType get() = if(category!="Prices") "" else when {
+        fields["perp"].orEmpty().contains(':') -> "Stocks & macro"
+        else -> "Crypto"
+    }
     val venueName get() = when(venue){"out"->"Outcome";"txyz"->"Trade.xyz";"skew"->"Skew";"fox"->"Fox";""->"Hyperliquid";else->venue}
     val title: String get() {
         val pair=listOfNotNull(fields["participantA"], fields["participantB"]).joinToString(" vs ")
@@ -26,7 +49,10 @@ data class Market(val id: Long, val venue: String, val template: String, val fie
     // Group only exact semantic terms; no guessed cross-venue equivalence or order routing.
     val identity get() = if(fields.isEmpty()) "id:$id" else "$template|$quote|$sides|$question|"+fields.toSortedMap().entries.joinToString("|"){"${it.key}:${it.value}"}
     fun coin(side: Int): String { require(side in 0..1); return "#${Math.addExact(Math.multiplyExact(id,10), side.toLong())}" }
-    fun sideLabel(side:Int)=sides.getOrElse(side){if(side==0)"Yes" else "No"}
+    fun sideLabel(side:Int):String {
+        val label=sides.getOrElse(side){if(side==0)"Yes" else "No"}
+        return Regex("\\{([A-Za-z0-9]+)\\}").replace(label){match->fields[match.groupValues[1]] ?: if(side==0) fields["participantA"] ?: "Yes" else fields["participantB"] ?: "No"}
+    }
     companion object {
         fun parse(root: JSONObject): List<Market> {
             fun terms(s:String)=s.split('|').mapNotNull { val i=it.indexOf(':');if(i>0)it.substring(0,i) to it.substring(i+1)else null }.toMap()

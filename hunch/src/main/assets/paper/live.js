@@ -1,20 +1,20 @@
  'use strict';
-window.Hunch={rows:[],chapter:'today',selected:null,side:0,budget:20,book:null,query:'',category:'ALL',error:false,updated:0};
-window.sendNative=data=>window.SomaHunch?.post(JSON.stringify(data));
+window.Hunch={rows:[],chapter:'today',selected:null,side:0,budget:20,book:null,query:'',category:'ALL',error:false,updated:0,books:{},volumes:{},volumesLoaded:false,volumeError:false,watchlist:[],discoveryTab:'markets',section:'ALL',priceType:'ALL',sort:'grouped'};
+window.sendNative=data=>{if(data.type==='wallet'||data.type==='account')data={...data,panelTop:Math.ceil(document.querySelector('.hunch-two-pane .right')?.getBoundingClientRect().top||0)};window.SomaHunch?.post(JSON.stringify(data))};
 window.notice=text=>{const n=document.getElementById('notice');n.textContent=text;n.hidden=false;clearTimeout(window.noticeTimer);window.noticeTimer=setTimeout(()=>n.hidden=true,5000)};
 function event(el,type,fn){el._paperEvents ||= {};el._paperEvents[type]=fn;el.addEventListener(type,fn)}
 function text(el,value){if(el)el.textContent=value}
 function action(label,fn){const b=document.createElement('button');b.type='button';b.className='paper-action';b.textContent=label;event(b,'click',fn);return b}
 function empty(panel,heading,copy,button){if(panel.querySelector(':scope > svg')&&panel.lastElementChild.localName!=='svg')panel=panel.lastElementChild;const spans=Array.from(panel.querySelectorAll('span,b')).filter(x=>!x.children.length);const titleStyle=spans[0]?.getAttribute('style')||"font:700 11px 'JetBrains Mono'";panel.replaceChildren();const h=document.createElement('span');h.setAttribute('style',titleStyle);h.style.position='static';h.style.transform='none';h.style.margin='0';h.textContent=heading;const d=document.createElement('span');d.className='empty-copy';d.textContent=copy;panel.append(h,d);if(button)panel.append(button);return panel}
 function termEntries(terms){return Object.entries(terms).map(([key,value])=>{const label=key.replace(/([a-z])([A-Z])/g,'$1 $2').replace(/^./,c=>c.toUpperCase());const match=/^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})$/.exec(value);const display=match?`${match[1]}-${match[2]}-${match[3]} · ${match[4]}:${match[5]} (venue time)`:value;return [label,display]})}
-let bookTimer;function requestBook(){clearTimeout(bookTimer);if(!Hunch.selected)return;Hunch.book=null;const request={type:'book',id:Hunch.selected.id,side:Hunch.side,budget:Hunch.budget};bookTimer=setTimeout(()=>sendNative(request),150)}
-function choose(m){Hunch.selected=m;Hunch.side=0;requestBook();showLive()}
-function liveRows(){return Hunch.rows.filter(m=>(Hunch.category==='ALL'||m.category.toUpperCase()===Hunch.category)&&(!Hunch.query||(m.title+' '+m.category+' '+m.venue).toLowerCase().includes(Hunch.query.toLowerCase())))}
+let bookTimer;function requestBook(){clearTimeout(bookTimer);if(!Hunch.selected)return;Hunch.book=null;const id=Hunch.selected.id,budget=Hunch.budget;bookTimer=setTimeout(()=>{[0,1].forEach(side=>sendNative({type:'book',id,side,budget}))},150)}
+function choose(m){Hunch.selected=m;Hunch.side=0;Hunch.books={};requestBook();showLive()}
+function liveRows(){return Hunch.rows.filter(m=>(Hunch.discoveryTab!=='watchlist'||Hunch.watchlist.includes(m.id))&&(Hunch.category==='ALL'||m.category.toUpperCase()===Hunch.category)&&(Hunch.category!=='PRICES'||Hunch.priceType==='ALL'||m.priceType===Hunch.priceType)&&(Hunch.section==='ALL'||discoverySection(m)===Hunch.section)&&(!Hunch.query||(m.title+' '+m.category+' '+m.venue+' '+discoverySection(m)+' '+(m.eventTitle||'')).toLowerCase().includes(Hunch.query.toLowerCase()))).sort(compareMarkets)}
 const listingQuotes=new Map();
-function listingQuote(m){const q=listingQuotes.get(m.id);return q?.valid&&Number(q.ask)>0&&Number(q.ask)<1&&Date.now()-q.time<=60000&&Date.now()-q.time>=-5000?q:null}
-function listingPercent(m){const q=listingQuote(m);return q?Number(q.percent).toLocaleString('en-US',{maximumFractionDigits:2})+'%':'—'}
-function listingPrice(m){const q=listingQuote(m);return q?(q.side||m.sides?.[0]||'Yes').toUpperCase()+' '+(Number(q.ask)*100).toLocaleString('en-US',{maximumFractionDigits:2})+'¢':'NO LIVE QUOTE'}
-function listingIdentity(node,m){node.dataset.marketId=m.id;node.title='Percentage implied by the displayed public ask; not a guaranteed outcome.';return node}
+function listingQuote(m,side=0){const snapshot=listingQuotes.get(m.id),q=snapshot?.quotes?.[side]||(side===0?snapshot:null);return q?.valid&&Number(q.ask)>0&&Number(q.ask)<1&&Date.now()-q.time<=60000&&Date.now()-q.time>=-5000?q:null}
+function listingPercent(m){return quoteCopy(m,0)+' · '+quoteCopy(m,1)}
+function listingPrice(m){return '24H VOL '+dollars(marketVolume(m))}
+function listingIdentity(node,m){node.dataset.marketId=m.id;node.title='Buy asks for each outcome side, quoted in cents per share.';return node}
 let quoteTimer;const quoteAsked=new Map();
 window.requestListingQuotes=()=>{clearTimeout(quoteTimer);quoteTimer=setTimeout(()=>{
  if(accountMode||design)return;
@@ -25,33 +25,76 @@ window.requestListingQuotes=()=>{clearTimeout(quoteTimer);quoteTimer=setTimeout(
  const batch=ids.slice(0,16);if(batch.length){batch.forEach(id=>quoteAsked.set(id,now));sendNative({type:'listingQuotes',ids:batch})}
  },180)};
 document.addEventListener('scroll',()=>window.requestListingQuotes(),true);
-function marketButton(m){const b=listingIdentity(action(m.title,()=>choose(m)),m);const sub=document.createElement('small');sub.textContent=m.venue+' · '+m.date;b.append(sub);const price=document.createElement('b');price.textContent=listingPercent(m)+' · '+listingPrice(m);b.append(price);return b}
-function listInto(panel,rows,max=5){panel.replaceChildren();panel.classList.add('paper-search-results');if(!rows.length){const d=document.createElement('p');d.className='empty-copy';d.textContent=Hunch.error?'Markets could not be loaded. Check your connection.':Hunch.rows.length?'No matching markets.':'Loading public markets…';panel.append(d)}const limit=max===100?(Hunch.limit||100):max;rows.slice(0,limit).forEach(m=>panel.append(marketButton(m)));if(max===100&&rows.length>limit)panel.append(action('Show more markets',()=>{Hunch.limit=limit+100;Paper.schedule()}))}
-function updateFeed(feed){
- const s=Array.from(feed.children);if(s.length<14)return;
- const search=s[0].querySelector('input');if(search){search.value=Hunch.query;search.setAttribute('aria-label','Search markets');event(search,'input',e=>{Hunch.query=e.target.value;Hunch.limit=100;Paper.schedule()})}
- const cats=['ALL',...new Set(Hunch.rows.map(m=>m.category.toUpperCase()))];s[1].replaceChildren();s[1].style.overflowX='auto';cats.forEach(cat=>{const b=action(cat+' '+Hunch.rows.filter(m=>cat==='ALL'||m.category.toUpperCase()===cat).length,()=>{Hunch.category=cat;Hunch.limit=100;Paper.schedule()});b.style.cssText='flex:none;height:30px;min-height:30px;padding:0 9px;font:700 10px "JetBrains Mono";letter-spacing:.04em;'+(cat===Hunch.category?'border:0;background:#111113;color:#fdfdfb':'border:1px solid #111113');s[1].append(b)});
- const rows=liveRows(),featured=rows[0];
- // Keep the original stadium drawing, caption frame, ink, type and screen tone.
- const cover=s[2],caption=cover.lastElementChild;const cap=caption?.children;
- text(cover.querySelector(':scope > span'),'PUBLIC MARKETS · '+Hunch.rows.length+' LISTED');
- if(cap?.length){text(cap[0].children[0],featured?.title||'Public markets');text(cap[0].children[1],featured?listingPercent(featured):(Hunch.error?'OFFLINE':'LOADING'));text(cap[1],featured?featured.venue+' · '+featured.date:Hunch.error?'Connection unavailable':'Loading the latest listings…')}
- if(featured){listingIdentity(cover,featured);cover.setAttribute('role','button');cover.tabIndex=0;event(cover,'click',()=>choose(featured));event(cover,'keydown',e=>{if(e.key==='Enter')choose(featured)})}
- const gut=s[3].querySelector('span');if(gut){text(gut.children[0],'GUT CHECK');text(gut.children[1],rows[1]?.title||'Know something the market doesn’t?');text(gut.children[2],'Open a market to inspect its live order book.')};if(rows[1])event(s[3],'click',()=>choose(rows[1]));
- empty(s[4],'LOOKS MISPRICED · VS OUTSIDE PRICES','Outside-price comparisons are not connected yet. No edge is claimed.');
- // Reuse the original row typography and separators, with listing identity instead of invented prices.
- const trending=s[5];text(trending.firstElementChild,'MARKETS · '+rows.length+' MATCHING');const grid=trending.lastElementChild;
- if(grid!==trending.firstElementChild){grid.replaceChildren();rows.slice(0,5).forEach((m,i)=>{const n=document.createElement('span');n.textContent=String(i+1).padStart(2,'0');const t=document.createElement('span');const b=document.createElement('b');b.textContent=m.title;const sub=document.createElement('span');sub.style.cssText='display:block;font:9px "JetBrains Mono";color:#565964';sub.textContent=m.category;t.append(b,sub);event(t,'click',()=>choose(m));t.setAttribute('role','button');const price=document.createElement('span');price.textContent=listingPercent(m);listingIdentity(t,m);grid.append(n,t,price)})}
- empty(s[6],'SETTLES IN MINUTES','Settlement countdowns appear only when the venue provides a verified deadline.');
- const upcoming=empty(s[7],'MORE MARKETS',rows.length?'Open a listing for its exact venue terms.':'Waiting for public listings.');upcoming.append(...rows.slice(5,8).map(marketButton));
- empty(s[8],'MOVING TODAY','Price history is not connected yet. No movement is estimated.');
- empty(s[9],'YOUR WATCHLIST','No watchlist has been saved.');
- text(s[10].firstElementChild,'BIG QUESTIONS');const questions=s[10].lastElementChild,card=questions.firstElementChild;questions.replaceChildren();rows.slice(8,12).forEach(m=>{const box=card.cloneNode(true);text(box.children[0],m.date);text(box.children[1],m.title);text(box.children[2],listingPercent(m));listingIdentity(box,m);box.setAttribute('role','button');box.tabIndex=0;event(box,'click',()=>choose(m));event(box,'keydown',e=>{if(e.key==='Enter')choose(m)});questions.append(box)});if(!questions.children.length){const copy=document.createElement('span');copy.className='empty-copy';copy.textContent=Hunch.error?'Listings are unavailable.':'No more listings in this issue.';questions.append(copy)}
- empty(s[11],'PUBLIC LISTINGS','Listing dates are not provided by every venue.');s[11].append(...rows.slice(-2).map(marketButton));
- empty(s[12],'YOUR TEAMS','Team following is not connected yet.');text(s[13].lastElementChild,Hunch.error?'OFFLINE · TRY REFRESH':'PUBLIC MARKETS · FULL LIST UNDER SEARCH');
- if(Hunch.query||Hunch.category!=='ALL'){s.slice(2).forEach(e=>e.style.display='none');const results=document.createElement('div');results.className='paper-search-results';listInto(results,rows,100);feed.append(results)}
- feed.append(action('Refresh markets',()=>sendNative({type:'markets'})));
+function marketButton(m){return discoveryRow(m)}
+function updateFeed(feed){const shared=buildDiscovery();const shell=paneNode('div','hunch-two-pane discovery-shell');shell.append(shared);feed.replaceChildren(shell)}
+function marketVolume(m){const v=Hunch.volumes?.[m.id];return v&&Date.now()-v.checked>=-5000&&Date.now()-v.checked<300000&&Number.isFinite(Number(v.volume24h))&&v.volume24h!=null?Number(v.volume24h):null}
+function dollars(value){return value==null?'—':new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:value>=1000?0:2}).format(value)}
+function priceFor(m,side){const q=listingQuote(m,side);if(q)return (Number(q.ask)*100).toLocaleString('en-US',{maximumFractionDigits:2})+'¢';const raw=listingQuotes.get(m.id)?.quotes?.[side];if(!raw)return 'Loading';if(raw.error)return 'Unavailable';if(raw.time&&Date.now()-raw.time>60000)return 'Stale';return raw.status==='noAsks'?'No asks':raw.status==='stale'?'Stale':'Unavailable'}
+function quoteCopy(m,side){return (m.sides?.[side]||(side?'No':'Yes'))+' '+priceFor(m,side)}
+function detailQuote(side){const q=Hunch.books?.[side];return q?.valid&&Date.now()-q.time<=60000&&Date.now()-q.time>=-5000?q:null}
+function detailPrice(side){const q=detailQuote(side);return q?(Number(q.ask)*100).toLocaleString('en-US',{maximumFractionDigits:2})+'¢':'—'}
+function detailStatus(side){const q=Hunch.books?.[side];return detailQuote(side)?'LIVE ASK':!q?'LOADING ASK…':q.error?'QUOTE UNAVAILABLE':q.stale?'QUOTE EXPIRED':q.crossed?'INVALID BOOK':'NO ASKS'}
+function discoverySection(m){return m.section||m.terms?.competition||m.terms?.perp?.split(':').at(-1)||m.terms?.company||m.category}
+function compareMarkets(a,b){
+ const deadline=(a.deadline||a.terms?.resolutionDeadline||a.terms?.time||'99999999').localeCompare(b.deadline||b.terms?.resolutionDeadline||b.terms?.time||'99999999');
+ if(Hunch.sort==='volume')return (marketVolume(b)??-1)-(marketVolume(a)??-1)||deadline||a.title.localeCompare(b.title);
+ if(Hunch.sort==='soon')return deadline||a.title.localeCompare(b.title);
+ const section=(a.category+' '+(a.priceType||'')+' '+discoverySection(a)).localeCompare(b.category+' '+(b.priceType||'')+' '+discoverySection(b),undefined,{numeric:true});
+ const event=(a.eventTitle||discoverySection(a)).localeCompare(b.eventTitle||discoverySection(b));
+ return section||event||deadline||(Number(a.threshold||a.terms?.threshold)||0)-(Number(b.threshold||b.terms?.threshold)||0)||a.title.localeCompare(b.title)||a.venue.localeCompare(b.venue);
 }
+function discoveryRow(m){
+ const row=listingIdentity(paneButton('','mkt'+(Hunch.selected?.id===m.id?' sel':''),()=>choose(m)),m);
+ const title=paneNode('span','t');title.append(paneNode('b','',m.title),paneNode('small','',m.venue+' · '+m.date),paneNode('small','volume','24H VOL '+dollars(marketVolume(m))));
+ row.append(title);(m.sides||['Yes','No']).forEach((name,i)=>{const q=paneNode('span','quote-cell');q.append(paneNode('small','',name),paneNode('b','',priceFor(m,i)));q.title=listingQuote(m,i)?'Current buy ask for '+name:'No current executable ask for '+name;row.append(q)});return row;
+}
+function discoveryColumns(rows=[]){const named=rows.some(m=>(m.sides||['Yes','No']).some((name,i)=>name.toLowerCase()!==(i?'no':'yes')));const row=paneNode('div','quote-columns');row.append(paneNode('span','','MARKET'),paneNode('span','',named?'BUY SIDE 1':'BUY YES'),paneNode('span','',named?'BUY SIDE 2':'BUY NO'));return row}
+function discoveryGroups(rows,target){
+ let group='',event='';rows.forEach(m=>{
+  const next=Hunch.sort==='grouped'?(Hunch.category==='ALL'?m.category+' · ':'')+(m.priceType?m.priceType+' · ':'')+discoverySection(m):'';
+  if(next!==group){group=next;event='';target.append(paneHeading(group.toUpperCase()),discoveryColumns(rows))}
+  const match=m.category==='Sports'?(m.eventTitle||''):'';
+  if(match&&match!==event){event=match;target.append(paneNode('h4','event-title',match))}
+  target.append(discoveryRow(m));
+ });
+}
+function buildDiscovery(){
+ const inner=paneNode('div','inner discovery-content');
+ const tabs=paneNode('nav','discovery-tabs');tabs.setAttribute('aria-label','Market lists');
+ [['markets','MARKETS'],['watchlist','WATCHLIST']].forEach(([key,label])=>{const b=paneButton(label+(key==='watchlist'?' '+Hunch.watchlist.length:''),'rtab'+(Hunch.discoveryTab===key?' on':''),()=>{Hunch.discoveryTab=key;if(key==='watchlist'){Hunch.category='ALL';Hunch.section='ALL';Hunch.priceType='ALL';Hunch.query=''}Hunch.limit=100;Paper.schedule()});b.setAttribute('aria-pressed',String(Hunch.discoveryTab===key));tabs.append(b)});inner.append(tabs);
+ const search=paneNode('label','search'),input=paneNode('input');input.type='search';input.placeholder='Search teams, coins, people…';input.setAttribute('aria-label','Search markets');input.value=Hunch.query;event(input,'input',e=>{Hunch.query=e.target.value;Hunch.limit=100;Paper.schedule()});search.append(input);inner.append(search);
+ const chips=paneNode('div','chips');chips.setAttribute('aria-label','Market categories');
+ const categories=['ALL','PRICES','SPORTS','EVENTS','PRE-IPO','RATES'].filter(cat=>cat==='ALL'||Hunch.rows.some(m=>m.category.toUpperCase()===cat));
+ categories.forEach(cat=>{const count=Hunch.rows.filter(m=>cat==='ALL'||m.category.toUpperCase()===cat).length;const b=paneButton(cat+' '+count,'chip'+(Hunch.category===cat?' on':''),()=>{Hunch.category=cat;Hunch.section='ALL';Hunch.priceType='ALL';Hunch.limit=100;Paper.schedule()});b.setAttribute('aria-pressed',String(Hunch.category===cat));chips.append(b)});inner.append(chips);
+ let categoryRows=Hunch.rows.filter(m=>Hunch.category==='ALL'||m.category.toUpperCase()===Hunch.category);
+ if(Hunch.category==='PRICES'){
+  const types=paneNode('div','chips price-types');types.setAttribute('aria-label','Price market types');
+  ['ALL',...new Set(categoryRows.map(m=>m.priceType).filter(Boolean))].forEach(type=>{const b=paneButton(type==='ALL'?'All assets':type,'chip'+(Hunch.priceType===type?' on':''),()=>{Hunch.priceType=type;Hunch.section='ALL';Hunch.limit=100;Paper.schedule()});b.setAttribute('aria-pressed',String(Hunch.priceType===type));types.append(b)});inner.append(types);
+  if(Hunch.priceType!=='ALL')categoryRows=categoryRows.filter(m=>m.priceType===Hunch.priceType);
+ }
+ if(Hunch.category!=='ALL'){
+  const filters=paneNode('div','chips subcategories');filters.setAttribute('aria-label',Hunch.category==='SPORTS'?'Competitions':'Assets and topics');
+  ['ALL',...new Set(categoryRows.map(discoverySection).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true})))].forEach(section=>{const b=paneButton(section==='ALL'?'All '+Hunch.category.toLowerCase():section,'chip'+(Hunch.section===section?' on':''),()=>{Hunch.section=section;Hunch.limit=100;Paper.schedule()});b.setAttribute('aria-pressed',String(Hunch.section===section));filters.append(b)});inner.append(filters);
+ }
+ const controls=paneNode('div','discovery-controls'),label=paneNode('label','','SORT '),sort=paneNode('select');sort.setAttribute('aria-label','Sort markets');
+ [['grouped','Grouped'],['volume','24h volume'],['soon','Closing soon']].forEach(([value,name])=>{const o=paneNode('option','',name);o.value=value;o.selected=Hunch.sort===value;sort.append(o)});event(sort,'change',e=>{Hunch.sort=e.target.value;Hunch.limit=100;Paper.schedule()});label.append(sort);controls.append(label);inner.append(controls);
+ const rows=liveRows();
+ if(!rows.length){inner.append(paneNode('p','empty',Hunch.error?'Markets could not be loaded. Check your connection.':!Hunch.rows.length?'Loading listings…':Hunch.discoveryTab==='watchlist'?'No saved markets match. Open a market and tap Save to watchlist.':'No matching markets. Try another category or search.'))}
+ else{
+  const trending=Hunch.discoveryTab==='markets'&&!Hunch.query&&Hunch.sort==='grouped'?rows.filter(m=>(marketVolume(m)??0)>0).sort((a,b)=>marketVolume(b)-marketVolume(a)).slice(0,3):[];
+  if(trending.length){const shelf=paneNode('section','trending');shelf.append(paneHeading('TRENDING · 24H VOLUME'),discoveryColumns(trending));trending.forEach(m=>shelf.append(discoveryRow(m)));inner.append(shelf)}
+  if(!Hunch.volumesLoaded)inner.append(paneNode('p','data-status','Loading 24h volume…'));
+  else if(Hunch.volumeError)inner.append(paneNode('p','data-status','24h volume unavailable. Refresh to retry.'));
+  const rest=rows.filter(m=>!trending.includes(m)),list=paneNode('section','market-list');
+  if(rest.length){list.append(paneHeading(Hunch.discoveryTab==='watchlist'?'YOUR WATCHLIST':Hunch.sort==='grouped'?'BROWSE BY '+(Hunch.category==='SPORTS'?'COMPETITION':Hunch.category==='PRICES'?'ASSET':'TOPIC'):'MARKETS · '+rest.length));
+   if(Hunch.sort!=='grouped')list.append(discoveryColumns(rows));discoveryGroups(rest.slice(0,Hunch.limit||100),list);
+   if(rest.length>(Hunch.limit||100))list.append(paneButton('Show more markets','rtab',()=>{Hunch.limit=(Hunch.limit||100)+100;Paper.schedule()}));inner.append(list);
+  }
+ }
+ inner.append(paneButton('Refresh markets','rtab refresh-markets',()=>{Hunch.volumesLoaded=false;sendNative({type:'markets'});Paper.schedule()}));return inner;
+}
+function watchButton(m){const saved=Hunch.watchlist.includes(m.id);const b=paneButton(saved?'Saved to watchlist':'Save to watchlist','rtab save-market',()=>sendNative({type:'watchlist',id:m.id,saved:!Hunch.watchlist.includes(m.id)}));b.setAttribute('aria-pressed',String(saved));return b}
+
 function coverPrepare(root){
  const top=root.children[0];text(top?.lastElementChild,'CASH —');const body=root.children[1];
  if(Hunch.chapter==='today') {const feed=body.querySelector('.noscroll > div');if(feed)updateFeed(feed)}
@@ -196,13 +239,13 @@ async function showCoverMarket(){
    const m=Hunch.selected,b=Hunch.book&&(!Hunch.book.valid||Date.now()-Hunch.book.time<=60000)?Hunch.book:null;
    const body=cropPhone(root),p=Array.from(body.children);
    text(p[0].lastElementChild,'CASH —');
-   const art=p[1];text(art.querySelector(':scope > span'),m.venue+' · PUBLIC MARKET');const back=art.querySelector('button');back._paperEvents={};back.replaceWith(back.cloneNode(true));const backButton=art.querySelector('button');event(backButton,'click',()=>{Hunch.selected=null;showLive()});
+   const art=p[1];text(art.querySelector(':scope > span'),m.venue+' · PUBLIC MARKET');const back=art.querySelector('button');back._paperEvents={};back.replaceWith(back.cloneNode(true));const backButton=art.querySelector('button');event(backButton,'click',()=>{Hunch.selected=null;showLive()});const nav=document.createElement('div');nav.className='cover-market-nav';backButton.style.cssText='position:static;border:1.5px solid #111113;background:#fdfdfb;padding:8px 12px;font:700 12px JetBrains Mono';nav.append(backButton,watchButton(m));body.insertBefore(nav,art);
    text(p[2].children[0],m.category+' · '+m.date);text(p[2].children[1],m.title);
-   Array.from(p[3].children).forEach((el,i)=>{text(el.children[0],m.sides[i]);text(el.children[1],'—');text(el.children[2],i===Hunch.side&&b?.valid?(Number(b.ask)*100).toFixed(2)+'¢ ASK':'NO VERIFIED QUOTE');el.style.background=i===Hunch.side?'#111113':'#fdfdfb';el.style.color=i===Hunch.side?'#fdfdfb':'#111113';el.setAttribute('role','button');el.tabIndex=0;el.setAttribute('aria-pressed',String(i===Hunch.side));const chooseSide=()=>{Hunch.side=i;requestBook();Paper.schedule()};event(el,'click',chooseSide);event(el,'keydown',e=>{if(e.key==='Enter')chooseSide()})});
+   Array.from(p[3].children).forEach((el,i)=>{text(el.children[0],m.sides[i]);text(el.children[1],detailPrice(i));text(el.children[2],detailStatus(i));el.style.background=i===Hunch.side?'#111113':'#fdfdfb';el.style.color=i===Hunch.side?'#fdfdfb':'#111113';el.setAttribute('role','button');el.tabIndex=0;el.setAttribute('aria-pressed',String(i===Hunch.side));const chooseSide=()=>{Hunch.side=i;requestBook();Paper.schedule()};event(el,'click',chooseSide);event(el,'keydown',e=>{if(e.key==='Enter')chooseSide()})});
    Array.from(p[4].children).slice(1).forEach((el,i)=>{const budget=[10,20,50][i];el.style.background=Hunch.budget===budget?'#111113':'#fdfdfb';el.style.color=Hunch.budget===budget?'#fdfdfb':'#111113';el.setAttribute('role','button');el.tabIndex=0;event(el,'click',()=>{Hunch.budget=budget;requestBook();Paper.schedule()})});
    text(p[5].children[0],'$'+Hunch.budget+' → '+(b?.valid?b.payout:'—'));text(p[5].children[1],b?.valid?(b.complete?'Full depth preview.':'Partial depth preview.')+' Spend preview: '+b.spent+'. Fees and execution can change.':b?'No verified executable quote.':Hunch.book?'Quote expired. Refresh preview.':'Loading live order book…');
    const cta=p[6];cta.replaceWith(cta.cloneNode(true));const button=body.lastElementChild;text(button,'REVIEW AN ORDER');event(button,'click',()=>sendNative({type:'trade',id:m.id,side:Hunch.side}));const refresh=document.createElement('button');refresh.className='paper-action';refresh.textContent='READ ONLY · REFRESH';event(refresh,'click',()=>{requestBook();Paper.schedule()});body.append(refresh);
-   const terms=document.createElement('div');terms.style.cssText='border:1.5px solid #111113;padding:12px;font-size:12px;line-height:1.4';const title=document.createElement('b');title.textContent='HOW IT SETTLES';terms.append(title);termEntries(m.terms).forEach(([key,value])=>{const row=document.createElement('p');row.textContent=key+': '+value;terms.append(row)});body.append(terms);
+   const terms=document.createElement('div');terms.style.cssText='border:1.5px solid #111113;padding:12px;font-size:12px;line-height:1.4';const title=document.createElement('b');title.textContent='HOW IT SETTLES';terms.append(title);termEntries(m.terms).forEach(([key,value])=>{const row=document.createElement('p');row.textContent=key+': '+value;terms.append(row)});const volume=document.createElement('p');volume.className='market-volume';volume.textContent='24H VOLUME '+dollars(marketVolume(m))+' · ASK DEPTH '+m.sides.map((name,i)=>name+' '+dollars(detailQuote(i)?.depth==null?null:Number(detailQuote(i).depth))).join(' / ');body.append(volume,terms);
   };
  });
 }

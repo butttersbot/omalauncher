@@ -45,3 +45,49 @@
 
 .hunch-two-pane .quote-head{display:flex;align-items:start;gap:12px;justify-content:space-between}.hunch-two-pane .hero .quote-head>b:first-child{flex:1;min-width:0}.hunch-two-pane .hero .chance{flex:none;white-space:nowrap}.hunch-two-pane .mkt .p{min-width:85px}.paper-search-results button>b{display:block;font:700 12px 'JetBrains Mono';margin-top:5px}
 .hunch-two-pane .mkt .p{max-width:42%;flex-shrink:0}.hunch-two-pane .mkt .p small{white-space:normal;overflow-wrap:anywhere}
+
+/* Shared discovery on cover and unfolded; categories always remain one horizontal row. */
+.hunch-two-pane .chips{display:flex;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;max-width:100%;scrollbar-width:none;overscroll-behavior-x:contain;touch-action:pan-x}
+.hunch-two-pane .chip{white-space:nowrap;flex:0 0 auto;min-height:36px}
+.hunch-two-pane .discovery-tabs{display:flex;gap:6px;margin-bottom:12px}
+.hunch-two-pane .discovery-tabs .rtab{justify-content:center;min-height:36px}
+.hunch-two-pane .subcategories{margin-top:-6px}
+.hunch-two-pane .subcategories .chip{font-size:10px;padding:7px 9px}
+.hunch-two-pane .discovery-controls{display:flex;justify-content:flex-end;margin:8px 0 12px;font:700 10px 'JetBrains Mono',monospace}
+.hunch-two-pane .discovery-controls select{font:inherit;color:var(--ink);border:1px solid var(--ink);background:var(--paper);padding:6px;max-width:150px}
+.hunch-two-pane .mkt{display:grid;grid-template-columns:minmax(0,1fr) 58px 58px;gap:8px;padding:10px;margin-bottom:8px;max-width:100%;min-width:0}
+.hunch-two-pane .mkt .t{min-width:0;overflow-wrap:anywhere}
+.hunch-two-pane .mkt .t b{font-size:14px;line-height:1.35}
+.hunch-two-pane .mkt .t small{font-size:9px;line-height:1.45;overflow-wrap:anywhere}
+.hunch-two-pane .mkt .t .volume{color:var(--grey)}
+.hunch-two-pane .quote-cell{text-align:right;min-width:0;display:flex;flex-direction:column;gap:5px}
+.hunch-two-pane .quote-cell b{font:700 12px 'JetBrains Mono',monospace;white-space:nowrap}
+.hunch-two-pane .quote-cell small{font:700 9px 'JetBrains Mono',monospace;overflow-wrap:anywhere}
+.hunch-two-pane .quote-columns{display:grid;grid-template-columns:minmax(0,1fr) 58px 58px;gap:8px;padding:4px 10px 7px;font:700 9px 'JetBrains Mono',monospace;color:var(--grey)}
+.hunch-two-pane .quote-columns span+span{text-align:right}
+.hunch-two-pane .event-title{font:700 12px 'Zen Kaku Gothic New',sans-serif;margin:12px 0 8px;overflow-wrap:anywhere}
+.hunch-two-pane .data-status{font-size:12px;line-height:1.5;color:var(--grey)}
+.hunch-two-pane .refresh-markets{margin-top:14px;justify-content:center;width:100%}
+.hunch-two-pane .header-metrics{flex:1;max-width:580px;border:0;grid-template-columns:repeat(4,minmax(0,1fr));background:transparent}
+.hunch-two-pane .header-metrics>div{padding:2px 12px}
+.hunch-two-pane .header-metrics small{font-size:9px;white-space:nowrap}
+.hunch-two-pane .header-metrics b{font-size:17px;margin-top:3px}
+.hunch-two-pane .bets-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+.hunch-two-pane .bets-heading .h1{margin:0}
+.hunch-two-pane .bets-heading .rtab{flex-shrink:0}
+.hunch-two-pane .save-market{margin-left:auto;font-size:10px;white-space:normal}
+.hunch-two-pane .market-volume,.market-volume{font:700 11px/1.6 'JetBrains Mono',monospace;color:#565964;overflow-wrap:anywhere}
+.hunch-two-pane .rtabs{flex-wrap:wrap}
+.cover-market-nav{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 0 10px;flex-shrink:0}
+.cover-market-nav .save-market{font:700 11px 'JetBrains Mono',monospace;border:1.5px solid #111113;background:#fdfdfb;padding:8px;min-height:36px}
+.hunch-two-pane.discovery-shell{display:block;overflow:visible;width:100%;min-width:0;font-size:13px}
+.hunch-two-pane.discovery-shell .inner{padding:0}
+.hunch-two-pane.discovery-shell .mkt{grid-template-columns:minmax(0,1fr) 52px 52px;gap:6px;padding:10px 8px}
+.hunch-two-pane.discovery-shell .quote-columns{grid-template-columns:minmax(0,1fr) 52px 52px;gap:6px;padding-left:8px;padding-right:8px}
+.hunch-two-pane.discovery-shell .search{height:46px;padding:0 12px}
+.hunch-two-pane.discovery-shell .search input{font-size:14px}
+.hunch-two-pane.discovery-shell .mkt .t b{font-size:13px}
+.hunch-two-pane.discovery-shell .mkt .quote-cell b{font-size:11px}
+.hunch-two-pane.discovery-shell .chips{margin:12px 0}
+
+.hunch-two-pane .quote-cell b{white-space:normal;overflow-wrap:anywhere}

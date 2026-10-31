@@ -2,6 +2,8 @@ package dev.omalauncher.hunch
 
 import android.app.Activity
 import android.os.Bundle
+import android.content.res.Configuration
+import android.view.Gravity
 import android.graphics.Color
 import android.view.View
 import android.view.WindowInsets
@@ -14,12 +16,32 @@ import java.io.ByteArrayInputStream
 /** Only bundled assets can execute script. Provider strings are JSON/text, never markup or code. */
 abstract class PaperActivity:Activity() {
     protected lateinit var paper:WebView
+    private val panelWindow get() = this is WalletActivity || this is AccountActivity
+    // Use the full display metrics, not the dialog WebView's narrower content metrics.
+    private fun sizePanelWindow(){
+        if(!panelWindow)return
+        val bounds=if(android.os.Build.VERSION.SDK_INT>=30)windowManager.maximumWindowMetrics.bounds else android.graphics.Rect(0,0,resources.displayMetrics.widthPixels,resources.displayMetrics.heightPixels)
+        val density=resources.displayMetrics.density
+        val twoPane=bounds.width()/density>=600 && bounds.width()>bounds.height()
+        window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.rgb(253,253,251)))
+        window.decorView.setPadding(0,0,0,0)
+        window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+        window.setGravity(if(twoPane)Gravity.RIGHT or Gravity.TOP else Gravity.CENTER)
+        val header=if(twoPane)((intent.getIntExtra("panelTop",57).takeIf{it>0}?:57)*density).toInt() else 0
+        val insets=if(android.os.Build.VERSION.SDK_INT>=30)windowManager.maximumWindowMetrics.windowInsets.getInsetsIgnoringVisibility(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout()) else android.graphics.Insets.NONE
+        val attrs=window.attributes;attrs.y=header;window.attributes=attrs
+        window.setLayout(if(twoPane)bounds.width()/2 else bounds.width(),if(twoPane)bounds.height()-insets.top-insets.bottom-header else WindowManager.LayoutParams.MATCH_PARENT)
+    }
+    override fun onResume(){super.onResume();sizePanelWindow()}
+    override fun onConfigurationChanged(config:Configuration){super.onConfigurationChanged(config);sizePanelWindow();paper.post{paper.evaluateJavascript("window.paperResize&&window.paperResize()",null)}}
     private val origin="appassets.androidplatform.net"
     override fun onCreate(state:Bundle?){
+        if(panelWindow)setTheme(R.style.HunchPanel)
         super.onCreate(state)
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         if(android.os.Build.VERSION.SDK_INT>=30)window.setDecorFitsSystemWindows(false)
         window.decorView.systemUiVisibility=View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+        if(BuildConfig.DEBUG)WebView.setWebContentsDebuggingEnabled(true)
         paper=WebView(this).apply{
             setBackgroundColor(Color.rgb(253,253,251))
             settings.javaScriptEnabled=true;settings.domStorageEnabled=false
@@ -48,7 +70,7 @@ abstract class PaperActivity:Activity() {
                 if(android.os.Build.VERSION.SDK_INT>=30)WindowInsets.CONSUMED else i.consumeSystemWindowInsets()
             }
         }
-        setContentView(frame);frame.requestApplyInsets()
+        setContentView(frame);sizePanelWindow();frame.requestApplyInsets()
         if(android.os.Build.VERSION.SDK_INT>=33)onBackInvokedDispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT){back()}
     }
     private fun denied()=WebResourceResponse("text/plain","UTF-8",403,"Blocked",mapOf("Cache-Control" to "no-store"),ByteArrayInputStream(byteArrayOf()))

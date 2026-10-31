@@ -33,7 +33,7 @@ class WalletActivity:PaperActivity(){
         "close"->finish()
         "walletAction"->if(!busy)when(data.optString("action")){
             "check"->refresh()
-            "login"->if(!identity.signed)startActivity(Intent(this,AccountActivity::class.java))
+            "login"->if(!identity.signed)startActivity(Intent(this,AccountActivity::class.java).putExtra("panelTop",intent.getIntExtra("panelTop",57)).putExtra("demo",demo))
             "create"->if(identity.signed&&identity.address==null)work("Creating your Hunch wallet…"){
                 try {identity=WalletIdentity(true,access.create())} catch(e:Exception){identity=access.current();throw e}
                 readBalances();message="Wallet ready. Verify the address before using it."

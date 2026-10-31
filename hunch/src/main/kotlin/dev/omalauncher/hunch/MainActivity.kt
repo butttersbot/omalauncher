@@ -35,31 +35,43 @@ class MainActivity:PaperActivity(){
     }
     override fun onSaveInstanceState(out:Bundle){out.putString("chapter",chapter);super.onSaveInstanceState(out)}
     override fun command(data:JSONObject){when(data.optString("type")){
-        "ready"->{tell(JSONObject().put("type","config").put("chapter",chapter).put("fixture",fixture));if(design.isEmpty())loadMarkets()}
+        "ready"->{tellWatchlist();tell(JSONObject().put("type","config").put("chapter",chapter).put("fixture",fixture));if(design.isEmpty())loadMarkets()}
         "markets"->if(design.isEmpty())loadMarkets()
+        "watchlist"->{val id=data.optString("id");if(markets.any{it.id.toString()==id}){
+            val prefs=getSharedPreferences(if(fixture=="demo")"discovery-fixture" else "discovery",MODE_PRIVATE)
+            val saved=prefs.getStringSet("watchlist",emptySet()).orEmpty().toMutableSet()
+            if(data.optBoolean("saved"))saved.add(id) else saved.remove(id)
+            prefs.edit().putStringSet("watchlist",saved).apply();tellWatchlist()
+        }}
         "route"->if(data.optString("chapter") in listOf("today","bets","money"))chapter=data.getString("chapter")
         "trade"->{val m=markets.singleOrNull{it.id.toString()==data.optString("id")};val side=data.optInt("side",-1);if(m!=null&&side in 0..1)startActivity(Intent(this,TradeActivity::class.java).putExtra("demo",BuildConfig.DEBUG&&fixture=="demo").putExtra("market",m.id).putExtra("side",side).putExtra("title",m.title).putExtra("identity",m.identity).putExtra("sideLabel",m.sideLabel(side)))}
         "book"->if(design.isEmpty())loadBook(data)
         "listingQuotes"->if(design.isEmpty())loadListingQuotes(data)
-        "account"->if(design.isEmpty())startActivity(Intent(this,AccountActivity::class.java).putExtra("demo",BuildConfig.DEBUG&&fixture=="demo"))
-        "wallet"->if(design.isEmpty())startActivity(Intent(this,WalletActivity::class.java).putExtra("demo",BuildConfig.DEBUG&&fixture=="demo"))
+        "account"->if(design.isEmpty())startActivity(Intent(this,AccountActivity::class.java).putExtra("panelTop",data.optInt("panelTop",57).coerceIn(0,160)).putExtra("demo",BuildConfig.DEBUG&&fixture=="demo"))
+        "wallet"->if(design.isEmpty())startActivity(Intent(this,WalletActivity::class.java).putExtra("panelTop",data.optInt("panelTop",57).coerceIn(0,160)).putExtra("demo",BuildConfig.DEBUG&&fixture=="demo"))
         "live"->{intent.removeExtra("design");design="";chapter="today";openPaper()}
         "close"->finish()
     }}
-    private fun request(body:JSONObject):JSONObject{
+    private fun request(body:JSONObject)=JSONObject(requestRaw(body))
+    private fun requestRaw(body:JSONObject):String{
         if(fixture=="error")error("Offline fixture")
-        if(fixture=="demo")return Demo.request(body)
+        if(fixture=="demo")return if(body.optString("type")=="spotMetaAndAssetCtxs") Demo.volumes().toString() else Demo.request(body).toString()
         val c=URL("https://api.hyperliquid.xyz/info").openConnection() as HttpURLConnection
         try{c.requestMethod="POST";c.connectTimeout=8000;c.readTimeout=8000;c.doOutput=true;c.setRequestProperty("Content-Type","application/json")
             c.outputStream.use{it.write(body.toString().toByteArray())};check(c.responseCode==200)
             val bytes=c.inputStream.use{stream->val out=java.io.ByteArrayOutputStream();val buf=ByteArray(8192)
                 while(true){check(!Thread.currentThread().isInterrupted);val n=stream.read(buf);if(n<0)break;check(out.size()+n<=4_000_000);out.write(buf,0,n)};out.toByteArray()}
-            return JSONObject(String(bytes,Charsets.UTF_8))
+            return String(bytes,Charsets.UTF_8)
         }finally{c.disconnect()}
     }
     private fun loadMarkets(){worker.submit{
         val result=runCatching{Market.parse(request(JSONObject().put("type","outcomeMeta")))}
-        runOnUiThread{if(!isDestroyed){result.fold(onSuccess={found->markets=found;tell(JSONObject().put("type","markets").put("updated",System.currentTimeMillis()).put("rows",JSONArray(found.map{m->JSONObject().put("id",m.id.toString()).put("title",m.title).put("category",m.category).put("venue",m.venueName).put("quote",m.quote).put("date",m.deadline?.let{MarketDates.display(it)}?:"Read venue terms").put("identity",m.identity).put("sides",JSONArray((0..1).map{m.sideLabel(it)})).put("terms",JSONObject(m.fields))})))},onFailure={tell(JSONObject().put("type","marketError"))})}}
+        runOnUiThread{if(!isDestroyed){result.fold(onSuccess={found->markets=found;loadVolumes(found);tell(JSONObject().put("type","markets").put("updated",System.currentTimeMillis()).put("rows",JSONArray(found.map{m->JSONObject().put("id",m.id.toString()).put("title",m.title).put("category",m.category).put("section",m.section).put("eventTitle",m.eventTitle).put("priceType",m.priceType).put("deadline",m.deadline.orEmpty()).put("threshold",m.fields["threshold"]?:m.fields["targetPrice"].orEmpty()).put("venue",m.venueName).put("quote",m.quote).put("date",m.deadline?.let{MarketDates.display(it)}?:"Read venue terms").put("identity",m.identity).put("sides",JSONArray((0..1).map{m.sideLabel(it)})).put("terms",JSONObject(m.fields))})))},onFailure={tell(JSONObject().put("type","marketError"))})}}
+    }}
+    private fun tellWatchlist(){tell(JSONObject().put("type","watchlist").put("ids",JSONArray(getSharedPreferences(if(fixture=="demo")"discovery-fixture" else "discovery",MODE_PRIVATE).getStringSet("watchlist",emptySet()).orEmpty().sorted())))}
+    private fun loadVolumes(found:List<Market>){worker.submit{
+        val result=runCatching{MarketVolumes.read(found,JSONArray(requestRaw(JSONObject().put("type","spotMetaAndAssetCtxs"))),System.currentTimeMillis())}
+        runOnUiThread{if(!isDestroyed&&markets===found)tell(JSONObject().put("type","volumes").put("rows",result.getOrNull()?:JSONArray()).put("error",result.isFailure))}
     }}
     private fun loadListingQuotes(data:JSONObject){
         val ids=data.optJSONArray("ids")?:return
@@ -75,8 +87,12 @@ class MainActivity:PaperActivity(){
             if(id in quoting||quoting.size>=24)continue
             quoting.add(id)
             quoteWorker.submit{
-                val result=runCatching{ListingQuote.read(market,request(JSONObject().put("type","l2Book").put("coin",market.coin(0))),System.currentTimeMillis())}
-                    .getOrElse{JSONObject().put("id",id).put("valid",false)}
+                val sides=JSONArray((0..1).map { side ->
+                    runCatching { ListingQuote.read(market,request(JSONObject().put("type","l2Book").put("coin",market.coin(side))),System.currentTimeMillis(),side) }
+                        .getOrElse { JSONObject().put("valid",false).put("error",true) }
+                })
+                val result=JSONObject().put("id",id).put("quotes",sides)
+                    .put("valid",(0..1).any{sides.getJSONObject(it).optBoolean("valid")})
                 runOnUiThread{quoting.remove(id);if(!isDestroyed){listingQuotes[id]=System.currentTimeMillis() to result;tell(JSONObject().put("type","listingQuote").put("quote",result))}}
             }
         }
@@ -91,7 +107,8 @@ class MainActivity:PaperActivity(){
                 val age=System.currentTimeMillis()-b.optLong("time",0);val stale=age>60_000||age< -5000||b.optLong("time",0)<=0
                 val crossed=bid!=null&&ask!=null&&bid>=ask
                 payload.put("bid",bid?.toPlainString()?:JSONObject.NULL).put("ask",ask?.toPlainString()?:JSONObject.NULL).put("stale",stale).put("time",b.optLong("time"))
-                val valid=!stale&&!crossed&&ask!=null&&m.quote=="USDC"
+                val valid=!stale&&!crossed&&ask!=null&&m.quote=="USDC"&&b.optString("coin")==m.coin(side)
+                if(valid)payload.put("depth",Book.levels(b,1).fold(BigDecimal.ZERO){total,level->total+level.price*level.size}.toPlainString())
                 payload.put("valid",valid).put("empty",ask==null||bid==null).put("crossed",crossed)
                 if(valid){val preview=Book.preview(Book.levels(b,1),BigDecimal(budget));payload.put("complete",preview.complete).put("payout",Book.money(preview.grossPayout)).put("spent",Book.money(preview.spent))}
             }catch(e:Exception){payload.put("error",true)}

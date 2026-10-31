@@ -11,4 +11,6 @@ object Demo {
    else JSONObject("""{"levels":[[{"px":"0.39","sz":"100"}],[{"px":"0.41","sz":"100"},{"px":"0.42","sz":"200"}]]}""").put("time",System.currentTimeMillis()).put("coin",body.getString("coin"))
   else -> error("Fixture command unsupported")
  }
+ fun volumes()=org.json.JSONArray().put(JSONObject()).put(org.json.JSONArray((1..3).flatMap { id -> (0..1).map { side -> JSONObject().put("coin","#${id*10+side}").put("dayNtlVlm",if(id==2)"0" else if(id==1)"4321.17" else "152.23") } }))
+
 }
