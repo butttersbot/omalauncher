@@ -186,6 +186,13 @@ class Runtime(
             if (bgHealOpen) false else { openBgHeal(); bgHealOpen }
         }
     }
+    /** The keeper is not answering though Linux is up: start it again (the one fixed service Soma owns; a keeper already alive makes the new one leave). */
+    @Synchronized internal fun connectionsRestartKeeper(): Boolean {
+        if (!linux) return false
+        keeperOpen = false
+        openKeeper()
+        return keeperOpen
+    }
     private val connectionsMonitor by lazy { dev.omalauncher.connections.ConnectionsMonitor(context.applicationContext, this) }
     /** The update pill's feed (cards soma-chat/Updates). */
     val phoneUpdates by lazy { dev.omalauncher.update.PhoneUpdater(context.applicationContext) }

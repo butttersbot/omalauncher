@@ -257,6 +257,9 @@ object AgentMailReceipts {
         fresh.writeText(org.json.JSONArray(entries.takeLast(512)).toString())
         check(fresh.renameTo(target)) { "Could not save mail receipts" }
     }
+    /** What the phone has recorded for the mail that came to it, for Connections. */
+    @Synchronized fun all(context: Context): List<dev.omalauncher.connections.MailReceipt> = read(context).let { rows -> (0 until rows.length()).map { rows.getJSONObject(it) }.map { r ->
+        dev.omalauncher.connections.MailReceipt(r.optString("id"), r.optString("sender"), r.optLong("time"), r.optString("state"), r.optLong("updated")) } }
     @Synchronized fun interrupted(context: Context) = runCatching {
         val rows = read(context)
         save(context, (0 until rows.length()).map { rows.getJSONObject(it).also { row ->

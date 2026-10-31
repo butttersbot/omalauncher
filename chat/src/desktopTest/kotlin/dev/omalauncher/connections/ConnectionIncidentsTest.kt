@@ -27,6 +27,16 @@ class ConnectionIncidentsTest {
             try { ConnectionIncidentJournal(directory).read("../secrets"); fail("accepted traversal") } catch (_: IllegalArgumentException) {}
         } finally { directory.deleteRecursively() }
     }
+    @Test fun aMovingStampOrFreeSpaceFigureDoesNotMakeANewIncidentEachRound() {
+        val directory = Files.createTempDirectory("connection-incidents").toFile()
+        try {
+            fun record(at: String, free: String, now: Long) = ConnectionIncidentJournal(directory).record("Disk space", "Mac", "check_failed", "low", "disk:mac",
+                listOf(ConnectionCheck("disk_space", "Mac", null, "fail", linkedMapOf("code" to "disk_low", "at" to at, "free_gb" to free))), emptyList(), now)
+            val first = record("100", "9.1", 100); val second = record("160", "9.0", 160)
+            assertEquals(first.getString("id"), second.getString("id"))
+            assertEquals(1, directory.listFiles().orEmpty().count { it.name.matches(Regex("[0-9]+-[0-9a-f]{16}\\.json")) })
+        } finally { directory.deleteRecursively() }
+    }
     @Test fun writesRedactedEvidenceNotApprovalMaterial() {
         val directory = Files.createTempDirectory("connection-incidents").toFile()
         try {

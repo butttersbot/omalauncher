@@ -35,14 +35,15 @@ fun connectionStatus(row: ConnectionReading, incidents: List<ConnectionIncident>
 }
 
 private val Capability.noun get() = when (this) {
-    Capability.Network -> "device connections"; Capability.Agents -> "agent runs"; Capability.Models -> "models"; Capability.Phone -> "phone control"
+    Capability.Network -> "device connections"; Capability.Agents -> "agent runs"; Capability.Models -> "models"; Capability.GitHub -> "GitHub access"
+    Capability.Disk -> "disk space"; Capability.Mail -> "agent mail"; Capability.Phone -> "phone control"
     Capability.Sync -> "workspace sync"; Capability.Activity -> "device activity"; Capability.Files -> "file deliveries"
     Capability.Builds -> "builds"; Capability.Voice -> "voice"; Capability.Search -> "search"; Capability.Messages -> "messages"
     Capability.Canvas -> "Design Canvas"; Capability.Optional -> "optional tools"
 }
-private val Capability.plural get() = this in setOf(Capability.Network, Capability.Agents, Capability.Models, Capability.Files, Capability.Builds, Capability.Messages, Capability.Optional)
+private val Capability.plural get() = this in setOf(Capability.Network, Capability.Agents, Capability.Models, Capability.Mail, Capability.Files, Capability.Builds, Capability.Messages, Capability.Optional)
 private val Capability.short get() = when (this) {
-    Capability.Network -> "device"; Capability.Agents -> "agent"; Capability.Models -> "model"; Capability.Phone -> "phone control"; Capability.Sync -> "sync"
+    Capability.Network -> "device"; Capability.Agents -> "agent"; Capability.Models -> "model"; Capability.GitHub -> "GitHub"; Capability.Disk -> "disk"; Capability.Mail -> "mail"; Capability.Phone -> "phone control"; Capability.Sync -> "sync"
     Capability.Activity -> "activity"; Capability.Files -> "delivery"; Capability.Builds -> "build"; Capability.Voice -> "voice"
     Capability.Search -> "search"; Capability.Messages -> "messages"; Capability.Canvas -> "Canvas"; Capability.Optional -> "tool"
 }
@@ -57,6 +58,12 @@ private fun counted(n: Int, one: String) = "${NUMBERS.getOrElse(n) { n.toString(
 fun connectionCause(reading: ConnectionReading, key: String?): String {
     reading.checks.firstNotNullOfOrNull { it.agentTrouble() }?.let { t ->
         return listOf(reading.host.ifBlank { "This phone" }, t.agent, t.words).joinToString(" · ")
+    }
+    when (reading.capability) {
+        Capability.GitHub -> return listOf(reading.host.ifBlank { "This phone" }, "GitHub login expired").joinToString(" · ")
+        Capability.Disk -> return listOf(reading.host.ifBlank { "This phone" }, "low on disk space").joinToString(" · ")
+        Capability.Mail -> return listOf(reading.host.ifBlank { "This phone" }, "mail not delivered").joinToString(" · ")
+        else -> {}
     }
     reading.checks.firstNotNullOfOrNull { it.agentMissing() }?.let { return "${reading.host.ifBlank { "This phone" }} · $it · missing" }
     val what = when {
@@ -93,7 +100,15 @@ fun incidentCopy(incident: ConnectionIncident, snapshot: ConnectionsSnapshot, no
     val primary = capabilities.first()
     val trouble = readings.flatMap { it.checks }.firstNotNullOfOrNull { it.agentTrouble() }
     val missing = readings.flatMap { it.checks }.firstNotNullOfOrNull { it.agentMissing() }
+    val owner = readings.firstOrNull()?.capability
     return when {
+        owner == Capability.GitHub -> IncidentCopy("$host / GitHub", "$host: GitHub login expired.\nRun gh auth login on it.",
+            "Pushes from $host will fail until it is signed in again. Only you can sign in, so nothing was changed.",
+            listOf("Open a terminal on $host", "Run gh auth login", "Check again"), "Signing in is yours; Restore leaves it alone.")
+        owner == Capability.Disk -> IncidentCopy("$host / disk space", "$host is low on disk space.\nBuilds and sync may fail.",
+            readings.first().detail + " Nothing was deleted.", listOf("Free space on $host", "Empty its trash or old builds", "Check again"), "Only you decide what to delete.")
+        owner == Capability.Mail -> IncidentCopy("$host / agent mail", "Mail to $host isn't being delivered.\nIt was handed off but never arrived.",
+            readings.first().detail, listOf("Check $host is awake and its agent is running", "Check again"), "Nothing was resent.")
         missing != null -> IncidentCopy("$host / $missing", "$missing isn't installed on ${if (host == "This phone") "this phone" else host}.\nWork that needs it can't start.",
             readings.first().detail.ifBlank { "$missing is missing." } + " Nothing was changed.",
             listOf("Install $missing in Omalauncher", "Sign it in if it asks", "Check again"), note)
@@ -101,6 +116,8 @@ fun incidentCopy(incident: ConnectionIncident, snapshot: ConnectionsSnapshot, no
         trouble != null -> IncidentCopy("$host / ${trouble.agent}", "${trouble.agent} is failing on ${if (host == "This phone") "this phone" else host}.\n${trouble.words.capital()}.",
             "Its last turn ended with: ${trouble.error.ifBlank { trouble.words }.trimEnd('.')}. Nothing was restarted.",
             listOf("Read the error", if (trouble.code == "sign_in") "Sign ${trouble.agent} in again" else "Wait for its service", "Send it a message: a good turn clears this"), note)
+        key == "phone-keeper" -> IncidentCopy("This phone / keeper", "This phone's keeper isn't running.\nSoma is starting it again.",
+            "Jobs kept after a turn ends won't stay up until it is back. Nothing was terminated.", listOf("Wait a few seconds", "Check again"), "It is restarted by Soma itself.")
         key == "network" -> IncidentCopy("This phone / tailnet", "This phone has no tailnet route.\nTailscale needs a look.",
             "Soma can't reach your other devices until it is back. Nothing was changed.",
             listOf("Check Tailscale on this phone", "Reconnect to the tailnet", "Verify device connections"), note)

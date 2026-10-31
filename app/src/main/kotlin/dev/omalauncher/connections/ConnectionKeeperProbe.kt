@@ -1,40 +1,21 @@
 package dev.omalauncher.connections
 
-import android.net.LocalSocket
-import android.net.LocalSocketAddress
-import org.json.JSONObject
-import java.io.File
+import dev.omalauncher.Runtime
+import java.util.concurrent.TimeUnit
 
-/** Bounded read-only keeper protocol check. Kept command arguments/output never enter diagnostics. */
-internal fun connectionKeeperProbe(home: File): ConnectionCheck {
-    val socket = LocalSocket()
-    return try {
-        socket.soTimeout = 2000
-        socket.connect(LocalSocketAddress(File(home, ".cache/oma-keep/keep.sock").path, LocalSocketAddress.Namespace.FILESYSTEM))
-        socket.outputStream.write("{\"op\":\"list\"}\n".toByteArray())
-        socket.outputStream.flush()
-        val bytes = java.io.ByteArrayOutputStream()
-        val input = java.io.BufferedInputStream(socket.inputStream)
-        val deadline = android.os.SystemClock.elapsedRealtime() + 3000
-        while (bytes.size() <= 262_144) {
-            require(android.os.SystemClock.elapsedRealtime() < deadline) { "Keeper response deadline" }
-            val byte = input.read()
-            require(byte >= 0) { "Incomplete keeper response" }
-            if (byte == 10) break
-            bytes.write(byte)
-        }
-        require(bytes.size() <= 262_144) { "Oversized keeper response" }
-        val result = JSONObject(bytes.toString("UTF-8"))
-        require(result.optBoolean("ok") && result.has("kept")) { "Keeper identity/schema unverified" }
-        val kept = result.getJSONArray("kept")
-        var active = 0
-        for (i in 0 until kept.length()) {
-            val row = kept.getJSONObject(i)
-            require(row.has("running") && row.get("running") is Boolean)
-            if (row.getBoolean("running")) active++
-        }
-        ConnectionCheck("phone_keeper_protocol", "phone", result = "pass", fields = mapOf("kept_active" to active.toString()))
-    } catch (error: Exception) {
-        ConnectionCheck("phone_keeper_protocol", "phone", result = "unverified", fields = mapOf("error_type" to error.javaClass.simpleName))
-    } finally { runCatching { socket.close() } }
+/**
+ * Asks the keeper from inside the guest, as `oma keep list` does. The app's own socket connect to the keeper's file never reached it
+ * (the host path is past the unix socket's length limit under the app's data folder), so the old probe read an IOException for 37 hours
+ * while the keeper answered `oma keep list`. Read-only; kept commands' arguments and output never enter diagnostics.
+ */
+internal fun connectionKeeperProbe(runtime: Runtime): ConnectionCheck = try {
+    val process = runtime.proot.process("oma keep list").start()
+    val output = StringBuilder()
+    val reader = Thread { runCatching { process.inputStream.bufferedReader().useLines { lines -> lines.take(64).forEach { output.appendLine(it.take(200)) } } } }.apply { isDaemon = true; start() }
+    val finished = process.waitFor(20, TimeUnit.SECONDS)
+    if (!finished) process.destroyForcibly()
+    reader.join(1000)
+    keeperCheck(if (finished) process.exitValue() else null, output.toString())
+} catch (error: Exception) {
+    keeperCheck(null, "")
 }

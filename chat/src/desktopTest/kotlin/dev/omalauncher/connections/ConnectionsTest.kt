@@ -60,7 +60,7 @@ class ConnectionsTest {
 
     @Test fun partialSuccessNeverMasksMissingSubchecksOrStaleness() {
         val snapshot = ConnectionsSnapshot(listOf(row(Capability.Canvas, ConnectionState.Ready), row(Capability.Canvas, ConnectionState.Unknown)))
-        assertEquals(12, snapshot.rows(100_000).size)
+        assertEquals(Capability.entries.size - 1, snapshot.rows(100_000).size) // every group but Agent runs, which sit under Device connections
         assertEquals(ConnectionState.Unknown, snapshot.rows(100_000).first { it.capability == Capability.Canvas }.state)
         assertEquals(ConnectionState.Stale, snapshot.rows(200_000).first { it.capability == Capability.Canvas }.state)
         assertEquals(ConnectionState.Sleeping, row(Capability.Phone, ConnectionState.Sleeping).current(100_000).state)

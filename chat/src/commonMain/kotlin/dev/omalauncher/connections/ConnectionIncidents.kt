@@ -71,7 +71,7 @@ class ConnectionIncidentJournal(private val directory: File, private val secrets
         val safe = redactor.json(base) as JSONObject
         safe.put("checks_truncated", checks.size > 16)
         require(safe.toString().toByteArray().size <= 500_000) { "Diagnostic exceeds storage limit" }
-        val fingerprint = MessageDigest.getInstance("SHA-256").digest(canonical(safe).toByteArray()).joinToString("") { "%02x".format(it) }
+        val fingerprint = MessageDigest.getInstance("SHA-256").digest(canonical(safe, MOVING).toByteArray()).joinToString("") { "%02x".format(it) }
         val indexFile = File(directory, "index.json")
         val index = runCatching { if (indexFile.length() in 1..65_536 && !Files.isSymbolicLink(indexFile.toPath())) JSONObject(indexFile.readText()) else JSONObject() }.getOrDefault(JSONObject())
         val previousId = index.optString(fingerprint).takeIf { ID.matches(it) }
@@ -108,14 +108,16 @@ class ConnectionIncidentJournal(private val directory: File, private val secrets
             java.nio.channels.FileChannel.open(directory.toPath(), java.nio.file.StandardOpenOption.READ).use { it.force(true) }
         } finally { Files.deleteIfExists(temp.toPath()) }
     }
-    private fun canonical(value: Any?): String = when (value) {
-        is JSONObject -> value.keys().asSequence().toList().sorted().joinToString(",", "{", "}") { JSONObject.quote(it) + ":" + canonical(value.opt(it)) }
-        is JSONArray -> (0 until value.length()).joinToString(",", "[", "]") { canonical(value.opt(it)) }
+    private fun canonical(value: Any?, skip: Set<String> = emptySet()): String = when (value) {
+        is JSONObject -> value.keys().asSequence().filter { it !in skip }.toList().sorted().joinToString(",", "{", "}") { JSONObject.quote(it) + ":" + canonical(value.opt(it), skip) }
+        is JSONArray -> (0 until value.length()).joinToString(",", "[", "]") { canonical(value.opt(it), skip) }
         is String -> JSONObject.quote(value)
         null, JSONObject.NULL -> "null"
         else -> value.toString()
     }
     companion object {
         private val locks = java.util.concurrent.ConcurrentHashMap<String, Any>()
+        /** Fields that move on every round (a stamp, an age, a free-space figure): the same incident hashes the same however they change. */
+        private val MOVING = setOf("at", "time", "checked_at", "last_seen", "since", "seconds", "free_gb", "fetched_at", "last_received_at", "last_synced_at", "last_delivery_at", "sync_status_since")
         private val ID = Regex("[0-9]{1,16}-[0-9a-f]{16}") }
 }

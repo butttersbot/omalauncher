@@ -2,6 +2,7 @@
 """Owner-approved service restart (soma_services): every execution is mocked; launchctl, sudo and the process are
 never touched. Owner keys are generated in memory per test; the trust file lives in a temporary directory."""
 import datetime
+import types
 import base64, hashlib, importlib.util, json, os, pathlib, stat, sys, tempfile, threading, time, unittest, urllib.error, urllib.parse
 
 from cryptography.hazmat.primitives import hashes, serialization
@@ -684,8 +685,9 @@ class Probes(unittest.TestCase):
             def fetch(url, headers=None, **k):
                 sent.append(headers)
                 return 200, dict(body)
-            (check,) = S._probe('imessage-api', fetch=fetch, run=self.run)
+            check, incoming = S._probe('imessage-api', fetch=fetch, run=self.run)
             self.assertEqual(check['result'], 'pass')
+            self.assertEqual((incoming['check'], incoming['code'], incoming['result']), ('imessage_incoming', 'cant_tell', 'unverified'))  # never a false healthy
             self.assertEqual(sent[0], {'Authorization': 'Bearer imessage-bearer-abcdef'})
             for leak in ('+1555', 'me@example.com', 'imessage-bearer'):
                 self.assertNotIn(leak, json.dumps(check))
@@ -899,8 +901,14 @@ class RunnerCapabilities(unittest.TestCase):
         self.home = pathlib.Path(tempfile.mkdtemp()).resolve()
         self.saved_env = os.environ.pop('CODEX_HOME', None)
         self.now = 1_800_000_000_000
+        self.saved_trouble = S.TROUBLE_FILE
+        S.TROUBLE_FILE = self.home / 'agent-trouble.json'  # never the real one
+        S._agent_trouble.clear()
+        S._github.update(at=0, check=None)
 
     def tearDown(self):
+        S.TROUBLE_FILE = self.saved_trouble
+        S._agent_trouble.clear()
         if self.saved_env is not None:
             os.environ['CODEX_HOME'] = self.saved_env
 
@@ -965,7 +973,7 @@ class RunnerCapabilities(unittest.TestCase):
         self.assertEqual(got['result'], 'unverified')
         status.write_text('Paused: mirror branch changed; preserving local work.')
         got = S.source_mirror(run=git('soma-mesh', 'abc1234', 'def5678'), mirror=mirror, status_file=status)
-        self.assertEqual((got['code'], got['result'], got['fields']['branch']), ('mirror_sync_paused', 'fail', 'soma-mesh'))
+        self.assertEqual((got['code'], got['result'], got['fields']['branch']), ('mirror_sync_paused', 'unverified', 'soma-mesh'))  # not a Sync failure
         self.assertIn('owner decides', got['fields']['next'])
 
     def transcript(self, path, *records):
@@ -999,6 +1007,106 @@ class RunnerCapabilities(unittest.TestCase):
         self.assertEqual({c['target']: c['result'] for c in S.agent_checks()}, {'claude': 'auth', 'codex': 'fail'})
         S.agent_turn_ended('claude', False)  # a good turn clears only its own agent
         self.assertEqual([c['target'] for c in S.agent_checks()], ['codex'])
+
+    def test_no_android_sdk_is_not_installed_not_a_failure_and_java_is_found_on_path(self):
+        jdk = self.home / 'jdkbin'
+        jdk.mkdir()
+        (jdk / 'java').write_text('')
+        os.chmod(jdk / 'java', 0o755)
+        nojava = {('/opt/homebrew/opt/openjdk@17/bin/java', '-version'): (1, '', ''), ('/usr/local/opt/openjdk@17/bin/java', '-version'): (1, '', '')}  # this Mac's own, whatever is installed
+        answers = {**nojava, ('/usr/libexec/java_home',): (1, '', 'none'), (str(jdk / 'java'), '-version'): (0, '', 'openjdk version "21.0.1"\n')}
+        saved_sdks, S.SDK_FALLBACKS = S.SDK_FALLBACKS, ()
+        self.addCleanup(setattr, S, 'SDK_FALLBACKS', saved_sdks)
+        got = {c['check'].split('.', 1)[1]: c for c in S.toolchain_checks(run=self.fake_run(answers), env={'PATH': str(jdk)}, home=self.home, mirror=self.home / 'm')}
+        self.assertEqual((got['jdk']['result'], got['jdk']['fields']['major']), ('pass', 21))  # Java on PATH, as on a Linux host
+        self.assertEqual((got['android_sdk']['code'], got['android_sdk']['result']), ('no_sdk', 'not_installed'))
+        got = {c['check'].split('.', 1)[1]: c for c in S.toolchain_checks(run=self.fake_run({**nojava, ('/usr/libexec/java_home',): (1, '', '')}), env={'PATH': ''}, home=self.home, mirror=self.home / 'm')}
+        self.assertEqual(got['jdk']['result'], 'not_installed')  # a host that builds nothing is not broken
+
+    def test_github_outcomes_name_the_login_only_when_the_login_is_the_problem(self):
+        self.assertEqual(S.classify_github(0, 'abc\trefs/heads/x', 0, 'Everything up-to-date'), ('github_ok', 'pass'))
+        self.assertEqual(S.classify_github(0, '', 1, ' ! [rejected] a -> b (fetch first)'), ('github_ok', 'pass'))  # answered, so logged in
+        self.assertEqual(S.classify_github(0, '', 128, "fatal: could not read Username for 'https://github.com': terminal prompts disabled"), ('github_login_invalid', 'fail'))
+        self.assertEqual(S.classify_github(128, "remote: Invalid username or password.\nfatal: Authentication failed", None, ''), ('github_login_invalid', 'fail'))
+        # GitHub down, or no route: unreachable, never a login problem.
+        self.assertEqual(S.classify_github(128, "fatal: unable to access: Could not resolve host: github.com", None, ''), ('github_unreachable', 'unverified'))
+        self.assertEqual(S.classify_github(128, "fatal: unable to access: The requested URL returned error: 503", None, ''), ('github_unreachable', 'unverified'))
+        self.assertEqual(S.classify_github(0, '', 124, 'timed out'), ('github_unreachable', 'unverified'))
+
+    def test_the_github_check_uses_only_git_at_most_every_15_minutes_and_a_device_without_github_is_fine(self):
+        repo = self.home / 'repo'
+        (repo / '.git').mkdir(parents=True)
+        calls = []
+
+        def run(argv, **k):
+            calls.append(argv[3:])
+            self.assertEqual(k['env']['GIT_TERMINAL_PROMPT'], '0')  # nothing can ask for a password
+            table = {'remote': (0, 'fork\norigin\n'), 'ls-remote': (0, 'abc\trefs/heads/phone/fold-development\n'), 'rev-parse': (0, 'abc\n'),
+                     'push': (128, "fatal: could not read Username for 'https://github.com': terminal prompts disabled")}
+            code, out = table[argv[3]]
+            return types.SimpleNamespace(returncode=code, stdout=out, stderr='')
+        got = S.github_check(run=run, repo=repo, now=1_000, git='/usr/bin/git')
+        self.assertEqual((got['check'], got['code'], got['result']), ('github_access', 'github_login_invalid', 'fail'))
+        self.assertEqual((got['fields']['capability'], got['fields']['read_ok'], got['fields']['push_dry_run_ok']), ('GitHub', True, False))
+        self.assertIn('gh auth login', got['fields']['fix'])
+        self.assertEqual(['push', '--dry-run', 'fork', 'refs/remotes/fork/phone/fold-development:refs/heads/phone/fold-development'], calls[-1])
+        n = len(calls)
+        self.assertIs(S.github_check(run=run, repo=repo, now=1_000 + 14 * 60_000), got)  # cached
+        self.assertEqual(len(calls), n)
+        self.assertIsNot(S.github_check(run=run, repo=repo, now=1_000 + 16 * 60_000), got)
+        S._github.update(at=0, check=None)
+        none = S.github_check(run=run, repo=self.home / 'nothing', now=1)
+        self.assertEqual((none['code'], none['result']), ('no_github_use', 'not_installed'))
+
+    def test_disk_free_is_always_said_and_only_low_space_fails(self):
+        gb = 1024 ** 3
+        ok = S.disk_check(usage=lambda p: types.SimpleNamespace(free=50 * gb))
+        self.assertEqual((ok['result'], ok['fields']['free_gb'], ok['fields']['capability']), ('pass', 50.0, 'Disk'))
+        low = S.disk_check(usage=lambda p: types.SimpleNamespace(free=int(9.5 * gb)))
+        self.assertEqual((low['code'], low['result']), ('disk_low', 'fail'))
+        self.assertEqual(S.disk_check(usage=lambda p: types.SimpleNamespace(free=int(2.0 * gb)), low=2 * gb)['result'], 'pass')
+
+    def test_incoming_imessage_is_cant_tell_unless_the_watcher_is_down_and_never_sends(self):
+        self.assertEqual(S.imessage_incoming({'watching': False}, connect=lambda: (_ for _ in ()).throw(OSError()))['code'], 'watcher_not_running')
+        quiet = S.imessage_incoming({'watching': True}, connect=lambda: (_ for _ in ()).throw(OSError()))
+        self.assertEqual((quiet['code'], quiet['result']), ('cant_tell', 'unverified'))
+        self.assertIn("Can't tell", quiet['fields']['detail'])
+
+        class Conn:
+            def execute(self, q):
+                self.q = q
+                return types.SimpleNamespace(fetchone=lambda: (800_000_000 * 1_000_000_000,))
+            def close(self): pass
+        seen = S.imessage_incoming({'watching': True}, connect=Conn)
+        self.assertEqual(seen['fields']['newest_incoming_at'], int((800_000_000 + S.APPLE_EPOCH) * 1000))
+
+    def test_an_agents_trouble_survives_a_runner_restart_and_only_a_good_turn_clears_it(self):
+        S.agent_turn_ended('codex', True, 'API Error: 529 overloaded_error', now=7)
+        S._agent_trouble.clear()  # the runner restarted: its memory is gone, its file is not
+        self.assertEqual([c['target'] for c in S.agent_checks()], ['codex'])
+        S.agent_turn_ended('codex', False)
+        S._agent_trouble.clear()
+        self.assertEqual(S.agent_checks(), [])
+
+    def test_a_linux_host_says_not_checked_never_not_installed(self):
+        saved, S.sys = S.sys, types.SimpleNamespace(platform='linux', **{k: getattr(S.sys, k) for k in ('stderr', 'stdout')})
+        try:
+            self.assertTrue(S.installed('whisper'))
+            (c,) = S.capability_probe('whisper', fetch=lambda *a, **k: (_ for _ in ()).throw(AssertionError('nothing is probed')))
+            self.assertEqual((c['check'], c['code'], c['result']), ('not_checked', 'not_checked_on_this_host', 'unverified'))
+        finally:
+            S.sys = saved
+
+    def test_a_failed_address_lookup_is_unverified_not_down(self):
+        def run(argv, **k):
+            return types.SimpleNamespace(returncode=1, stdout='', stderr='daemon not running')
+        saved, S.TAILSCALE_PATHS = S.TAILSCALE_PATHS, (str(self.home / 'tailscale'),)
+        (self.home / 'tailscale').write_text('')
+        try:
+            with self.assertRaises(S.Unverified):
+                S.tailnet_ip(run)
+        finally:
+            S.TAILSCALE_PATHS = saved
 
     def test_no_sign_in_check_and_no_transcript_is_read(self):
         (self.home / '.claude/projects/p').mkdir(parents=True)

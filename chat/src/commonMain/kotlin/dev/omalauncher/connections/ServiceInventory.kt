@@ -31,15 +31,18 @@ fun serviceInventoryReadings(reply: ConnectionReply, displayHost: String, source
             val checks = (0 until (wireChecks?.length() ?: 0)).map { wireChecks!!.getJSONObject(it) }.filterNot { it.getString("check").startsWith("provider_auth") }.map { check ->
                 val fields = check.optJSONObject("fields") ?: JSONObject()
                 val name = check.getString("check").take(100)
+                // A runner's own checks say which capability they belong to (a JDK problem is Builds, a login problem GitHub).
+                val declared = Capability.entries.firstOrNull { it.name.equals(fields.optString("capability"), true) }
                 val scope = if (id == "runner") when {
-                    fields.optString("capability").equals("Sync", true) || name.startsWith("source_freshness") -> Capability.Sync
-                    fields.optString("capability").equals("Builds", true) || name.startsWith("build_toolchain") -> Capability.Builds
+                    declared != null && declared != Capability.Network -> declared
+                    name.startsWith("source_freshness") -> Capability.Sync
+                    name.startsWith("build_toolchain") -> Capability.Builds
                     else -> capability
-                } else capability
+                } else if (declared == Capability.Messages) declared else capability
                 val evidence = linkedMapOf("code" to check.optString("code").take(100))
-                for (key in fields.keys().asSequence().filter { it !in setOf("http_status", "capability") }.take(3))
+                for (key in fields.keys().asSequence().filter { it !in setOf("http_status", "capability") }.take(6))
                     evidence[key.take(80)] = fields.optString(key).take(2048)
-                if (evidence.size < 4) evidence["launchd_state"] = row.optString("state").take(100)
+                if (evidence.size < 7) evidence["launchd_state"] = row.optString("state").take(100)
                 scope to ConnectionCheck(name, "$host/$id", fields.optInt("http_status").takeIf { it in 100..599 },
                     check.getString("result").take(40), evidence, check.optString("stderr_tail").take(2048))
             }
@@ -59,7 +62,9 @@ fun serviceInventoryReadings(reply: ConnectionReply, displayHost: String, source
                     else -> ConnectionState.Unknown
                 }
                 val trouble = evidence.firstNotNullOfOrNull { it.agentTrouble() }
+                val specific = evidence.firstNotNullOfOrNull { it.deviceDetail(displayHost, id) }
                 val detail = when {
+                    specific != null -> specific
                     trouble != null -> trouble.sentence
                     else -> when (state) {
                     ConnectionState.Ready -> "$id: all required ${scope.title.lowercase()} checks passed."
@@ -88,4 +93,22 @@ fun serviceInventoryReadings(reply: ConnectionReply, displayHost: String, source
             }
         }
     }.getOrElse { emptyList() }
+}
+
+/** What a runner's GitHub, disk, not-checked and incoming-message checks say in words, from their own fields; null for any other check. */
+internal fun ConnectionCheck.deviceDetail(host: String, id: String): String? = when {
+    name == "github_access" -> when (result) {
+        "pass" -> "GitHub is reachable and this device's login is valid."
+        "fail" -> "$host: GitHub login expired. Run gh auth login."
+        "not_installed" -> "$host doesn't use GitHub."
+        else -> if (fields["code"] == "github_unreachable") "$host can't reach GitHub right now (GitHub or the network); that is not a login problem."
+            else "$host: GitHub could not be checked yet."
+    }
+    name == "disk_space" -> {
+        val free = fields["free_gb"]
+        (if (free != null) "$host has $free GB free." else "$host's free space could not be read.") + if (result == "fail") " That is low enough to break builds or sync." else ""
+    }
+    name == "not_checked" -> "$id isn't checked on $host yet."
+    name == "imessage_incoming" -> if (result == "fail") "$host: the iMessage watcher isn't running, so nothing incoming can arrive." else fields["detail"]
+    else -> null
 }

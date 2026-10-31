@@ -24,14 +24,16 @@ fun ConnectionsPreview() {
     var clock by remember { mutableStateOf(now) }
     val ledger = remember { ConnectionAlerts() }
     // Stamped when each scenario is shown, as the monitor stamps a check when it lands.
-    fun snapshot(state: ConnectionState = ConnectionState.Failed, modelsTrouble: Boolean = false): ConnectionsSnapshot = System.currentTimeMillis().let { clock -> ConnectionsSnapshot(Capability.entries.filter { it != Capability.Models }.map { c ->
+    fun snapshot(state: ConnectionState = ConnectionState.Failed, modelsTrouble: Boolean = false, github: Boolean = false): ConnectionsSnapshot = System.currentTimeMillis().let { clock -> ConnectionsSnapshot(Capability.entries.filter { it != Capability.Models }.map { c ->
         val affected = c in setOf(Capability.Agents, Capability.Builds)
-        ConnectionReading(c, if (affected) state else ConnectionState.Ready,
-            when { affected -> "Fictional runner evidence; agent runs and builds share one incident."
+        val login = github && c == Capability.GitHub
+        ConnectionReading(c, if (login) ConnectionState.Failed else if (affected) state else ConnectionState.Ready,
+            when { login -> "Fictional Mac: GitHub login expired. Run gh auth login."
+                affected -> "Fictional runner evidence; agent runs and builds share one incident."
                 c == Capability.Canvas -> "Fictional CORE Design Canvas board and workspace sync verified."
                 c == Capability.Optional -> "Fictional optional tools available."
-                else -> "Fictional end-to-end capability verified." }, clock, if (affected) "runner:fixture" else null, if (affected) "Fictional Mac" else "",
-            if (affected) "fictional-mac" else "")
+                else -> "Fictional end-to-end capability verified." }, clock, if (login) "service:fictional-mac:runner:GitHub" else if (affected) "runner:fixture" else null, if (affected || login) "Fictional Mac" else "",
+            if (affected || login) "fictional-mac" else "", if (login) listOf(ConnectionCheck("github_access", "fictional-mac", result = "fail", fields = mapOf("code" to "github_login_invalid"))) else emptyList())
     } + ConnectionReading(Capability.Network, ConnectionState.Ready, "Fictional route to the Mac responded; capability status is checked separately.",
         clock, "network", "Fictional Mac", "fictional-mac") + fictionalModels(clock, modelsTrouble), clock) }
     fun show(s: String) {
@@ -47,9 +49,9 @@ fun ConnectionsPreview() {
             "Auth check" -> ConnectionState.Auth
             "Stale check" -> ConnectionState.Ready
             "Pause checks" -> ConnectionState.Paused
-            "Models trouble" -> ConnectionState.Ready
+            "Models trouble", "GitHub login" -> ConnectionState.Ready
             else -> ConnectionState.Failed
-        }, modelsTrouble = s == "Models trouble").let { if (s == "Stale check") it.copy(readings = it.readings.map { r -> r.copy(checkedAt = clock - 100_000) }) else it }
+        }, modelsTrouble = s == "Models trouble", github = s == "GitHub login").let { if (s == "Stale check") it.copy(readings = it.readings.map { r -> r.copy(checkedAt = clock - 100_000) }) else it }
     }
     // The monitor's rounds, as the real one lands a fresh check every half minute: the walk leaves the sheet open past the 90 s limit.
     LaunchedEffect(Unit) {
@@ -90,7 +92,7 @@ fun ConnectionsPreview() {
             for (s in listOf("Small", "Medium", "Large")) FixtureAction(s) { shape = s }
         }
         FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            for (s in listOf("Outage", "Auth check", "Stale check", "Active jobs", "Failed repair", "Successful repair", "Pause checks", "Models trouble")) FixtureAction(s) { show(s) }
+            for (s in listOf("Outage", "Auth check", "Stale check", "Active jobs", "Failed repair", "Successful repair", "Pause checks", "Models trouble", "GitHub login")) FixtureAction(s) { show(s) }
         }
         BasicText(receipt, style = Pack.body())
         BoxWithConstraints(Modifier.fillMaxSize()) {

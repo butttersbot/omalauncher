@@ -12,6 +12,7 @@ Nothing here enrolls or replaces owner keys, runs a shell, takes a path or comma
 service whose restart cannot be verified by that service's own capability check. Times are epoch milliseconds.
 """
 import base64, concurrent.futures, contextlib, datetime, fcntl, hashlib, hmac, ipaddress, json, os, pathlib, plistlib, re, secrets, socket, stat, subprocess, sys, tempfile, threading, time
+import shutil
 import http.client, urllib.error, urllib.parse, urllib.request
 
 HOME = pathlib.Path.home()
@@ -86,6 +87,8 @@ OPTIONAL = {'syncthing'}  # per the approved inventory: absent means Disabled, n
 
 def installed(service):
     """Whether this host has the service at all. A label from another host's inventory that isn't here is not an outage."""
+    if sys.platform != 'darwin':
+        return True  # a Linux host has no launchd plists to find: whether it has a service is not known here, so it is never "not installed"
     return service == 'runner' or service not in SERVICES or plist_path(service).exists()
 
 
@@ -138,7 +141,7 @@ def endpoint(service, run=subprocess.run, load=None):
 
 
 _HOST = None
-TAILSCALE_PATHS = ('/opt/homebrew/bin/tailscale', '/usr/local/bin/tailscale', '/Applications/Tailscale.app/Contents/MacOS/Tailscale')
+TAILSCALE_PATHS = ('/opt/homebrew/bin/tailscale', '/usr/local/bin/tailscale', '/usr/bin/tailscale', '/Applications/Tailscale.app/Contents/MacOS/Tailscale')
 
 
 def _tailscale_json(tailscale, run, timeout):
@@ -199,7 +202,8 @@ def stderr_tail(text, limit=400):
     return redact(text or '')[-limit:]
 
 
-CAPABILITY_SCOPES = {'agent_turn.': 'Agents', 'build_toolchain.': 'Builds', 'source_freshness.': 'Sync'}
+CAPABILITY_SCOPES = {'agent_turn.': 'Agents', 'build_toolchain.': 'Builds', 'source_freshness.': 'Sync', 'github_': 'GitHub', 'disk_': 'Disk',
+                     'imessage_incoming': 'Messages'}
 
 
 def mkcheck(check, target, code, result, fields=None, stderr=None):
@@ -659,6 +663,19 @@ AGENT_ERRORS = (
 )
 _agent_trouble = {}  # agent -> (code, the error's own words, when)
 _agent_trouble_lock = threading.Lock()
+TROUBLE_FILE = STATE / 'agent-trouble.json'  # held across a runner restart: a restart is no good turn, so it clears nothing
+
+
+def _save_trouble():
+    with contextlib.suppress(Exception):
+        STATE.mkdir(parents=True, exist_ok=True)
+        TROUBLE_FILE.write_text(json.dumps({a: list(v) for a, v in _agent_trouble.items()}))
+
+
+def _load_trouble():
+    with contextlib.suppress(Exception):
+        for agent, (code, words, at) in json.loads(TROUBLE_FILE.read_text()).items():
+            _agent_trouble.setdefault(agent, (code, words, at))
 
 
 def agent_error(text):
@@ -673,15 +690,19 @@ def agent_turn_ended(agent, failed, text='', limited=False, now=None):
     with _agent_trouble_lock:
         if not failed:
             _agent_trouble.pop(agent, None)
+            _save_trouble()
             return
         code = 'usage_limit' if limited else agent_error(text)
         if code:
             _agent_trouble[agent] = (code, ' '.join(str(text).split())[:160], now or now_ms())
+            _save_trouble()
 
 
 def agent_checks():
     """Only an agent in trouble has a row; nothing heard is nothing wrong."""
     with _agent_trouble_lock:
+        if not _agent_trouble:
+            _load_trouble()
         trouble = sorted(_agent_trouble.items())
     return [mkcheck('agent_turn.' + agent, agent, code, 'auth' if code == 'sign_in' else 'fail', {'agent': agent, 'error': words, 'at': at})
             for agent, (code, words, at) in trouble]
@@ -699,6 +720,9 @@ SOURCE_MIRROR = HOME / 'Projects/omalauncher-fold'
 SYNC_STATUS = HOME / 'agents/luna/phone-source-sync/status.txt'
 
 
+SDK_FALLBACKS = ('/opt/homebrew/share/android-commandlinetools',)  # where an SDK is looked for when nothing says
+
+
 def toolchain_checks(run=subprocess.run, env=None, home=None, mirror=None):
     """What a build lane needs, each actually run where it can be without building: a JDK 17+ that answers -version, an
     Android SDK whose adb answers `adb version` (which starts no server), and the Gradle wrapper's distribution already
@@ -711,6 +735,9 @@ def toolchain_checks(run=subprocess.run, env=None, home=None, mirror=None):
         if r is not None and r.returncode == 0 and r.stdout.strip():
             javas.append(r.stdout.strip() + '/bin/java')
     javas += ['/opt/homebrew/opt/openjdk@17/bin/java', '/usr/local/opt/openjdk@17/bin/java']
+    for found_java in (env.get('JAVA_HOME') and env['JAVA_HOME'] + '/bin/java', shutil.which('java', path=env.get('PATH'))):  # Linux hosts: Java is on PATH
+        if found_java:
+            javas.append(found_java)
     major = None
     for java in javas:
         if os.access(java, os.X_OK):
@@ -719,17 +746,20 @@ def toolchain_checks(run=subprocess.run, env=None, home=None, mirror=None):
             if r is not None and r.returncode == 0 and found and int(found.group(1)) >= 17:
                 major = int(found.group(1))
                 break
-    out.append(mkcheck('build_toolchain.jdk', 'runner', 'ok' if major else 'no_usable_jdk', 'pass' if major else 'fail', {'major': major}))
+    # With no Android SDK either, a missing JDK is the same absence: nothing here builds.
+    no_builds = not any(pathlib.Path(c, 'platform-tools/adb').exists() for c in (env.get('ANDROID_HOME'), env.get('ANDROID_SDK_ROOT'), str(home / 'Library/Android/sdk'), *SDK_FALLBACKS) if c) and not (mirror / 'local.properties').exists()
+    out.append(mkcheck('build_toolchain.jdk', 'runner', 'ok' if major else 'no_usable_jdk', 'pass' if major else ('not_installed' if no_builds else 'fail'), {'major': major}))
     sdk = None
     local = mirror / 'local.properties'  # what the builds themselves use (sdk.dir), before any environment guess
     configured = re.search(r'^sdk\.dir=(.+)$', local.read_text(), re.M) if local.exists() else None
     for candidate in ((configured.group(1).strip() if configured else None), env.get('ANDROID_HOME'), env.get('ANDROID_SDK_ROOT'),
-                      str(home / 'Library/Android/sdk'), '/opt/homebrew/share/android-commandlinetools'):
+                      str(home / 'Library/Android/sdk'), *SDK_FALLBACKS):
         if candidate and pathlib.Path(candidate, 'platform-tools/adb').exists():
             sdk = pathlib.Path(candidate)
             break
     if sdk is None:
-        out.append(mkcheck('build_toolchain.android_sdk', 'runner', 'no_sdk', 'fail', {}))
+        # No Android SDK means this host doesn't build Android apps, not that something broke.
+        out.append(mkcheck('build_toolchain.android_sdk', 'runner', 'no_sdk', 'not_installed', {}))
     else:
         r = _run_quiet(run, [str(sdk / 'platform-tools/adb'), 'version'], 10)
         build_tools = sorted(p.name for p in (sdk / 'build-tools').glob('*'))[-4:] if (sdk / 'build-tools').is_dir() else []
@@ -779,10 +809,123 @@ def source_mirror(run=subprocess.run, mirror=None, status_file=None):
         return mkcheck('source_freshness.mirror', 'runner', 'no_sync_agent', 'not_installed',
                        {**fields, 'next': 'this Mac has no mirror sync agent; builders bring the mirror up to date before each build'})
     if status.startswith('Paused'):
-        return mkcheck('source_freshness.mirror', 'runner', 'mirror_sync_paused', 'fail',
+        return mkcheck('source_freshness.mirror', 'runner', 'mirror_sync_paused', 'unverified',
                        {**fields, 'next': "mac-sync.py is paused (the mirror left branch fold-sync or has local edits); an agent must not move another session's branch -- the owner decides"})
     synced = status.startswith('Mac Fold source synced') and fields['branch'] == 'fold-sync' and fields['head'] and fields['head'] == fields['phone_branch']
     return mkcheck('source_freshness.mirror', 'runner', 'synced' if synced else 'mirror_behind_or_unknown', 'pass' if synced else 'unverified', fields)
+
+
+# ---- GitHub, disk and incoming messages: the runner's own, read-only -------------------------------------------------------
+GITHUB_EVERY_MS = 15 * 60_000
+_github = {'at': 0, 'check': None}
+_GITHUB_UNREACHABLE = re.compile(r'could not resolve host|failed to connect|connection (timed out|refused|reset)|timed out|network is unreachable|'
+                                 r'returned error: 5\d\d|service unavailable|bad gateway|early eof|ssl|unable to access.*(5\d\d|resolve)', re.I)
+_GITHUB_LOGIN = re.compile(r'could not read (username|password)|authentication failed|invalid username|bad credentials|returned error: 40[13]|'
+                           r'terminal prompts disabled|permission denied|repository not found|support for password authentication', re.I)
+
+
+def classify_github(ls_code, ls_text, push_code, push_text):
+    """(code, result) for one device's GitHub access, from what git said (never a token): GitHub's own outage or no route reads as
+    unreachable (unverified), never as a login problem; a refused login is the one failure. Pushing is what fails in practice, so a
+    dry-run push that GitHub refused to authenticate is a failure even when reading works."""
+    for code, text in ((ls_code, ls_text), (push_code, push_text)):
+        if code not in (0, None) and _GITHUB_LOGIN.search(text or ''):
+            return 'github_login_invalid', 'fail'
+    for code, text in ((ls_code, ls_text), (push_code, push_text)):
+        if code not in (0, None) and _GITHUB_UNREACHABLE.search(text or ''):
+            return 'github_unreachable', 'unverified'
+    if ls_code != 0:
+        return 'github_read_failed', 'unverified'
+    if push_code is None:
+        return 'github_push_untested', 'unverified'
+    # A dry run that GitHub answered, even by rejecting a stale branch, got past the login.
+    if push_code == 0 or re.search(r'\[rejected\]|\[remote rejected\]|non-fast-forward|fetch first', push_text or ''):
+        return 'github_ok', 'pass'
+    return 'github_push_failed', 'unverified'
+
+
+def github_check(run=subprocess.run, repo=None, now=None, git=None):
+    """Can this device reach GitHub and is its login good: `git ls-remote` and a harmless `git push --dry-run` of the remote's own branch to
+    itself, in this host's checkout, at most every 15 minutes (it is the one login check he asked for). gh is not assumed: only git
+    is run, with prompts off so nothing can ask for a password. Nothing is printed but a code. No checkout or remote: not used here."""
+    now = now or now_ms()
+    if _github['check'] and now - _github['at'] < GITHUB_EVERY_MS:
+        return _github['check']
+    repo = pathlib.Path(repo or SOURCE_MIRROR)
+    git = git or shutil.which('git') or '/usr/bin/git'
+    env = {**os.environ, 'GIT_TERMINAL_PROMPT': '0', 'GIT_ASKPASS': 'true', 'GCM_INTERACTIVE': 'never', 'LC_ALL': 'C'}
+
+    def g(*args, timeout=25):
+        try:
+            r = run([git, '-C', str(repo), *args], capture_output=True, text=True, timeout=timeout, check=False, env=env)
+            return r.returncode, (r.stdout or '') + (r.stderr or '')
+        except subprocess.TimeoutExpired:
+            return 124, 'timed out'
+        except OSError:
+            return None, ''
+
+    if not (repo / '.git').exists():
+        check = mkcheck('github_access', 'runner', 'no_github_use', 'not_installed', {})
+    else:
+        _, remotes = g('remote')
+        names = remotes.split()
+        remote = next((n for n in ('fork', 'origin') if n in names), None)
+        if not remote:
+            check = mkcheck('github_access', 'runner', 'no_github_use', 'not_installed', {})
+        else:
+            ls_code, ls_text = g('ls-remote', '--heads', remote)
+            branch = 'phone/fold-development' if ('refs/heads/phone/fold-development' in ls_text) else None
+            push_code = push_text = None
+            if ls_code == 0 and branch and g('rev-parse', '--verify', '--quiet', 'refs/remotes/%s/%s' % (remote, branch))[0] == 0:
+                push_code, push_text = g('push', '--dry-run', remote, 'refs/remotes/%s/%s:refs/heads/%s' % (remote, branch, branch))
+            code, result = classify_github(ls_code, ls_text, push_code, push_text)
+            gh = shutil.which('gh')
+            fields = {'remote': remote, 'read_ok': ls_code == 0, 'push_dry_run_ok': None if push_code is None else result == 'github_ok', 'gh': 'present' if gh else 'absent'}
+            if result == 'fail':
+                fields['fix'] = 'run gh auth login on this device'
+            check = mkcheck('github_access', 'runner', code, result, fields)
+    _github.update(at=now, check=check)
+    return check
+
+
+DISK_LOW_BYTES = 10 * 1024 ** 3  # below this a build or a sync is at risk (a build needs more than 2 GB)
+
+
+def disk_check(path=None, usage=shutil.disk_usage, low=None):
+    """Free space on this host's disk, always in the fields; a failure only when it is low enough to break builds or sync."""
+    try:
+        free = usage(str(path or HOME)).free
+    except OSError:
+        return mkcheck('disk_space', 'runner', 'disk_unreadable', 'unverified', {})
+    low = DISK_LOW_BYTES if low is None else low
+    return mkcheck('disk_space', 'runner', 'disk_low' if free < low else 'ok', 'fail' if free < low else 'pass', {'free_gb': round(free / 1024 ** 3, 1), 'low_below_gb': round(low / 1024 ** 3)})
+
+
+CHAT_DB = HOME / 'Library/Messages/chat.db'
+APPLE_EPOCH = 978307200
+
+
+def imessage_incoming(health, db=None, now=None, connect=None):
+    """Whether messages can be told to arrive. Never sends anything. The watcher not running is a failure; a running watcher with
+    quiet hours proves nothing either way, so the answer is "can't tell", never a false healthy. The newest incoming message's time
+    in the Mac's own database is kept so a device that last received something much older can be compared to it."""
+    watching = (health or {}).get('watching')
+    newest = None
+    with contextlib.suppress(Exception):
+        import sqlite3
+        conn = (connect or (lambda: sqlite3.connect('file:%s?mode=ro' % (db or CHAT_DB), uri=True, timeout=2)))()
+        try:
+            row = conn.execute('select max(date) from message where is_from_me = 0').fetchone()
+        finally:
+            conn.close()
+        if row and row[0]:
+            raw = row[0] / 1e9 if row[0] > 1e12 else row[0]
+            newest = int((raw + APPLE_EPOCH) * 1000)
+    fields = {'watching': watching if isinstance(watching, bool) else None, 'newest_incoming_at': newest}
+    if watching is False:
+        return mkcheck('imessage_incoming', 'imessage-api', 'watcher_not_running', 'fail', fields)
+    return mkcheck('imessage_incoming', 'imessage-api', 'cant_tell', 'unverified',
+                   {**fields, 'detail': "Can't tell whether messages arrive: the watcher is up, and quiet hours look the same as a break."})
 
 
 CANVAS_TOKEN_FILE = 'agent-token.txt'
@@ -928,7 +1071,11 @@ def tailscale_status(run=subprocess.run):
 
 
 def tailnet_ip(run=subprocess.run):
-    ips = (tailscale_status(run).get('Self') or {}).get('TailscaleIPs') or []
+    try:
+        status = tailscale_status(run)
+    except (RuntimeError, OSError) as e:  # the lookup of this Mac's own address failed: the service wasn't shown to be down
+        raise Unverified('this Mac could not look up its own tailnet address (%s)' % stderr_tail(str(e), 80)) from None
+    ips = (status.get('Self') or {}).get('TailscaleIPs') or []
     four = [ip for ip in ips if re.fullmatch(r'100\.\d+\.\d+\.\d+', str(ip))]
     if not four:
         raise Unverified('this Mac has no tailnet IPv4 address')
@@ -956,6 +1103,9 @@ def _running(service, state):
 def capability_probe(service, fetch=http_json, run=subprocess.run, state=None, keys=None):
     """What the service can show, plus a REQUIRED unverified check for every piece of end-to-end evidence it can't yet.
     A service this host doesn't have gets one neutral not_installed result and is never probed: absence is not an outage."""
+    if sys.platform != 'darwin' and service != 'runner':
+        # A Linux host's services are not read here (no launchd): the row says "not checked", never "not installed" or a failure.
+        return [mkcheck('not_checked', service, 'not_checked_on_this_host', 'unverified', {'reason': 'this host has no checks for %s yet' % service})]
     if not installed(service):
         return [mkcheck('installed', service, 'disabled' if service in OPTIONAL else 'not_installed', 'not_installed', {'optional': service in OPTIONAL})]
     checks = _probe(service, fetch, run, state, keys) + evidence_checks(service, fetch, run, state or launchd_state)
@@ -988,7 +1138,7 @@ def _probe(service, fetch=http_json, run=subprocess.run, state=None, keys=None):
     try:
         if service == 'runner':
             return ([check('runner_self', 'ok', True, {'host': host_identity()})] + agent_checks() + toolchain_checks(run)
-                    + [build_locks(), source_mirror(run)])
+                    + [build_locks(), source_mirror(run), github_check(run), disk_check()])
         if service == 'soma':
             base = os.environ.get('OMA_RUNNER_SOMA_SERVICE', '').rstrip('/')
             if not base:
@@ -1060,7 +1210,7 @@ def _probe(service, fetch=http_json, run=subprocess.run, state=None, keys=None):
             # it would be restarting a healthy service. transport_traversal reports the transport itself.
             not_its_fault = data.get('ok') is True and (data.get('readOnly') is True or data.get('sendTransport') == 'rustpush')
             return [check('imessage_health', 'not_ready', status == 200 and (data.get('sendReady') is True or not_its_fault) and data.get('ok') is True,
-                          {'http_status': status, **fields})]
+                          {'http_status': status, **fields}), imessage_incoming(data)]
         if service == 'imessage-transport':
             # A running process with its socket; transport_traversal is what crosses that socket.
             sock = TRANSPORT_SOCKET

@@ -25,7 +25,7 @@ internal class ConnectionPhoneRecovery(private val context: Context, private val
     fun candidates(): List<Target> {
         if (!runtime.connectionsLinuxRunning || !noWork()) return emptyList()
         val actions = mutableListOf<Action>()
-        if (!runtime.connectionsKeeperStarted && connectionKeeperProbe(runtime.proot.home).result != "pass") actions += Action.Keeper
+        if (!runtime.connectionsKeeperStarted && connectionKeeperProbe(runtime).result != "pass") actions += Action.Keeper
         val paused = context.getSharedPreferences("phone-control", Context.MODE_PRIVATE).getBoolean("paused", false)
         if (!paused && PhoneAccess.active && context.getSystemService(PowerManager::class.java).isInteractive &&
             !File(runtime.proot.home, ".config/oma-development/bg-paused").exists() && !PhoneDisplays.helperUp() && !runtime.connectionsBgWatcherStarted) actions += Action.BackgroundWatcher
@@ -46,7 +46,7 @@ internal class ConnectionPhoneRecovery(private val context: Context, private val
         require(runtime.connectionsEnsureMissingService(target.action == Action.Keeper)) { "Service already running or recovery unavailable; no process terminated" }
         val deadline = System.nanoTime() + if (target.action == Action.Keeper) 8_000_000_000L else 65_000_000_000L
         do {
-            val proof = if (target.action == Action.Keeper) connectionKeeperProbe(runtime.proot.home) else
+            val proof = if (target.action == Action.Keeper) connectionKeeperProbe(runtime) else
                 ConnectionCheck("background_helper_authenticated_status", "phone", result = if (PhoneDisplays.helperUp()) "pass" else "unverified")
             if (proof.result == "pass") return listOf(proof)
             Thread.sleep(1000)

@@ -58,7 +58,7 @@ expect Design Canvas
 shot connections-large-cover card=connections-large-cover
 tap [ Restore ]
 expect Restore utility used
-expect Repair blocked
+expect unavailable
 # Utility must not open the modal.
 absent Close Connections
 tap Connections
@@ -68,14 +68,14 @@ shot connections-blocked-details-cover card=connections-expanded-blocked-cover
 key BACK
 tap Active jobs
 tap [ Restore ]
-expect Repair blocked
+expect unavailable
 tap Connections
 tap Connection check:
 expect Blocked: active or queued
 key BACK
 tap Failed repair
 tap [ Restore ]
-expect Repair failed
+expect unavailable
 shot connections-failed-cover
 tap Connections
 tap Connection check:
@@ -118,6 +118,15 @@ tap Connection check:
 expect 2 INCIDENTS
 expect OpenCode
 shot connections-models-trouble-cover
+key BACK
+# GitHub (Boss, 2026-10-30): a device whose login expired is an incident naming it and the fix; signing in is his, so no Restore.
+tap GitHub login
+tap Connections
+expect GitHub: Needs repair
+tap Connection check:
+expect gh auth login
+absent [ Restore ]
+shot connections-github-login-cover
 key BACK
 # Notification debounce/dedup/recovery and pause are checked in ConnectionsTest; no real Android alerts in this fixture.
 fold unfolded
@@ -185,3 +194,4 @@ key BACK
 [phone] After combined install: add module:connections on an owner-chosen home page via canvas placement; verify real configured peers, core Design Canvas, VPN loss versus auth refusal, helper stale/asleep/paused, source freshness and actual notification permission/channel state. Owner enables alerts in context. Controlled test outage only on an idle test service: wait debounce, observe one local Android alert even with tunnel down, dismiss without repeat, restore externally and verify one recovery. Confirm intentional pause stays quiet and closing detail leaves checks running. Do not stop active builds/agents, toggle security/debugging, reboot hosts or install from this lane. Successful automatic restart remains unavailable until a supported guarded host-control API is deployed.
 [phone] After install: open Connections on the home page and leave the sheet open for over two minutes: no row says Stale while the monitor's checks are fresh (the journal's last_seen and /services stamps are current), and the flag at the upper right of CONNECTION CHECK opens and closes the check.
 [phone] In Connections, Models lists Claude Code, Codex and Grok with a health word from their real runs (no sign-in check, no test call); Codex shows its model where Soma knows it; a missing needed agent says Missing and counts as an incident; the Mac and MG1 runners and phone Linux checks still show under Device connections with Restore.
+[phone] In Connections, GitHub shows one reading per device that pushes (Mac Pro, MacBook, MG1, this phone): after a deliberate gh auth logout on one device it names that device with Run gh auth login within 15 minutes, and Restore is not offered; GitHub being down reads as unreachable, not as a login problem. Disk space shows free space for each device; Agent mail shows no stuck mail; Messages says Can't tell unless the iMessage watcher is down; the phone keeper reads Healthy (or a plain 'not running' that Soma fixes by itself).

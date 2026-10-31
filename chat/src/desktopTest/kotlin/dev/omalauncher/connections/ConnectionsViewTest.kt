@@ -47,7 +47,7 @@ class ConnectionsViewTest {
     @Test fun expandedInventoryHasCoreCanvasAndDistinctUnknownState() = runComposeUiTest {
         setContent { ConnectionsDialog(100_000) {} }
         onNodeWithText("All capabilities", ignoreCase = true).performScrollTo().assertIsDisplayed()
-        onNodeWithText("12 groups", ignoreCase = true).assertExists()
+        onNodeWithText("${Capability.entries.size - 1} groups", ignoreCase = true).assertExists()
         // Ruled rows, no disclosure triangles (Canvas v6).
         onAllNodesWithText("▸", substring = true).assertCountEquals(0)
         onNodeWithText("Design Canvas").performScrollTo().assertIsDisplayed().performClick()

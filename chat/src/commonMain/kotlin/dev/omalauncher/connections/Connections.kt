@@ -14,7 +14,14 @@ enum class Capability(val title: String, val band: String? = null) {
     Models("Models", "Models"),
     Phone("Phone control", "Phone"), Sync("Workspace sync", "Sync"),
     Activity("Device activity"), Files("Files & deliveries"), Builds("Builds & installs"),
-    Voice("Voice"), Search("Search"), Messages("Messages"), Canvas("Design Canvas", "Canvas"), Optional("Optional tools")
+    Voice("Voice"), Search("Search"), Messages("Messages"), Canvas("Design Canvas", "Canvas"),
+    /** One reading per device that pushes: can it reach GitHub, and is its login good. Signing in is Boss's, so Restore never touches it. */
+    GitHub("GitHub"),
+    /** Free space on each device, in the detail; an incident only when it is low enough to break builds or sync. */
+    Disk("Disk space"),
+    /** Whether agent mail between devices is really delivered, from the phone's receipts. */
+    Mail("Agent mail"),
+    Optional("Optional tools")
 }
 /**
  * How far ahead of this device a computer's clock may stand with its stamp still counting as fresh. A probe stamped by a
@@ -25,6 +32,10 @@ private const val CLOCK_TOLERANCE_MS = 10_000L
 
 /** The row a capability is drawn in: the agent runners' health sits under Device connections. */
 val Capability.shown get() = if (this == Capability.Agents) Capability.Network else this
+
+/** An incident only its owner can fix (a login, free space, an agent to install): Restore is not offered for it. */
+val ConnectionIncident.ownerOnly get() = readings.isNotEmpty() && readings.all { it.capability in setOf(Capability.GitHub, Capability.Disk, Capability.Mail) ||
+    (it.capability == Capability.Models) }
 
 /** Settled: nothing to do about it. An agent with no real run yet is not a failure, so it doesn't keep "everything is ready" from being said. */
 val ConnectionReading.settled get() = state == ConnectionState.Ready || state == ConnectionState.Disabled ||

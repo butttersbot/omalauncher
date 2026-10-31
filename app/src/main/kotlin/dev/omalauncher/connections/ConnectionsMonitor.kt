@@ -34,6 +34,11 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
     private val scheduler = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "connections-monitor").apply { isDaemon = true } }
     private val readers = Executors.newFixedThreadPool(3) { r -> Thread(r, "connections-check").apply { isDaemon = true } }
     private val running = AtomicBoolean(false)
+    @Volatile private var lastKeeperRestart = 0L
+    @Volatile private var keeperAt = 0L
+    @Volatile private var keeperLast: ConnectionCheck? = null
+    @Volatile private var githubAt = 0L
+    @Volatile private var githubOutcome: Pair<String, String>? = null
     /** When the round under way began: a round stuck longer than [STUCK_MS] is given up on, so it cannot block every later round and Check again. */
     @Volatile private var roundBegan = 0L
     private val alerts = ConnectionAlerts()
@@ -223,12 +228,15 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
                     else -> "Existing trusted ADB transport is unverified. No server, scan, pairing or display was started." },
                 if (adb.result in setOf("auth", "pass")) "phone-adb" else null, checks = listOf(adb))
             }
-            val keeper = connectionKeeperProbe(runtime.proot.home)
-            add(Capability.Agents, if (keeper.result == "pass") ConnectionState.Ready else ConnectionState.Unknown,
-                if (keeper.result == "pass") "Phone keeper answered its real list protocol."
-                else "Phone keeper protocol is unverified; no running jobs are inferred or terminated.",
-                checks = listOf(keeper))
+            // Asking starts a guest process, so it is asked every two minutes, not every round.
+            val keeper = (if (System.currentTimeMillis() - keeperAt < 120_000) keeperLast else null) ?: connectionKeeperProbe(runtime).also { keeperLast = it; keeperAt = System.currentTimeMillis() }
+            rows += keeperReading(keeper, System.currentTimeMillis())
+            // A keeper that is not there comes back by itself (Soma owns it): at most once in five minutes.
+            if (keeper.result == "fail" && System.currentTimeMillis() - lastKeeperRestart > 300_000) { lastKeeperRestart = System.currentTimeMillis(); runCatching { runtime.connectionsRestartKeeper() } }
+            rows += githubReading(phoneGithub(), System.currentTimeMillis())
         } else add(Capability.Agents, ConnectionState.Disabled, "Phone Linux runtime is off intentionally.")
+        rows += diskReading(runCatching { android.os.StatFs(context.filesDir.path).availableBytes }.getOrNull(), System.currentTimeMillis())
+        rows += mailReading(runCatching { dev.omalauncher.assist.AgentMailReceipts.all(context) }.getOrDefault(emptyList()), dev.omalauncher.assist.AgentTasks.working, System.currentTimeMillis())
         // Models: each agent installed on this phone and how its last real run went, and any a builder or the front agent needs that is missing.
         runtime.agents.refresh()
         rows += phoneModelReadings(runtime.agents.installed.map { InstalledAgent(it.bin, it.name) },
@@ -324,6 +332,38 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
         val file = File(runtime.proot.home, ".local/share/soma/connections/snapshot.json")
         file.parentFile?.mkdirs()
         File(file.parentFile, "snapshot.tmp").also { it.writeText(JSONObject().put("written_at", now).put("checked_at", result.checkedAt).put("incident_count", incidentsNow.size).put("rows", rows).put("incidents", list).toString(2)) }.renameTo(file)
+    }
+    /**
+     * Can this phone push to GitHub: its checkout's remote read with `git ls-remote` and a harmless `git push --dry-run` of the branch to itself,
+     * run in the guest with prompts off, at most every 15 minutes. gh is not assumed (the phone has none). Null: no checkout, so no GitHub use.
+     */
+    private fun phoneGithub(): Pair<String, String>? {
+        if (githubAt > 0 && System.currentTimeMillis() - githubAt < 15 * 60_000) return githubOutcome
+        val script = """
+            cd /root/Projects/omalauncher 2>/dev/null || { echo NOREPO; exit 0; }
+            export GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=true LC_ALL=C
+            R=${'$'}(git remote | grep -x -m1 -E 'fork|origin'); [ -n "${'$'}R" ] || { echo NOREMOTE; exit 0; }
+            L=${'$'}(timeout 25 git ls-remote --heads "${'$'}R" 2>&1); echo "LSCODE:${'$'}?"; echo "LS<<"; echo "${'$'}L"; echo ">>"
+            B=${'$'}(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+            if echo "${'$'}L" | grep -q "refs/heads/${'$'}B${'$'}"; then P=${'$'}(timeout 25 git push --dry-run "${'$'}R" "HEAD:refs/heads/${'$'}B" 2>&1); echo "PUSHCODE:${'$'}?"; echo "PUSH<<"; echo "${'$'}P"; echo ">>"; fi
+        """.trimIndent()
+        val text = runCatching {
+            val process = runtime.proot.process(script).start()
+            val out = StringBuilder()
+            val reader = Thread { runCatching { process.inputStream.bufferedReader().useLines { lines -> lines.take(200).forEach { out.appendLine(it.take(300)) } } } }.apply { isDaemon = true; start() }
+            if (!process.waitFor(70, TimeUnit.SECONDS)) { process.destroyForcibly(); null } else { reader.join(1000); out.toString() }
+        }.getOrNull()
+        val outcome = when {
+            text == null -> "github_unreachable" to "unverified"
+            text.contains("NOREPO") || text.contains("NOREMOTE") -> null
+            else -> {
+                fun code(tag: String) = Regex("$tag:(\\d+)").find(text)?.groupValues?.get(1)?.toIntOrNull()
+                fun block(tag: String) = Regex("$tag<<\\n([\\s\\S]*?)\\n>>").find(text)?.groupValues?.get(1).orEmpty()
+                classifyGithub(code("LSCODE"), block("LS"), code("PUSHCODE"), block("PUSH"))
+            }
+        }
+        githubOutcome = outcome; githubAt = System.currentTimeMillis()
+        return outcome
     }
     private fun checkEvidence(url: String, reply: ConnectionReply, state: ConnectionState, name: String): ConnectionCheck {
         val target = runCatching { val u = URI(url); URI(u.scheme, null, u.host, u.port, u.path, null, null).toString() }.getOrDefault("configured endpoint")

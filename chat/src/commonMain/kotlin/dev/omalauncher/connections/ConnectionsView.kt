@@ -162,8 +162,11 @@ fun ConnectionsModule(size: ModuleSize, @Suppress("UNUSED_PARAMETER") tick: Long
             if (showSummary) {
                 // Restored and verified: the v6 healthy card, "Everything is ready" over what came back.
                 val restored = incidents.isEmpty() && allReady && repairStage(ConnectionsSource.repair, ConnectionsSource.checking) == 3
-                Words(if (restored) "Everything is ready" else ConnectionsSource.repair?.let(::repairCardSummary) ?: bad?.let { "${it.capability.title} unavailable" }
-                    ?: if (ConnectionsSource.checking) "Checking connections…" else if (allReady && snapshot.checkedAt > 0) "Everything is ready" else "Connection check",
+                // A repair line says how a repair goes; once it is over it never replaces a failure that is still there.
+                val repairing = repairStage(ConnectionsSource.repair, ConnectionsSource.checking) in 0..2
+                val failing = bad?.let { b -> (if (b.host.isNotBlank()) "${b.host}: ${b.capability.title.lowercase()}" else b.capability.title) + " unavailable" }
+                Words(if (restored) "Everything is ready" else if (failing != null && !repairing) failing else ConnectionsSource.repair?.let(::repairCardSummary) ?: failing
+                    ?: if (ConnectionsSource.checking) "Checking connections…" else if (allReady && snapshot.checkedAt > 0) "Everything is ready" else if (snapshot.nothingFresh(now)) "Not checked" else "Connection check",
                     sans(if (small) 14.sp else 16.sp, weight = FontWeight.SemiBold), 1)
                 Words(if (restored) "Service restored · tap for details" else bad?.let { connectionCause(it, worst.key) }
                     ?: if (snapshot.checkedAt == 0L) "Waiting for a real check" else "Tap for verified details",
@@ -204,7 +207,7 @@ fun ConnectionsModule(size: ModuleSize, @Suppress("UNUSED_PARAMETER") tick: Long
             // Small card (v6 .small .controls: 8px insets): the rule and [Restore] run 4dp wider than the text column.
             val reach = if (small) 4.dp else 0.dp
             // Restore is offered only when something is wrong: with no incident there is nothing to restore.
-            if (incidents.isNotEmpty())
+            if (incidents.any { !it.ownerOnly })
             Box(Modifier.fillMaxWidth().layout { m, c ->
                 val extra = (reach * 2).roundToPx()
                 val p = m.measure(c.copy(minWidth = c.maxWidth + extra, maxWidth = c.maxWidth + extra))
@@ -294,7 +297,7 @@ private fun ConnectionsRepair(snapshot: ConnectionsSnapshot, now: Long) {
                 Words(Pack.caption(copy.caption), caption(10.sp))
                 Words(copy.headline, sans(19.sp, weight = FontWeight.SemiBold), modifier = Modifier.padding(top = 10.dp, bottom = 6.dp))
                 Words(copy.impact, sans(13.sp).copy(lineHeight = 19.5.sp))
-                RestoreBlock(stage, copy.steps)
+                RestoreBlock(stage, copy.steps, restorable = !incident.ownerOnly)
                 Words(copy.note, Pack.hand(13.sp), modifier = Modifier.padding(top = 10.dp))
                 AgentTools()
             }
@@ -313,8 +316,9 @@ private fun ConnectionsRepair(snapshot: ConnectionsSnapshot, now: Long) {
     }
 }
 @Composable
-private fun RestoreBlock(stage: Int, steps: List<String>) {
-    ConnectionAction(if (ConnectionsSource.checking) "Checking…" else "Restore", { ConnectionsSource.restore() }, size = 16.sp)
+private fun RestoreBlock(stage: Int, steps: List<String>, restorable: Boolean = true) {
+    // A login, free space or an agent to install is his to fix: Restore is not offered for it.
+    if (restorable) ConnectionAction(if (ConnectionsSource.checking) "Checking…" else "Restore", { ConnectionsSource.restore() }, size = 16.sp)
     ConnectionsSource.repair?.let { Words(it, sans(13.sp).copy(lineHeight = 19.5.sp), modifier = Modifier.padding(top = 2.dp, bottom = 12.dp)) }
     ProgressRail(stage, Modifier.fillMaxWidth())
     Column(Modifier.padding(top = 12.dp)) {
