@@ -53,10 +53,9 @@ wait 2500
 nolog tapback doubled
 nolog tapback left
 shot fast-across-messages card=messages-parity-reaction-menu
-# A second tap on his own takes it off, because it is known as his.
+# His own icon takes it off, whichever handle it is under, and it stays off.
 clearlog
-doubletap Yes! 7pm
-tap Tapback like
+tap Remove your reaction, like
 log tapback left
 wait 2000
 key BACK
@@ -65,4 +64,17 @@ tap Ana Demo
 wait 2500
 nolog tapback shown
 nolog tapback doubled
-shot taken-off card=messages-parity-reaction-menu
+absent Remove your reaction, like
+shot taken-off-by-its-icon card=messages-parity-reaction-menu
+# Someone else's icon still lists who reacted.
+tap Reactions on: Yes! 7pm
+wait 800
+expect People who reacted
+shot someone-elses-icon card=messages-parity-reaction-menu
+key BACK
+wait 800
+# A hold on his own still lists them too.
+hold Remove your reaction, love
+wait 800
+expect People who reacted
+key BACK

@@ -664,7 +664,7 @@ fun Thread(
                             PartContent(part, ink, m.files, onHold = { held = m }, richLink = richLink)
                         }
                     }
-                    Tapbacks(m) { reactors = m }
+                    Tapbacks(m, { kind: String -> Messages.tapback(c.id, m, kind) }.takeIf { Messages.linked && m.id?.startsWith("c:") == false }) { reactors = m }
                         if (m.edited) BasicText("Edited", Modifier.fillMaxWidth().padding(top = 3.dp, end = 6.dp)
                             .semantics { contentDescription = "Edit history for: ${m.text.take(40)}"; role = Role.Button }.clickable { history = m },
                             style = Pack.body(Pack.size.small, Pack.muted).copy(textAlign = if (m.fromMe) androidx.compose.ui.text.style.TextAlign.End else androidx.compose.ui.text.style.TextAlign.Start))
@@ -1525,8 +1525,9 @@ private fun HoldMenu(
 private val TAPBACKS = listOf("love" to "❤️", "like" to "👍", "dislike" to "👎", "laugh" to "😂", "emphasize" to "‼️", "question" to "❓")
 
 /** The tapbacks on [m], small, under its balloon on its side: the owner's own outlined. An emoji tapback shows as itself. */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun Tapbacks(m: Message, onOpen: () -> Unit) {
+private fun Tapbacks(m: Message, onTakeOff: ((String) -> Unit)?, onOpen: () -> Unit) {
     AnimatedContent(targetState = m.tapbacks, label = "tapback change", transitionSpec = {
         if (Motion.reduced) EnterTransition.None togetherWith ExitTransition.None
         else (fadeIn(Motion.fade()) + scaleIn(Motion.spatial, initialScale = 0.8f)) togetherWith fadeOut(Motion.fade())
@@ -1539,9 +1540,12 @@ private fun Tapbacks(m: Message, onOpen: () -> Unit) {
                 val kind = reaction.removePrefix("me:")
                 val glyph = TAPBACKS.firstOrNull { it.first == kind }?.second ?: kind
                 val mine = reaction.startsWith("me:")
+                // His own comes off with a tap (Boss, 0.8.12), and a hold still lists who reacted; anyone else's opens the list.
+                val takeOff = onTakeOff?.takeIf { mine }
                 Box(Modifier.padding(end = 4.dp).clip(CircleShape).background(Pack.surface)
                     .then(if (mine) Modifier.border(1.5.dp, Pack.foreground, CircleShape) else Modifier)
-                    .semantics { contentDescription = "Reactions on: " + m.text.take(40); role = Role.Button }.clickable(onClick = onOpen)
+                    .semantics { contentDescription = if (takeOff != null) "Remove your reaction, $kind" else "Reactions on: " + m.text.take(40); role = Role.Button }
+                    .then(if (takeOff != null) Modifier.combinedClickable(onLongClick = onOpen) { takeOff(kind) } else Modifier.clickable(onClick = onOpen))
                     .padding(horizontal = 6.dp, vertical = 2.dp)) { BasicText(glyph, style = Pack.body(Pack.size.small)) }
             }
         } else Spacer(Modifier.height(0.dp))

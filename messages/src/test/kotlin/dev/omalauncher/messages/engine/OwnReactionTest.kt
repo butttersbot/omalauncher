@@ -22,6 +22,13 @@ class OwnReactionTest {
         assertTrue(m.reactions.single().fromMe)
     }
 
+    @Test fun underTwoOfHisHandlesHeIsOnePerson() {
+        MacWire.ownHandles = setOf("+15550000000", "owner@example.test")
+        val m = copy("owner@example.test" to false, "+15550000000" to true, "+15551112222" to false)
+        assertEquals(listOf("me:emphasize", "emphasize"), m.tapbacks)
+        assertEquals(listOf(true, false), m.reactions.map { it.fromMe })
+    }
+
     @Test fun someoneElseStaysSomeoneElse() {
         MacWire.ownHandles = setOf("+15550000000")
         val m = copy("+15551112222" to false)

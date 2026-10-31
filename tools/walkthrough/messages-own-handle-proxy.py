@@ -2,7 +2,8 @@
 """Plays a Mac that names the owner's reactions by another of his handles, in front of the isolated DEMO service.
 
 Live, 2026-10-30: the Direct service sends from his number, but chat.db's rows carry his email, so his own reactions
-came back as fromMe false with sender his email, which health lists among his handles. Usage: HOST PORT UP_PORT
+came back as fromMe false with sender his email, which health lists among his handles. Handles here are fictional.
+Usage: HOST PORT UP_PORT
 """
 import http.client, json, sys, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -12,10 +13,14 @@ OTHER = "owner@example.test"
 
 
 def renamed(m):
+    # Boss saw one under each of his handles, so the walk has both: the Mac's marked his, and the other not.
+    out = []
     for t in m.get("tapbacks") or []:
         if t.get("fromMe"):
-            t["fromMe"] = False
-            t["sender"] = OTHER
+            out.append({**t, "fromMe": False, "sender": OTHER})
+        out.append(t)
+    if "tapbacks" in m:
+        m["tapbacks"] = out
 
 
 def rewrite(o, path):
