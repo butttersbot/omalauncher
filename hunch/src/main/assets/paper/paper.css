@@ -145,11 +145,18 @@
 .slip-table-scroll{max-height:clamp(110px,27vh,220px);overflow-y:auto;overscroll-behavior:contain}.slip-table-scroll .slip-table{margin-top:0}.slip-table-scroll th{position:sticky;top:0;background:#fdfdfb}
 
 /* Compact saved-bet slip: reclaimed header/copy space belongs to the list. */
-.slip-queue-sheet{overflow:hidden}.slip-queue-sheet:has(.slip-table-scroll){height:88%}
-.slip-queue{height:100%;display:flex;flex-direction:column;padding-top:0}
+.slip-queue-sheet{overflow:hidden}
+.slip-queue{display:flex;flex-direction:column;padding-top:0}
 .slip-content>.slip-grab{display:block;flex:none;align-self:center;width:72px;height:32px;min-height:32px;margin:0;padding:0;border:0;background:transparent;cursor:grab;touch-action:none}
 .slip-grab:after{content:'';display:block;width:44px;height:4px;margin:auto;background:#565964;border-radius:2px}
 .slip-grab:active{cursor:grabbing}.slip-grab:focus-visible{outline:2px solid #d7262d;outline-offset:-3px}
-.slip-queue .slip-table-scroll{flex:1;min-height:0;max-height:none}
+.slip-queue .slip-table-scroll{flex:0 1 auto;min-height:0;max-height:none}
 .slip-queue .risk-return,.slip-queue .slip-actions{flex:none}
 .slip-queue .slip-actions{margin-bottom:0}
+
+.row-risk{display:flex;align-items:center;justify-content:flex-end;gap:2px;font:700 12px 'JetBrains Mono',monospace}
+.row-risk input{width:100%;min-width:0;max-width:110px;min-height:36px;padding:6px 3px;text-align:right;border:1px solid #565964;background:#fdfdfb;color:#111113;font:inherit}
+.slip-table [data-draft-id],.single-slip-row{touch-action:pan-y;will-change:transform}
+.slip-queue .slip-table{margin-bottom:0}.slip-queue .slip-table td{padding-top:12px;padding-bottom:12px}
+
+.slip-table [data-draft-id] td{touch-action:pan-y}

@@ -23,7 +23,7 @@ function saveBet(place){
  BetSlip.pending={key:m.id+':'+Hunch.side,place};BetSlip.error='';renderBetOverlay();sendNative({type:'draftAction',action:'upsert',id:m.id,side:Hunch.side,budget:BetSlip.amount});
 }
 function receiveBetDrafts(data){
- BetSlip.drafts=data.rows||[];BetSlip.error=data.error||'';
+ BetSlip.drafts=data.rows||[];BetSlip.error=data.error||'';for(const [id,edit] of slipEdits){if(!BetSlip.drafts.some(d=>d.draftId===id)||(data.error&&edit.status==='saving'))slipEdits.delete(id)}
  const pending=BetSlip.pending;BetSlip.pending=null;
  if(pending&&!data.error){const draft=BetSlip.drafts.find(d=>d.key===pending.key);if(pending.place&&draft)placeSlip([draft.draftId]);else browseMoreBets()}
  renderBetOverlay();
@@ -48,24 +48,52 @@ function composeBet(){
  if(BetSlip.drafts.length)body.append(slipButton('View slip · '+BetSlip.drafts.length,()=>{BetSlip.mode='queue';renderBetOverlay()}));
  body.append(slipButton('Advanced order',()=>{closeBetSheet();sendNative({type:'trade',id:m.id,side:Hunch.side})}));return body;
 }
+const slipEdits=new Map();
+function rowRiskInput(row){
+ const wrap=slipNode('label','row-risk'),input=slipNode('input');wrap.append(slipNode('span','','$'));
+ input.type='text';input.inputMode='decimal';input.value=slipEdits.get(row.draftId)?.value??row.budget;input.setAttribute('aria-label','Risk for '+row.title+' · '+row.label);
+ event(input,'input',e=>{slipEdits.set(row.draftId,{value:e.target.value,status:'dirty'});BetSlip.error='';renderBetOverlay()});
+ event(input,'change',()=>commitRowRisk(row));event(input,'keydown',e=>{if(e.key==='Enter')e.currentTarget.blur()});
+ input.disabled=slipEdits.get(row.draftId)?.status==='saving';wrap.append(input);return wrap;
+}
+function commitRowRisk(row){
+ const edit=slipEdits.get(row.draftId);if(!edit||edit.status==='saving')return;
+ if(!/^\d{1,12}(?:\.\d{1,2})?$/.test(edit.value)||Number(edit.value)<=0){BetSlip.error='Enter a positive risk with up to two decimals.';renderBetOverlay();return}
+ edit.status='saving';sendNative({type:'draftAction',action:'resize',draftId:row.draftId,budget:edit.value,editToken:crypto.randomUUID()});renderBetOverlay();
+}
+function swipeableBet(node,row){
+ node.dataset.draftId=row.draftId;node.tabIndex=0;node.setAttribute('aria-label',row.title+' · '+row.label+'. Swipe left or press Delete to remove.');
+ event(node,'keydown',e=>{if((e.key==='Delete'||e.key==='Backspace')&&e.target.tagName!=='INPUT'){e.preventDefault();removeSlipRow(row.draftId)}});return node;
+}
+function removeSlipRow(id){slipEdits.delete(id);sendNative({type:'draftAction',action:'remove',draftId:id})}
 function slipTable(rows,review=false,editable=true){
  const table=slipNode('table','slip-table'),head=slipNode('thead'),tr=slipNode('tr');['Bet',review?'Max risk':'Risk',review?'Payout if right':'Est. payout'].forEach(x=>tr.append(slipNode('th','',x)));head.append(tr);table.append(head);
- const tbody=slipNode('tbody');rows.forEach(row=>{const r=slipNode('tr'),name=slipNode('td');name.append(slipNode('b','',row.title),slipNode('small','',row.label));if(review)name.append(slipNode('small','',row.shares+' shares · fee ceiling '+slipMoney(row.fees,true)));else if(editable){const buttons=slipNode('div','draft-actions');buttons.append(slipButton('Edit',()=>editSlipBet(row)),slipButton('Remove',()=>sendNative({type:'draftAction',action:'remove',draftId:row.draftId})));name.append(buttons)}r.append(name,slipNode('td','',slipMoney(review?row.risk:row.budget,review)),slipNode('td','',slipMoney(review?row.payout:row.estimatedPayout)));tbody.append(r)});table.append(tbody);return table;
+ const tbody=slipNode('tbody');rows.forEach(row=>{const r=slipNode('tr'),name=slipNode('td');r._paperKey=row.draftId;name.append(slipNode('b','',row.title),slipNode('small','',row.label));if(review)name.append(slipNode('small','',row.shares+' shares · fee ceiling '+slipMoney(row.fees,true)));
+ const risk=slipNode('td');if(editable&&!review){risk.append(rowRiskInput(row));swipeableBet(r,row)}else risk.textContent=slipMoney(review?row.risk:row.budget,review);
+ r.append(name,risk,slipNode('td','',slipEdits.has(row.draftId)&&editable&&!review?'—':slipMoney(review?row.payout:row.estimatedPayout)));tbody.append(r)});table.append(tbody);return table;
 }
 function queuedBets(){
  const body=slipNode('div','slip-content slip-queue'),rows=BetSlip.drafts;const handle=slipButton('',closeBetSheet);handle.className='slip-grab';handle.setAttribute('aria-label','Dismiss bet slip');body.append(handle);
  if(!rows.length){body.append(slipNode('p','','Your slip is empty. Choose Yes or No on a market.'),slipButton('Find a bet',browseMoreBets));return body}
- if(rows.length>1){const list=slipNode('div','slip-table-scroll');list.append(slipTable(rows));body.append(list)}else{const row=rows[0];body.append(slipNode('p','slip-market',row.title),slipNode('p','slip-side',row.label),...riskReturn(slipMoney(row.budget),slipMoney(row.estimatedPayout),null));const acts=slipNode('div','draft-actions');acts.append(slipButton('Edit',()=>editSlipBet(row)),slipButton('Remove',()=>sendNative({type:'draftAction',action:'remove',draftId:row.draftId})));body.append(acts)}
- const totals=slipTotals(rows);if(rows.length>1&&totals){body.append(...riskReturn(formatSlipCents(totals.risk),formatSlipCents(totals.payout),null))}
+ if(rows.length>1){const list=slipNode('div','slip-table-scroll');list.append(slipTable(rows));body.append(list)}else{const row=rows[0],card=swipeableBet(slipNode('div','single-slip-row'),row);card.append(slipNode('p','slip-market',row.title),slipNode('p','slip-side',row.label));const risk=slipNode('label','stake-label','Risk');risk.append(rowRiskInput(row));card.append(risk);body.append(card,...riskReturn(slipMoney(slipEdits.get(row.draftId)?.value??row.budget),slipEdits.has(row.draftId)?'—':slipMoney(row.estimatedPayout),null))}
+ const totals=slipTotals(rows.map(row=>({...row,budget:slipEdits.get(row.draftId)?.value??row.budget})));if(rows.length>1){body.append(...riskReturn(totals?formatSlipCents(totals.risk):'—',slipEdits.size||!totals?'—':formatSlipCents(totals.payout),null))}
  if(BetSlip.error)body.append(slipNode('p','slip-error',BetSlip.error));
- const actions=slipNode('div','slip-actions');actions.append(slipButton('Add another bet',browseMoreBets),slipButton(rows.length>1?'Place all · '+rows.length+' bets':'Place bet',()=>placeSlip(rows.map(d=>d.draftId)),true));body.append(actions);return body;
+ const actions=slipNode('div','slip-actions'),place=slipButton(rows.length>1?'Place all · '+rows.length+' bets':'Place bet',()=>placeSlip(rows.map(d=>d.draftId)),true);place.disabled=slipEdits.size>0;actions.append(slipButton('Add another bet',browseMoreBets),place);body.append(actions);return body;
+}
+function fitSlipList(){
+ const sheet=document.querySelector('.slip-queue-sheet'),list=sheet?.querySelector('.slip-table-scroll');if(!list)return;
+ list.style.maxHeight='none';const rows=[...list.querySelectorAll('tbody tr')],head=list.querySelector('thead').getBoundingClientRect().height;
+ const peek=rows.slice(0,2).reduce((n,r)=>n+r.getBoundingClientRect().height,0)+(rows[2]?.getBoundingClientRect().height||0)*.75;
+ list.style.maxHeight=Math.ceil(head+peek)+'px';
+ const region=slipRegion(),chrome=sheet.querySelector('.slip-queue').getBoundingClientRect().height-list.getBoundingClientRect().height+4;
+ list.style.maxHeight=Math.max(0,Math.min(head+peek,region.height*.88-chrome))+'px';
 }
 function slipRegion(){const pane=document.querySelector('.hunch-two-pane .right');return pane?.getBoundingClientRect()||document.getElementById('viewport').getBoundingClientRect()}
 window.renderBetOverlay=()=>{
  const overlay=document.getElementById('bet-overlay'),launcher=document.getElementById('bet-launcher');if(!overlay||!launcher)return;
  if(accountMode||design){overlay.hidden=launcher.hidden=true;return}
  const region=slipRegion();overlay.style.left=region.left+'px';overlay.style.top=region.top+'px';overlay.style.width=region.width+'px';overlay.style.height=region.height+'px';overlay.hidden=!BetSlip.open;
- if(BetSlip.open){const fresh=slipNode('section','slip-sheet'+(BetSlip.mode==='queue'?' slip-queue-sheet':''));fresh.setAttribute('role','dialog');fresh.setAttribute('aria-label',BetSlip.mode==='compose'?'Bet controls':'Bet slip');fresh._paperKey=BetSlip.mode;fresh.append(BetSlip.mode==='compose'?composeBet():queuedBets());if(overlay.firstChild)Paper.morph(overlay.firstChild,fresh);else overlay.append(fresh)}else overlay.replaceChildren();
+ if(BetSlip.open){const fresh=slipNode('section','slip-sheet'+(BetSlip.mode==='queue'?' slip-queue-sheet':''));fresh.setAttribute('role','dialog');fresh.setAttribute('aria-label',BetSlip.mode==='compose'?'Bet controls':'Bet slip');fresh._paperKey=BetSlip.mode;fresh.append(BetSlip.mode==='compose'?composeBet():queuedBets());if(overlay.firstChild)Paper.morph(overlay.firstChild,fresh);else overlay.append(fresh);fitSlipList()}else overlay.replaceChildren();
  launcher.hidden=!BetSlip.drafts.length||BetSlip.open;const totals=slipTotals(BetSlip.drafts),tabs=document.querySelector('nav[aria-label="Hunch pages"]');const bottom=tabs?.getBoundingClientRect().top||region.bottom;
  launcher.style.left=(region.left+18)+'px';launcher.style.width=Math.max(100,region.width-36)+'px';launcher.style.bottom=Math.max(8,innerHeight-bottom+8)+'px';
  const fresh=slipButton((BetSlip.drafts.length>1?'Bet slip · '+BetSlip.drafts.length+' bets':'Your bet')+(totals?' · Risk '+formatSlipCents(totals.risk):''),()=>{BetSlip.open=true;BetSlip.mode='queue';renderBetOverlay()},true);
@@ -124,3 +152,16 @@ function finishSlipDrag(e,cancelled=false){
 slipOverlay?.addEventListener('pointerup',e=>finishSlipDrag(e));
 slipOverlay?.addEventListener('pointercancel',e=>finishSlipDrag(e,true));
 slipOverlay?.addEventListener('click',e=>{if(slipDragged){e.preventDefault();e.stopImmediatePropagation();slipDragged=false}},true);
+
+let rowSwipe=null;
+slipOverlay?.addEventListener('pointerdown',e=>{
+ const row=e.target.closest('[data-draft-id]');if(!row||e.target.closest('input')||!e.isPrimary||e.button!==0)return;
+ rowSwipe={id:e.pointerId,row,draftId:row.dataset.draftId,x:e.clientX,y:e.clientY,dx:0,locked:false};
+});
+slipOverlay?.addEventListener('pointermove',e=>{
+ const s=rowSwipe;if(!s||e.pointerId!==s.id)return;const dx=e.clientX-s.x,dy=e.clientY-s.y;
+ if(!s.locked){if(Math.abs(dy)>12&&Math.abs(dy)>Math.abs(dx)){rowSwipe=null;return}if(dx< -12&&Math.abs(dx)>Math.abs(dy)*1.3){s.locked=true;slipOverlay.setPointerCapture(e.pointerId)}}
+ if(s.locked){s.dx=Math.min(0,dx);s.row.style.transform='translateX('+s.dx+'px)';s.row.style.opacity=String(Math.max(.3,1+dx/s.row.clientWidth));e.preventDefault()}
+});
+function endRowSwipe(e,cancel=false){const s=rowSwipe;if(!s||e.pointerId!==s.id)return;rowSwipe=null;if(slipOverlay.hasPointerCapture(e.pointerId))slipOverlay.releasePointerCapture(e.pointerId);if(!cancel&&s.locked&&s.dx< -Math.min(80,s.row.clientWidth*.25))removeSlipRow(s.draftId);else{s.row.style.transform='';s.row.style.opacity=''}}
+slipOverlay?.addEventListener('pointerup',e=>endRowSwipe(e));slipOverlay?.addEventListener('pointercancel',e=>endRowSwipe(e,true));

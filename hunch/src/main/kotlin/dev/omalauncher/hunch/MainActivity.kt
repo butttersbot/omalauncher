@@ -17,6 +17,7 @@ class MainActivity:PaperActivity(){
     private val quoteWorker=Executors.newFixedThreadPool(2)
     private val listingQuotes=mutableMapOf<String,Pair<Long,JSONObject>>()
     private val quoting=mutableSetOf<String>()
+    private val draftEdits=mutableMapOf<String,String>()
     private val stakePreviews=mutableMapOf<String,JSONObject>()
     private var uiReady=false
     override fun onCreate(state:Bundle?){
@@ -87,7 +88,15 @@ class MainActivity:PaperActivity(){
     private fun handleDraft(data:JSONObject){try{
         val store=BetDrafts(this,BuildConfig.DEBUG&&fixture=="demo")
         when(data.optString("action")){
-            "remove"->store.remove(setOf(data.optString("draftId")))
+            "remove"->{draftEdits.remove(data.optString("draftId"));store.remove(setOf(data.optString("draftId")))}
+            "resize"->{
+                val row=store.all().single{it.getString("draftId")==data.getString("draftId")}
+                val budget=data.getString("budget").toBigDecimal();require(budget>BigDecimal.ZERO&&budget.scale()<=2&&budget.precision()<=14)
+                require(markets.any{it.id.toString()==row.getString("marketId")}){"This market is no longer listed"}
+                draftEdits[row.getString("draftId")]=data.getString("editToken")
+                loadBook(JSONObject().put("id",row.getString("marketId")).put("side",row.getInt("side")).put("budget",budget.toPlainString()).put("draftId",row.getString("draftId")).put("editToken",data.getString("editToken")))
+                return
+            }
             "upsert"->{
                 val m=markets.single{it.id.toString()==data.optString("id")};val side=data.getInt("side");val budget=data.getString("budget").toBigDecimal().setScale(2)
                 require(budget>BigDecimal.ZERO&&budget.precision()<=14)
@@ -141,7 +150,17 @@ class MainActivity:PaperActivity(){
                 payload.put("valid",valid).put("empty",ask==null||bid==null).put("crossed",crossed)
                 if(valid){val preview=Book.preview(Book.levels(b,1),budget);payload.put("complete",preview.complete).put("payout",Book.money(preview.grossPayout)).put("spent",Book.money(preview.spent))}
             }catch(e:Exception){payload.put("error",true)}
-            runOnUiThread{if(!isDestroyed){stakePreviews[previewKey(id,side,budget)]=JSONObject(payload.toString());tell(payload)}}
+            runOnUiThread{if(!isDestroyed){
+                stakePreviews[previewKey(id,side,budget)]=JSONObject(payload.toString())
+                val draftId=data.optString("draftId")
+                if(draftId.isEmpty())tell(payload) else if(draftEdits[draftId]==data.optString("editToken")){
+                    draftEdits.remove(draftId)
+                    try{val store=BetDrafts(this,BuildConfig.DEBUG&&fixture=="demo");val old=store.all().single{it.getString("draftId")==draftId}
+                        require(old.getString("identity")==m.identity){"Market terms changed. Add this bet again."}
+                        store.upsert(m,side,budget,payload);tellDrafts()
+                    }catch(e:Exception){tellDrafts(e.message?:"Could not update risk")}
+                }
+            }}
         }
     }
     override fun onDestroy(){worker.shutdownNow();quoteWorker.shutdownNow();super.onDestroy()}

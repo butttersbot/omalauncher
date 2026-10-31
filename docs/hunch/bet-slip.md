@@ -67,3 +67,25 @@ content height. Native confirmation/review terms are unchanged.
 Interface checks and Android build pass. Actual emulator touch drag dismissed and
 preserved both saved bets. Cover list grew from185px to387px; unfolded containment
 and screenshots inspected. No phone install or real order.
+
+## 0.9.2 / code 21 — inline risk and content-height slip
+
+Boss replaced Edit/Remove controls with editable risk inputs and swipe-left
+removal. Risk saves on field commit/blur (Enter dismisses focus); the native
+controller refreshes the executable full-stake quote before persisting a new draft
+identity and payout. Dirty/saving inputs block Place all and hide stale estimated
+payout. Removed drafts invalidate pending edit requests so a response cannot
+resurrect a swiped-away selection. Keyboard Delete on the row is also supported.
+Single slips retain the no-table view with an inline risk field and swipe removal.
+
+The drawer now sizes to its contents instead of reserving 88% height. Its list
+caps at the measured height of two rows plus75% of the third, including variable
+row heights, while reserving totals/actions and staying within88% of its pane.
+No additional bottom-spacing reduction was made (Boss said spacing was fine).
+
+Build,56JVM tests and HTML checks pass, including dirty-input blocking, resize
+message/new saved totals and keyboard removal. Actual emulator:20→25 stake saved
+with refreshed60.98 payout and35/85.37 total; touch swipe removed only the selected
+row; two rows fully fit without whitespace; four saved selections show2.75 rows
+(172.08px of row content plus column header) cover and unfolded. Screens inspected.
+No phone install, real signing or real order. Native final review remains intact.

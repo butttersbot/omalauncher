@@ -33,6 +33,11 @@ const b={draftId:'second',key:'3:1',marketId:'3',title:'Fictional second event',
 await w.receiveNative({type:'drafts',rows:[a,b],error:''});await pause();w.document.querySelector('#bet-launcher button').click();
 assert.equal(w.document.querySelectorAll('#bet-overlay tbody tr').length,2);assert.match(w.document.querySelector('#bet-overlay').textContent,/\$30\.00/);assert.match(w.document.querySelector('#bet-overlay').textContent,/\$55\.00/);
 assert.equal(w.document.querySelector('#bet-overlay .slip-header'),null);assert.ok(w.document.querySelector('.slip-grab'));assert.equal(w.document.querySelector('#bet-overlay .slip-note'),null);
+assert.equal(find('Edit'),undefined);assert.equal(find('Remove'),undefined);
+const riskInput=w.document.querySelector('.row-risk input');riskInput.focus();riskInput.value='12.00';riskInput.dispatchEvent(new w.Event('input',{bubbles:true}));assert.equal(find('Place all · 2 bets').disabled,true);riskInput.dispatchEvent(new w.Event('change',{bubbles:true}));assert.equal(posts.at(-1).action,'resize');assert.equal(posts.at(-1).budget,'12.00');assert.equal(posts.at(-1).draftId,'first');
+await w.receiveNative({type:'drafts',rows:[{...a,draftId:'changed',budget:'12.00',estimatedPayout:'24.00'},b],error:''});assert.equal(find('Place all · 2 bets').disabled,false);assert.match(w.document.querySelector('#bet-overlay').textContent,/\$22\.00/);
+const removeRow=w.document.querySelector('tbody tr');removeRow.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Delete',bubbles:true}));assert.equal(posts.at(-1).action,'remove');assert.equal(posts.at(-1).draftId,'changed');
+await w.receiveNative({type:'drafts',rows:[a,b],error:''});
 find('Place all · 2 bets').click();assert.equal(posts.at(-1).type,'placeBets');assert.deepEqual(posts.at(-1).ids,['first','second']);
 const values=w.slipTotals([{budget:'0.10',estimatedPayout:'0.20'},{budget:'0.20',estimatedPayout:'0.40'}]);assert.equal(w.formatSlipCents(values.risk),'$0.30');assert.equal(w.slipMoney('19.99000001',true),'$20.00');
 await w.showBatch({phase:'review',busy:false,demo:true,network:1,drafts:[a,b],orders:[{...a,risk:'19.99000001',payout:'39',fees:'0.01',shares:'39'},{...b,risk:'9.99',payout:'14',fees:'0.01',shares:'14'}],results:[],wallet:'0x'+'1'.repeat(40),message:'Native review'});w.Paper.render();
