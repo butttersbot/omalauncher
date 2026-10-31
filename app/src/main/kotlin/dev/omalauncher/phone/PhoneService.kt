@@ -804,6 +804,7 @@ class PhoneService : AccessibilityService() {
                 "url" -> {
                     val link = PhoneGuard.webUrl(input.getString("url")).getOrThrow()
                     val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(link)).addCategory(Intent.CATEGORY_BROWSABLE)
+                        .putExtra(android.provider.Browser.EXTRA_APPLICATION_ID, PhoneGuard.AGENT_BROWSER_ID)
                     input.optString("app").takeIf { it.isNotEmpty() }?.let { intent.setPackage(it) }
                     val handler = packageManager.resolveActivity(intent, 0)?.activityInfo?.packageName
                         ?: error(if (intent.`package` != null) "${intent.`package`} can't open that link. Nothing was opened." else "No app on the phone opens that link. Nothing was opened.")
