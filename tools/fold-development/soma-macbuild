@@ -137,7 +137,7 @@ walk_report() {
   {
     echo "Soma $short (version $code${lane:+, lane $lane}): built and tested ($tests tests, 0 failed, $skipped skipped); $name.apk sent."
     if [ -s "$wdir/verdicts.txt" ]; then
-      if [ "$pool" -eq 1 ]; then echo "Walks each on a fresh emulator of the pool, from each walk's exit and FAIL lines:"
+      if [ "${pool:-0}" -eq 1 ]; then echo "Walks each on a fresh emulator of the pool, from each walk's exit and FAIL lines:"
       else echo "Walks on $emu, from each walk's exit and FAIL lines:"; fi
       sed 's/^/  /' "$wdir/verdicts.txt"
       for f in "$wdir"/*.log; do
