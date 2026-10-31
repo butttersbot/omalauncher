@@ -1,0 +1,44 @@
+/*
+ * Soma's feel for pages in a WebView (Hunch, the News reader, artifacts): the numbers of :kit's Feel and Motion, for
+ * what Compose can't reach. Feel only: no colour, type or layout here; the look stays the page's. See docs/SOMA-UI-KIT.md.
+ * FeelTest checks these against Feel, so they can't drift apart.
+ */
+:root {
+  /* Motion.spatial as a CSS curve: the critically damped spring (stiffness 1000) sampled over the time it takes. */
+  --feel-spring: linear(0.000, 0.078, 0.234, 0.400, 0.547, 0.667, 0.760, 0.830, 0.881, 0.917, 0.943, 0.961, 0.973, 0.982, 0.988, 0.992, 0.995, 0.996, 0.998, 0.998, 1);
+  --feel-spring-ms: 290ms;
+  /* Motion.easing and its timings. */
+  --feel-ease: cubic-bezier(0.2, 0, 0, 1);
+  --feel-fade-ms: 150ms;
+  --feel-open-ms: 270ms;
+  --feel-close-ms: 200ms;
+  --feel-entrance-ms: 370ms;
+  --feel-overlay-ms: 180ms;
+  --feel-press-scale: 0.97;
+  --feel-entrance-scale: 0.92;
+  --feel-entrance-alpha: 0.6;
+  --feel-entrance-rise: 24px;
+  --feel-overlay-scale: 0.96;
+}
+
+/* Answers on the first touch: no double-tap wait, and no grey flash of the browser's own. */
+.feel-press {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform var(--feel-spring-ms) var(--feel-spring);
+}
+.feel-press:active { transform: scale(var(--feel-press-scale)); transition-duration: 0ms; }
+
+@keyframes feel-arrive {
+  from { transform: translateY(var(--feel-entrance-rise)) scale(var(--feel-entrance-scale)); opacity: var(--feel-entrance-alpha); }
+}
+.feel-arrive { animation: feel-arrive var(--feel-entrance-ms) var(--feel-ease) both; transform-origin: 100% 100%; }
+
+@keyframes feel-overlay {
+  from { transform: scale(var(--feel-overlay-scale)); opacity: 0; }
+}
+.feel-overlay { animation: feel-overlay var(--feel-overlay-ms) var(--feel-ease) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .feel-press, .feel-arrive, .feel-overlay { animation: none; transition: none; }
+}

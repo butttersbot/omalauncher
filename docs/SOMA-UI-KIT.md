@@ -33,3 +33,75 @@ Messages branch), not measured latency. Android's IME motion stays native, with 
 
 **What Messages doesn't have:** a press motion (its rows take Compose's instant pressed shade), `contentType` on its
 lists, or a frame-time check. `Feel.PRESS_SCALE` is therefore new with the kit, not from the reference.
+
+## Using it on a screen
+
+The kit is `:kit`. An app with `:chat` already has it; any other Compose app adds `implementation(project(":kit"))`.
+A page in a WebView links `kit/web/feel.css` (the same numbers, checked by a test) and uses `.feel-press`,
+`.feel-arrive`, `.feel-overlay` and the `--feel-*` values.
+
+Start from the screen's Shipped card, keep everything as shipped, and swap only how it moves:
+
+| Instead of | Use |
+|---|---|
+| `Modifier.clickable { }` on something you can see move | `Modifier.pressable { }`, placed **before** `framed`/`background`, so the frame gives too |
+| `animateFloatAsState(x, spring(...))` under a finger | `settling(x, following = dragging)` |
+| `Animatable.animateTo(...)` | `moveTo(target)`, or `moveTo(target, Feel.open)` (honours remove-animations) |
+| A screen `if`-ed over another | `SlideOver(widthPx, onGone, background) { back, modalChanged -> ... }`; call `back` from its own close |
+| A `Dialog` for a menu | `KitOverlay(ink = Pack.foreground, onDismiss, lightBars, enterMillis = Feel.OVERLAY_MS) { ... }` |
+| `if (open) Bar()` in a column | `Reveal(open) { Bar() }` |
+| A sideways gesture in a list | `Modifier.sidewaysPull(...)` with `pulled(raw, mark)` and `Feel.PULL_MARK` |
+| A new item popping in | `Modifier.arriving(key, end = fromMe) { isNew }`, with `NewerThan(newestAtOpen)` if nothing marks new items |
+| Reordering rows | `Modifier.movesInList(this)` in the `items` block |
+| Disk, decoding, thumbnails in composition | `val x by offMain(key) { load() }` |
+
+Four rules that aren't code:
+
+1. **A moving value is read in `graphicsLayer {}` or `offset {}`,** never in composition. Pass `{ value }`, not `value`.
+2. **Don't animate at rest.** Whatever every row of a list pays, it pays while scrolling: an entrance run on each row
+   doubled Soma chat's scroll jank until only arriving rows paid.
+3. **A list state is made where it opens,** under `key(what)`, so the first frame is right.
+4. **New numbers go in `Feel`,** never on a screen. A number that differs from a shipped one is a decision.
+
+## Checking it
+
+Feel can't be proven by a test, so someone's thumb decides. To find problems, a focused walk has `frames` steps
+(`tools/walkthrough/README.md`): `scripts/feel-messages.walk` is the reference, `scripts/feel-chat.walk` reads Soma chat
+against it. They only report; no number can hold a build, a take or an install.
+
+- Compare only on one run of one emulator, alternating builds. Its 60 Hz, shared GPU and load say nothing of the phone.
+- A screen with a pulsing dot draws all the time, so its first-frame number is only the next frame.
+
+## Widgets
+
+`.owl` widgets run in the launcher, so what the runtime does, every widget has with no work of its own.
+
+**Takes:** a node with `onTap` or `onLongPress` gives under the finger; plain `animate x: spring()` is Soma's spring
+(`spring(damping, stiffness)` stays as named, and the three bundled widgets that say `spring()` lose their bounce);
+a new target for an animated value keeps the speed it had. Remove-animations is honoured. Values already change in the
+draw phase, and slow widgets already drop to half the frame rate.
+
+**Can't take:**
+- `if` and `for` swap their nodes at once. A fade would have to wrap them, which changes the layout widgets were
+  written for and would soften a widget that uses `if` for sprites or a blink.
+- Scrolling, drags and `onDrag` stay the widget's own: the runtime doesn't know what a drag means.
+- Its expressions run on the main thread, by design (they are read while drawing), so the frame budget is theirs.
+- A widget's own `Canvas`, `Web` and `Terminal` nodes draw for themselves.
+- The tile on home: its tap grows into the screen (`Motion`) and has no press give yet, since that's home's gesture.
+
+## Follow-ups, one job each
+
+| App | What it needs |
+|---|---|
+| Messages | Merge `messages/ui-kit`. `offMain` for its six `produceState` + IO loads and `pressable` wait for that: its rows keep their plain press until Boss wants more. |
+| Soma Notes (`notes/`) | No `:chat`: add `:kit`. Its Compose screens (Stream, Page, Reader) take `pressable`, `SlideOver` for Reader, `KitOverlay` for its dialogs. Its branch isn't on this one yet. |
+| Launcher home and settings | Already on `Motion`. `pressable` for its rows and menus (`SettingsList`, `Menu`), the tile press. Its own check, `MotionSourceCheckTest`, stays. |
+| Desktop | Has what's in `commonMain` from this job, tested by its own tests only. Nobody has felt it. Mouse hover, wheel and window resize aren't in the kit. |
+| News reader | A WebView in the launcher: link `feel.css`, `.feel-press` on its rows and controls. |
+| Hunch | Views and WebViews, no Compose. `feel.css` for `paper/`; `.feel-press` on markets and tickets, nothing near the order button's confirmation without looking at it. Its native screens would need Compose first: not worth it for this. |
+| The build itself | Soma on the phone is debug-type and debuggable; Messages is a release build. See below. |
+
+## What the emulator measured
+
+Messages on the same emulator, opening a chat for the first time: debug build 283-300 ms to the first frame, release
+build 101-105 ms. So part of a good feel is the build type, which no kit can fix.

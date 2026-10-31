@@ -30,6 +30,21 @@ class FeelTest {
         assertEquals(0.3f, Feel.PULL_GIVE)
     }
 
+    @Test fun thePagesHaveTheSameNumbers() {
+        val css = java.io.File("web/feel.css").readText()
+        fun has(name: String, value: String) = assertTrue("$name: $value", "--feel-$name: $value;" in css)
+        has("fade-ms", "${Motion.FADE_MS}ms")
+        has("open-ms", "${Feel.OPEN_MS}ms")
+        has("close-ms", "${Feel.CLOSE_MS}ms")
+        has("entrance-ms", "${Feel.ENTRANCE_MS}ms")
+        has("overlay-ms", "${Feel.OVERLAY_MS}ms")
+        has("press-scale", "${Feel.PRESS_SCALE}")
+        has("entrance-scale", "${Feel.ENTRANCE_SCALE}")
+        has("entrance-alpha", "${Feel.ENTRANCE_ALPHA}")
+        has("entrance-rise", "${Feel.ENTRANCE_RISE.value.toInt()}px")
+        has("overlay-scale", "${Feel.OVERLAY_SCALE}")
+    }
+
     @Test fun anItemIsNewOnce() {
         val mark = NewerThan(100)
         assertFalse(mark.take(100))
