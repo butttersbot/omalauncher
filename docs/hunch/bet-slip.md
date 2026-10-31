@@ -54,3 +54,16 @@ Production acceptance of multi-order outcome trading and actual venue fee/fill
 behavior remain unverified. The build is a development candidate, not a claim of
 funded trading readiness. Fictional mode uses its own preferences/journal, locked
 fake test funds, dummy signatures and local responses. It never submits HTTP.
+
+## 0.9.1 / code 20 — compact saved-bet list
+
+Boss requested the saved slip header/Close and the copy below risk totals removed.
+Replaced the header with an accessible handle: touch-drag down dismisses without
+changing saved bets; tap/keyboard also dismisses. The list starts directly below
+it and takes the space reclaimed from header/copy. Totals and actions stay below
+an internally scrolling list on cover and unfolded right pane. Single slips keep
+content height. Native confirmation/review terms are unchanged.
+
+Interface checks and Android build pass. Actual emulator touch drag dismissed and
+preserved both saved bets. Cover list grew from185px to387px; unfolded containment
+and screenshots inspected. No phone install or real order.

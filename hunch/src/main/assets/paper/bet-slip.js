@@ -32,7 +32,7 @@ function placeSlip(ids){if(!ids.length)return;BetSlip.open=false;renderBetOverla
 function editSlipBet(draft){const m=Hunch.rows.find(m=>m.id===draft.marketId);if(!m){BetSlip.error='This market is no longer listed. Remove this bet from your slip.';renderBetOverlay();return}Hunch.selected=m;Hunch.side=draft.side;Hunch.books={};BetSlip.amount=draft.budget;Hunch.budget=Number(draft.budget);BetSlip.mode='compose';BetSlip.open=true;requestBook();showLive()}
 function sheetHeader(title,close){const header=slipNode('header','slip-header');header.append(slipNode('h2','',title),slipButton('Close',close));return header}
 function riskReturn(risk,payout,caption='Estimated payout if right · includes your stake'){
- const block=slipNode('div','risk-return');const a=slipNode('div'),b=slipNode('div');a.append(slipNode('small','','RISK UP TO'),slipNode('b','',risk));b.append(slipNode('small','','PAYOUT IF RIGHT'),slipNode('b','',payout));block.append(a,slipNode('span','risk-arrow','→'),b);return [block,slipNode('p','slip-note',caption)]
+ const block=slipNode('div','risk-return');const a=slipNode('div'),b=slipNode('div');a.append(slipNode('small','','RISK UP TO'),slipNode('b','',risk));b.append(slipNode('small','','PAYOUT IF RIGHT'),slipNode('b','',payout));block.append(a,slipNode('span','risk-arrow','→'),b);return caption?[block,slipNode('p','slip-note',caption)]:[block]
 }
 function composeBet(){
  const m=Hunch.selected,body=slipNode('div','slip-content');if(!m)return body;
@@ -53,11 +53,10 @@ function slipTable(rows,review=false,editable=true){
  const tbody=slipNode('tbody');rows.forEach(row=>{const r=slipNode('tr'),name=slipNode('td');name.append(slipNode('b','',row.title),slipNode('small','',row.label));if(review)name.append(slipNode('small','',row.shares+' shares · fee ceiling '+slipMoney(row.fees,true)));else if(editable){const buttons=slipNode('div','draft-actions');buttons.append(slipButton('Edit',()=>editSlipBet(row)),slipButton('Remove',()=>sendNative({type:'draftAction',action:'remove',draftId:row.draftId})));name.append(buttons)}r.append(name,slipNode('td','',slipMoney(review?row.risk:row.budget,review)),slipNode('td','',slipMoney(review?row.payout:row.estimatedPayout)));tbody.append(r)});table.append(tbody);return table;
 }
 function queuedBets(){
- const body=slipNode('div','slip-content'),rows=BetSlip.drafts;body.append(sheetHeader(rows.length>1?'Your bets':'Your bet',closeBetSheet));
+ const body=slipNode('div','slip-content slip-queue'),rows=BetSlip.drafts;const handle=slipButton('',closeBetSheet);handle.className='slip-grab';handle.setAttribute('aria-label','Dismiss bet slip');body.append(handle);
  if(!rows.length){body.append(slipNode('p','','Your slip is empty. Choose Yes or No on a market.'),slipButton('Find a bet',browseMoreBets));return body}
- if(rows.length>1){const list=slipNode('div','slip-table-scroll');list.append(slipTable(rows));body.append(list)}else{const row=rows[0];body.append(slipNode('p','slip-market',row.title),slipNode('p','slip-side',row.label),...riskReturn(slipMoney(row.budget),slipMoney(row.estimatedPayout)));const acts=slipNode('div','draft-actions');acts.append(slipButton('Edit',()=>editSlipBet(row)),slipButton('Remove',()=>sendNative({type:'draftAction',action:'remove',draftId:row.draftId})));body.append(acts)}
- const totals=slipTotals(rows);if(rows.length>1&&totals){body.append(...riskReturn(formatSlipCents(totals.risk),formatSlipCents(totals.payout),'Separate bets, not a parlay. Total estimated payout assumes each outcome wins.'))}
- body.append(slipNode('p','slip-note','Prices, fees and share sizes refresh at review.'));
+ if(rows.length>1){const list=slipNode('div','slip-table-scroll');list.append(slipTable(rows));body.append(list)}else{const row=rows[0];body.append(slipNode('p','slip-market',row.title),slipNode('p','slip-side',row.label),...riskReturn(slipMoney(row.budget),slipMoney(row.estimatedPayout),null));const acts=slipNode('div','draft-actions');acts.append(slipButton('Edit',()=>editSlipBet(row)),slipButton('Remove',()=>sendNative({type:'draftAction',action:'remove',draftId:row.draftId})));body.append(acts)}
+ const totals=slipTotals(rows);if(rows.length>1&&totals){body.append(...riskReturn(formatSlipCents(totals.risk),formatSlipCents(totals.payout),null))}
  if(BetSlip.error)body.append(slipNode('p','slip-error',BetSlip.error));
  const actions=slipNode('div','slip-actions');actions.append(slipButton('Add another bet',browseMoreBets),slipButton(rows.length>1?'Place all · '+rows.length+' bets':'Place bet',()=>placeSlip(rows.map(d=>d.draftId)),true));body.append(actions);return body;
 }
@@ -66,7 +65,7 @@ window.renderBetOverlay=()=>{
  const overlay=document.getElementById('bet-overlay'),launcher=document.getElementById('bet-launcher');if(!overlay||!launcher)return;
  if(accountMode||design){overlay.hidden=launcher.hidden=true;return}
  const region=slipRegion();overlay.style.left=region.left+'px';overlay.style.top=region.top+'px';overlay.style.width=region.width+'px';overlay.style.height=region.height+'px';overlay.hidden=!BetSlip.open;
- if(BetSlip.open){const fresh=slipNode('section','slip-sheet');fresh.setAttribute('role','dialog');fresh.setAttribute('aria-label',BetSlip.mode==='compose'?'Bet controls':'Bet slip');fresh._paperKey=BetSlip.mode;fresh.append(BetSlip.mode==='compose'?composeBet():queuedBets());if(overlay.firstChild)Paper.morph(overlay.firstChild,fresh);else overlay.append(fresh)}else overlay.replaceChildren();
+ if(BetSlip.open){const fresh=slipNode('section','slip-sheet'+(BetSlip.mode==='queue'?' slip-queue-sheet':''));fresh.setAttribute('role','dialog');fresh.setAttribute('aria-label',BetSlip.mode==='compose'?'Bet controls':'Bet slip');fresh._paperKey=BetSlip.mode;fresh.append(BetSlip.mode==='compose'?composeBet():queuedBets());if(overlay.firstChild)Paper.morph(overlay.firstChild,fresh);else overlay.append(fresh)}else overlay.replaceChildren();
  launcher.hidden=!BetSlip.drafts.length||BetSlip.open;const totals=slipTotals(BetSlip.drafts),tabs=document.querySelector('nav[aria-label="Hunch pages"]');const bottom=tabs?.getBoundingClientRect().top||region.bottom;
  launcher.style.left=(region.left+18)+'px';launcher.style.width=Math.max(100,region.width-36)+'px';launcher.style.bottom=Math.max(8,innerHeight-bottom+8)+'px';
  const fresh=slipButton((BetSlip.drafts.length>1?'Bet slip · '+BetSlip.drafts.length+' bets':'Your bet')+(totals?' · Risk '+formatSlipCents(totals.risk):''),()=>{BetSlip.open=true;BetSlip.mode='queue';renderBetOverlay()},true);
@@ -101,3 +100,27 @@ function buildBatchSheet(){
 document.getElementById('bet-overlay')?.addEventListener('click',e=>{if(e.target===e.currentTarget)closeBetSheet()});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&BetSlip.open){e.preventDefault();closeBetSheet()}});
 window.refreshBetQuote=()=>{if(BetSlip.open&&BetSlip.mode==='compose'&&Hunch.selected&&!BetSlip.pending&&Date.now()-BetSlip.requestedAt>15000){BetSlip.requestedAt=Date.now();requestBook()}};
+
+// Capture on the stable overlay so quote refreshes cannot interrupt a handle drag.
+let slipDrag=null,slipDragged=false;
+const slipOverlay=document.getElementById('bet-overlay');
+slipOverlay?.addEventListener('pointerdown',e=>{
+ if(!e.target.closest('.slip-grab')||!e.isPrimary||e.button!==0)return;
+ slipDrag={id:e.pointerId,y:e.clientY,time:performance.now(),distance:0};slipDragged=false;
+ slipOverlay.setPointerCapture(e.pointerId);e.preventDefault();
+});
+slipOverlay?.addEventListener('pointermove',e=>{
+ if(!slipDrag||e.pointerId!==slipDrag.id)return;
+ slipDrag.distance=Math.max(0,e.clientY-slipDrag.y);slipDragged=slipDragged||Math.abs(e.clientY-slipDrag.y)>8;
+ const sheet=slipOverlay.firstElementChild;if(sheet){sheet.style.transition='none';sheet.style.transform='translateY('+slipDrag.distance+'px)'}
+});
+function finishSlipDrag(e,cancelled=false){
+ if(!slipDrag||e.pointerId!==slipDrag.id)return;
+ const {distance,time}=slipDrag;slipDrag=null;
+ if(slipOverlay.hasPointerCapture(e.pointerId))slipOverlay.releasePointerCapture(e.pointerId);
+ if(!cancelled&&(distance>=64||(distance>24&&distance/Math.max(1,performance.now()-time)>.5)))closeBetSheet();
+ else{const sheet=slipOverlay.firstElementChild;if(sheet){sheet.style.transition=matchMedia('(prefers-reduced-motion: reduce)').matches?'none':'transform .18s ease-out';sheet.style.transform=''}}
+}
+slipOverlay?.addEventListener('pointerup',e=>finishSlipDrag(e));
+slipOverlay?.addEventListener('pointercancel',e=>finishSlipDrag(e,true));
+slipOverlay?.addEventListener('click',e=>{if(slipDragged){e.preventDefault();e.stopImmediatePropagation();slipDragged=false}},true);

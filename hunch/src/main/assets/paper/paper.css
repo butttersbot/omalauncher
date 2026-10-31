@@ -143,3 +143,13 @@
 #bet-overlay{pointer-events:auto}
 
 .slip-table-scroll{max-height:clamp(110px,27vh,220px);overflow-y:auto;overscroll-behavior:contain}.slip-table-scroll .slip-table{margin-top:0}.slip-table-scroll th{position:sticky;top:0;background:#fdfdfb}
+
+/* Compact saved-bet slip: reclaimed header/copy space belongs to the list. */
+.slip-queue-sheet{overflow:hidden}.slip-queue-sheet:has(.slip-table-scroll){height:88%}
+.slip-queue{height:100%;display:flex;flex-direction:column;padding-top:0}
+.slip-content>.slip-grab{display:block;flex:none;align-self:center;width:72px;height:32px;min-height:32px;margin:0;padding:0;border:0;background:transparent;cursor:grab;touch-action:none}
+.slip-grab:after{content:'';display:block;width:44px;height:4px;margin:auto;background:#565964;border-radius:2px}
+.slip-grab:active{cursor:grabbing}.slip-grab:focus-visible{outline:2px solid #d7262d;outline-offset:-3px}
+.slip-queue .slip-table-scroll{flex:1;min-height:0;max-height:none}
+.slip-queue .risk-return,.slip-queue .slip-actions{flex:none}
+.slip-queue .slip-actions{margin-bottom:0}

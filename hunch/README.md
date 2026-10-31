@@ -1,4 +1,4 @@
-> Current development checkpoint: **0.9.0 / code19**, emulator-tested bottom
+> Current development checkpoint: **0.9.1 / code20**, emulator-tested bottom
 > sheet, saved multi-bet table and one-confirmation place-all:
 > [details](../docs/hunch/bet-slip.md). Includes the earlier
 > [discovery and pane fixes](../docs/hunch/discovery-fixes.md).

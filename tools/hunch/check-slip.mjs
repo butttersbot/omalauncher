@@ -32,7 +32,7 @@ find('Add another bet').click();w.choose(w.Hunch.rows[1]);await pause();w.BetSli
 const b={draftId:'second',key:'3:1',marketId:'3',title:'Fictional second event',label:'No',side:1,budget:'10.00',estimatedPayout:'15.00',quotedAt:Date.now()};
 await w.receiveNative({type:'drafts',rows:[a,b],error:''});await pause();w.document.querySelector('#bet-launcher button').click();
 assert.equal(w.document.querySelectorAll('#bet-overlay tbody tr').length,2);assert.match(w.document.querySelector('#bet-overlay').textContent,/\$30\.00/);assert.match(w.document.querySelector('#bet-overlay').textContent,/\$55\.00/);
-assert.match(w.document.querySelector('#bet-overlay').textContent,/not a parlay/);
+assert.equal(w.document.querySelector('#bet-overlay .slip-header'),null);assert.ok(w.document.querySelector('.slip-grab'));assert.equal(w.document.querySelector('#bet-overlay .slip-note'),null);
 find('Place all · 2 bets').click();assert.equal(posts.at(-1).type,'placeBets');assert.deepEqual(posts.at(-1).ids,['first','second']);
 const values=w.slipTotals([{budget:'0.10',estimatedPayout:'0.20'},{budget:'0.20',estimatedPayout:'0.40'}]);assert.equal(w.formatSlipCents(values.risk),'$0.30');assert.equal(w.slipMoney('19.99000001',true),'$20.00');
 await w.showBatch({phase:'review',busy:false,demo:true,network:1,drafts:[a,b],orders:[{...a,risk:'19.99000001',payout:'39',fees:'0.01',shares:'39'},{...b,risk:'9.99',payout:'14',fees:'0.01',shares:'14'}],results:[],wallet:'0x'+'1'.repeat(40),message:'Native review'});w.Paper.render();
