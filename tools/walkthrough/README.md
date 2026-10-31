@@ -73,8 +73,8 @@ own (`emu_pool.py`), walks, and gives it back, even if the walk crashes. Two wal
   has only the base image's copy. `--push LOCAL:DEVICE` for a fixture file.
 - **It starts clean.** Each claim boots a new APFS copy of one base image, and the copy is deleted at the end. Nothing a walk
   changes can reach another. A walk starts on the cover, upright, at home.
-- **No room:** it waits (45 minutes at most, then exit 3: `Walk not run`, no verdict on the app). Or, if the other Mac can
-  take it, the whole walk goes there and its output comes back.
+- **No room** (the Mac's CPU, emulator or boot limit): it waits and says why (45 minutes at most, then exit 3: `Walk not run`,
+  no verdict on the app). Or, if the other Mac can take it, the whole walk goes there and its output comes back.
 - **Naming one:** `--serial emulator-5554` takes that one as it is, under its lock, and waits for it. `walks.lock` and the
   other old locks still hold; a script that already holds the lock isn't made to wait for itself.
 - **More than a walk** (prepare by hand, look at it after a FAIL): `tools/oma-emu claim --minutes 30` prints a serial, then

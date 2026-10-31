@@ -27,9 +27,10 @@ SOMA_IME = "dev.omalauncher.boss/dev.omalauncher.keyboard.OmaKeyboardService"
 SOMA_HOME = "dev.omalauncher.boss/dev.omalauncher.MainActivity"
 BOOT_SECONDS = 300
 WAIT_SECONDS = 2700
-# Emulators running on this Mac, of anyone's, that the pool will start up to (docs/EMULATOR.md has the measurement), and
-# the Mac a walk may go to when this one is full.
-MACHINES = {"jacks-mac-pro": {"cap": 8, "peer": "macbook-pro"}, "macbook-pro": {"cap": 4, "peer": "jacks-mac-pro"}}
+# Boss: never load one machine so much that it slows down the rest of that computer. A new emulator starts only under
+# "busy" percent of CPU, and up to "cap" running of anyone's (docs/EMULATOR.md has the measurements); what runs is never
+# stopped for this. "peer" is the Mac a walk may go to when this one is at its limit.
+MACHINES = {"jacks-mac-pro": {"cap": 8, "busy": 60, "peer": "macbook-pro"}, "macbook-pro": {"cap": 3, "busy": 40, "peer": "jacks-mac-pro"}}
 # netsimd, the Mac's one simulated radio daemon, reset all its clients with 11 emulators up, and that crashes them, pool or
 # not (2026-10-30, 18:20). No walk needs its radios; the network stays, through the emulator's own Wi-Fi path.
 NO_NETSIM = ["-feature", "-WiFiPacketStream,-BluetoothEmulation,-Uwb,-NetsimWebUi,-NetsimCliUi"]
@@ -43,11 +44,15 @@ class NoEmulator(RuntimeError):
 
 def machine():
     name = socket.gethostname().split(".")[0].lower()
-    return MACHINES.get(name, {"cap": 2, "peer": None})
+    return MACHINES.get(name, {"cap": 2, "busy": 50, "peer": None})
 
 
 def cap():
     return int(os.environ.get("SOMA_EMU_CAP") or machine()["cap"])
+
+
+def busy_limit():
+    return int(os.environ.get("SOMA_EMU_BUSY") or machine()["busy"])
 
 
 def peer():
@@ -214,6 +219,11 @@ def named(serial, who, seconds=WAIT_SECONDS):
         lock = wait_lock(path, who, seconds, serial)
     if lock:
         record(lock, who)
+        # A boot is the spike (about 3 cores for 20 s): one at a time, and the kernel lets go if this claim dies.
+        booting = try_lock(os.path.join(pool_dir(), "booting.lock"))
+        if not booting:
+            lock.seek(0); lock.truncate(); lock.close()
+            return None, BOOTING
     inner = wait_lock(path + ".walking", who, seconds, serial + " (another walk of yours)")
     record(inner, who)
     return Claim(serial, lock=lock, inner=inner, note="named")
@@ -242,11 +252,34 @@ def disk_free_gb():
     return shutil.disk_usage(AVD_ROOT).free / 2 ** 30
 
 
+def cpu_ticks():
+    """(busy, all) CPU ticks since boot, as herd's cpu_percent reads them."""
+    import ctypes
+    libc = ctypes.CDLL(None)
+    ticks, count = (ctypes.c_uint * 4)(), ctypes.c_uint(4)  # user, system, idle, nice
+    if libc.host_statistics(libc.mach_host_self(), 3, ticks, ctypes.byref(count)):  # HOST_CPU_LOAD_INFO
+        return None
+    return ticks[0] + ticks[1] + ticks[3], sum(ticks)
+
+
+def cpu_percent(seconds=2):
+    """Of all cores, over a couple of seconds; 0 if this Mac doesn't say (the emulator count still limits it)."""
+    before = cpu_ticks()
+    time.sleep(seconds)
+    after = cpu_ticks()
+    if not before or not after or after[1] <= before[1]:
+        return 0
+    return round(100 * (after[0] - before[0]) / (after[1] - before[1]))
+
+
 def no_room():
     """Why this Mac shouldn't start another emulator now, or ''."""
     running = len(emulators())
     if running >= cap():
         return "%d emulators running, this Mac's limit" % running
+    busy = cpu_percent()
+    if busy >= busy_limit():
+        return "CPU at %d%%, this Mac's limit is %d%%" % (busy, busy_limit())
     if memory_free_gb() < ROOM_MEMORY_GB:
         return "under %d GB of memory free" % ROOM_MEMORY_GB
     if disk_free_gb() < ROOM_DISK_GB:
@@ -385,6 +418,9 @@ def watch(n):
         time.sleep(0.2)
 
 
+BOOTING = "another emulator is booting"
+
+
 def port_taken(port):
     """Someone else's emulator can sit in the pool's ports: adb's automatic ones overlap them."""
     with socket.socket() as s:
@@ -412,8 +448,14 @@ def try_slot(who, skip=()):
         if not lock:
             return None, "all %d slots taken" % SLOTS
         record(lock, who)
+        # A boot is the spike (about 3 cores for 20 s): one at a time, and the kernel lets go if this claim dies.
+        booting = try_lock(os.path.join(pool_dir(), "booting.lock"))
+        if not booting:
+            lock.seek(0); lock.truncate(); lock.close()
+            return None, BOOTING
         why = no_room()
         if why:
+            booting.close()
             lock.seek(0); lock.truncate(); lock.close()
             return None, why
         pipe = start_watcher(n)
@@ -429,10 +471,11 @@ def try_slot(who, skip=()):
         except Exception:
             os.write(pipe, b"released\n"); os.close(pipe)
             stop_slot(n)
+            booting.close()
             lock.close()
             raise
     claim = Claim("emulator-%d" % port, avd=avd_name(n), lock=lock, slot=n, pipe=pipe)
-    claim.process, claim.log_path = process, log_path
+    claim.process, claim.log_path, claim.booting = process, log_path, booting
     return claim, ""
 
 
@@ -449,9 +492,11 @@ def claim(who, seconds=WAIT_SECONDS, when_full=None):
             try:
                 wait_boot(got.serial, got.process, got.log_path)
                 make_ready(got.serial)
+                got.booting.close()
                 got.note = "%s, fresh in %d s" % (got.avd, time.monotonic() - started)
                 return got
             except Exception as e:
+                got.booting.close()
                 bad.add(got.slot)
                 got.release()
                 failures += 1
@@ -459,17 +504,17 @@ def claim(who, seconds=WAIT_SECONDS, when_full=None):
                     raise NoEmulator(str(e))
                 say("%s; trying again" % e)
                 continue
-        if when_full and time.monotonic() >= next_ask:
+        if when_full and why != BOOTING and time.monotonic() >= next_ask:
             result = when_full()
             if result is not None:
                 return result
             next_ask = time.monotonic() + 60
-        if not told:
+        if not told and why != BOOTING:
             say("no emulator free yet (%s): waiting" % why)
             told = True
         if time.monotonic() - started > seconds:
             raise NoEmulator("no emulator free after %d minutes (%s)" % (seconds // 60, why))
-        time.sleep(2)
+        time.sleep(1)
 
 
 # ---- what goes on it

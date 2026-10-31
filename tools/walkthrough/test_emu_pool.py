@@ -56,6 +56,25 @@ class Slots(Base):
             with self.assertRaisesRegex(pool.NoEmulator, "6 emulators running"):
                 pool.claim("test", seconds=0, when_full=lambda: None)
 
+    def test_a_busy_mac_starts_nothing_and_builds_are_not_touched(self):
+        for name, value in dict(emulators=lambda: [], memory_free_gb=lambda: 100, disk_free_gb=lambda: 100).items():
+            p = patch.object(pool, name, value); p.start(); self.addCleanup(p.stop)
+        with patch.dict(os.environ, {"SOMA_EMU_BUSY": "60"}):
+            with patch.object(pool, "cpu_percent", lambda: 61):
+                self.assertIn("CPU at 61%", pool.no_room())
+            with patch.object(pool, "cpu_percent", lambda: 59):
+                self.assertEqual(pool.no_room(), "")
+
+    def test_a_boot_in_progress_makes_the_next_wait_without_going_to_the_other_mac(self):
+        fake_machine(self)
+        asked = []
+        booting = pool.try_lock(os.path.join(pool.pool_dir(), "booting.lock"))
+        with self.assertRaises(pool.NoEmulator):
+            pool.claim("test", seconds=0, when_full=lambda: asked.append(1))
+        self.assertEqual(asked, [])
+        booting.close()
+        self.assertTrue(pool.claim("test", seconds=0).serial)
+
     def test_a_slot_that_will_not_boot_is_tried_once_more(self):
         fake_machine(self)
         tries = []

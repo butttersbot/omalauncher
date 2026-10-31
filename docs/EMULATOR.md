@@ -64,14 +64,23 @@ steps, all at the same moment):
 | 6 | 8 | 22-29 | 95-98 | 0 | 35% |
 | 9, on netsimd | 11 | 27-35 | - | crashed | - |
 
-So the Mac Pro's limit is **8 emulators up, anyone's**: about 8% slower than alone, with 8 of 24 cores left for builds and agents.
-Over 8 was not tried again without netsimd, so the machine may take more. A claim also waits with
-under 20 GB of memory or 15 GB of disk free. The Mac Pro had 98 GB of its 926 GB free on 2026-10-30.
-The MacBook Pro (M5 Max, 18 cores, 128 GB, 1.2 TB free) is set to 4, by proportion: not measured under load.
+**What one costs** (one emulator, `agents-page`): Mac Pro: boot 24 s (71 CPU-seconds, so about 3 cores), 8.5 GB of memory,
+about 2 cores while up, walk 88 s. MacBook Pro: boot 13 s (41 CPU-seconds), 8.5 GB, about 1.5 cores, walk 76 s. One left awake at
+home keeps 2 cores busy (Soma's home draws all the time); asleep, 1.
+
+**The limits.** Boss: never load one machine so much that it slows down the rest of that computer. A new emulator starts only if:
+- CPU is under **60%** on the Mac Pro, **40%** on the MacBook Pro (read over 2 s);
+- under **8** emulators are up on the Mac Pro, **3** on the MacBook Pro, anyone's;
+- no other is booting on that Mac: a boot is the spike;
+- 20 GB of memory and 15 GB of disk are free.
+
+Nothing running is ever paused for this. Builds always start at once on the Mac Pro's lanes; they raise the CPU, so new walks wait for
+them and not the other way round. Over 8 up was not tried again without netsimd. The MacBook's limits are set by proportion, not
+measured under load. The Mac Pro had 94 GB of its 926 GB free on 2026-10-30.
 
 **The MacBook Pro as overflow.** When the Mac Pro is full, walk.py asks it (and again each minute while waiting). All of a walk
 can run there: walk.py, the script, the builds and the fixtures are sent, the output comes back. What can't:
-- It takes nothing while **on battery** (`SOMA_EMU_OVERFLOW_BATTERY=1` overrides), or asleep, or full: the walk waits on the Mac Pro.
+- It takes nothing while **on battery**, or over its CPU limit (`SOMA_EMU_OVERFLOW_BATTERY=1` overrides), asleep, or at its limits: the walk waits on the Mac Pro.
 - `oma-emu claim` stays on the Mac it ran on: its later adb steps need that Mac.
 - With the **Mac Pro down**, overflow can't help a walk started on it. A thread on the MacBook walks on the MacBook's own pool
   and overflows the other way; phone builds wait for the Mac Pro, since soma-macbuild runs there.

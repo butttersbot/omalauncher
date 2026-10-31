@@ -174,8 +174,54 @@ def soma_look():
     return _look['value']
 
 
+CPU_SEEN = None  # (when, busy ticks, all ticks, the percent then)
+
+
+def cpu_ticks():
+    """(busy, all) CPU ticks since boot. Android usually keeps /proc/stat's counters from apps: then none, and no cpu_percent."""
+    try:
+        values = [int(v) for v in open('/proc/stat').readline().split()[1:9]]
+        return (sum(values) - values[3] - values[4], sum(values)) if sum(values) else None  # idle and iowait aren't busy
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+def cpu_percent():
+    """Of all cores, since the last look (a poll's length), or over a quarter second on the first; a second's cache."""
+    global CPU_SEEN
+    now = time.monotonic()
+    if CPU_SEEN and now - CPU_SEEN[0] < 1:
+        return CPU_SEEN[3]
+    before = CPU_SEEN[1:3] if CPU_SEEN else cpu_ticks()
+    if not before:
+        return None
+    if not CPU_SEEN:
+        time.sleep(.25)
+    after = cpu_ticks()
+    if not after or after[1] <= before[1]:
+        return None
+    percent = max(0, min(100, round(100 * (after[0] - before[0]) / (after[1] - before[1]))))
+    CPU_SEEN = (time.monotonic(), after[0], after[1], percent)
+    return percent
+
+
+def ram_mb():
+    """(used, total), used as `free` means it: without what the system would give back."""
+    try:
+        info = {line.split(':')[0]: int(line.split()[1]) for line in open('/proc/meminfo')}
+        return (info['MemTotal'] - info['MemAvailable']) // 1024, info['MemTotal'] // 1024
+    except (OSError, KeyError, ValueError, IndexError):
+        return None
+
+
 def machine():
     info = {'host': HOST_NAME, 'os': 'android', 'herd': VERSION}
+    percent = cpu_percent()
+    if percent is not None:
+        info['cpu_percent'] = percent
+    ram = ram_mb()
+    if ram:
+        info['ram_used_mb'], info['ram_total_mb'] = ram
     look = soma_look()
     if look:
         info['soma'] = look

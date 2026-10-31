@@ -265,6 +265,21 @@ if [ ${#walks[@]} -gt 0 ]; then
       [ "$w" = mac-refusal ] || continue
       ./gradlew --console=plain :chat:desktopTest --tests dev.omalauncher.oma.ChatScreenRenderTest >"$wdir/mac-refusal-fixture.log" 2>&1 || refusal_ready=0
     done
+    # All at once: the pool starts each when this Mac has room, so they queue there, not here.
+    walk_one() { # WALK SCRIPT walk.py's other arguments
+      local w=$1 script=$2 who="lane ${lane:-main} ${commit:0:9} $1" rc; shift 2
+      python3 tools/walkthrough/walk.py "$script" --out "$wdir/$w" --who "$who" "$@" > "$wdir/$w.log" 2>&1
+      rc=$?
+      # The emulator itself fell over mid-walk: that is no verdict on the app, so walk this once more on a fresh one.
+      if grep -q "device 'emulator-[0-9]*' not found" "$wdir/$w.log"; then
+        echo "  ($w: the emulator stopped mid-walk; walked again)" >>"$wdir/restarts.txt"
+        rm -rf "$wdir/$w"
+        python3 tools/walkthrough/walk.py "$script" --out "$wdir/$w" --who "$who" "$@" > "$wdir/$w.log" 2>&1
+        rc=$?
+      fi
+      echo "$rc" > "$wdir/$w.rc"
+    }
+    running=(); walked=()
     line="Walks on the emulators:"
     for w in "${walks[@]}"; do
       script=tools/walkthrough/scripts/$w.walk
@@ -279,18 +294,12 @@ if [ ${#walks[@]} -gt 0 ]; then
         if [ "$refusal_ready" -ne 1 ]; then line="$line $w FAIL (fixture build; see mac-refusal-fixture.log);"; echo "$w FAIL (fixture build; see mac-refusal-fixture.log)" >>"$wdir/verdicts.txt"; continue; fi
         needs+=(--push chat/build/render/mac-refusal.json:/data/local/tmp/mac-refusal.json)
       fi
-      who="lane ${lane:-main} ${commit:0:9} $w"
-      python3 tools/walkthrough/walk.py "$script" --out "$wdir/$w" --who "$who" "${needs[@]}" > "$wdir/$w.log" 2>&1
-      rc=$?
-      # The emulator itself fell over mid-walk: that is no verdict on the app, so walk this once more on a fresh one.
-      if grep -q "device 'emulator-[0-9]*' not found" "$wdir/$w.log"; then
-        echo "  ($w: the emulator stopped mid-walk; walked again)" >>"$wdir/restarts.txt"
-        rm -rf "$wdir/$w"
-        python3 tools/walkthrough/walk.py "$script" --out "$wdir/$w" --who "$who" "${needs[@]}" > "$wdir/$w.log" 2>&1
-        rc=$?
-      fi
-      verdict "$w" "$rc"
+      walk_one "$w" "$script" "${needs[@]}" &
+      running+=("$!"); walked+=("$w")
     done
+    # By pid: a bare wait would also wait for this script's lock holders, which end only with it.
+    if [ ${#running[@]} -gt 0 ]; then for p in "${running[@]}"; do wait "$p"; done; fi
+    if [ ${#walked[@]} -gt 0 ]; then for w in "${walked[@]}"; do verdict "$w" "$(cat "$wdir/$w.rc" 2>/dev/null || echo 1)"; done; fi
     echo "${line%;} ($(( $(date +%s) - started )) s)." | tee -a "$wdir/summary.txt"
     grep -h '^FAIL' "$wdir"/*.log | sed 's/^/  /' | tee -a "$wdir/summary.txt"
     echo "$commit" > "$state/walked-commit"
