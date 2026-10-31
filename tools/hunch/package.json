@@ -4,7 +4,7 @@
   },
   "private": true,
   "scripts": {
-    "test": "node check-paper.mjs"
+    "test": "node check-paper.mjs && node check-slip.mjs"
   },
   "name": "hunch-paper-check"
 }

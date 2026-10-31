@@ -80,6 +80,42 @@ internal class OrderJournal(private val file: File) : java.io.Closeable {
         persistOrRollback(id, null)
         return row.copy(ticket = JSONObject(row.ticket.toString()))
     }
+    /** A batch is durable as one mutation, with one cloid per order and one shared signed envelope. */
+    @Synchronized fun reviewBatch(tickets:List<OrderTicket>,draftIds:List<String>,now:Long):List<JournalOrder> {
+        usable();require(tickets.isNotEmpty()&&tickets.size<=20&&tickets.size==draftIds.size&&draftIds.distinct().size==draftIds.size)
+        require(tickets.all{it.fresh(now)}&&tickets.map{it.wallet}.distinct().size==1&&tickets.map{it.testnet}.distinct().size==1&&tickets.map{it.reviewedAt}.distinct().size==1)
+        check(rows.values.none{it.stage in setOf(OrderStage.Signing,OrderStage.Submitting,OrderStage.Unknown,OrderStage.Resting)}){"Check previous order status before placing more bets"}
+        check(rows.values.none{it.ticket.optString("draftId") in draftIds && (it.ticket.optBoolean("submittedBatch") || it.stage !in setOf(OrderStage.Cancelled,OrderStage.Reviewed))}){"A bet in this slip was already submitted; check its status"}
+        check(rows.size+tickets.size<=1000){"Archive reconciled orders before continuing"}
+        val batch=UUID.randomUUID().toString()
+        val added=tickets.mapIndexed {i,t->val id=UUID.randomUUID().toString();JournalOrder(id,"0x"+id.replace("-",""),OrderStage.Reviewed,ticketJson(t).put("batchId",batch).put("draftId",draftIds[i]),now,null)}
+        added.forEach{rows[it.id]=it};try{save()}catch(e:Exception){failed=true;added.forEach{rows.remove(it.id)};throw e}
+        return added.map{it.copy(ticket=JSONObject(it.ticket.toString()))}
+    }
+    @Synchronized fun beginBatch(batch:String,now:Long):List<JournalOrder> = batchMutation(batch){group->
+        require(group.all{it.stage==OrderStage.Reviewed&&now>=it.ticket.getLong("reviewedAt")&&now-it.ticket.getLong("reviewedAt")<=30000}){"Review expired"}
+        check(rows.values.none{it.ticket.optString("batchId")!=batch&&it.stage in setOf(OrderStage.Signing,OrderStage.Submitting,OrderStage.Unknown,OrderStage.Resting)})
+        group.map{it.copy(stage=OrderStage.Signing,updated=now,ticket=JSONObject(it.ticket.toString()).put("nonce",now).put("expiresAfter",it.ticket.getLong("reviewedAt")+30000))}
+    }
+    @Synchronized fun submitBatch(batch:String,now:Long):List<JournalOrder> = batchMutation(batch){group->
+        require(group.all{it.stage==OrderStage.Signing&&now>=it.ticket.getLong("reviewedAt")&&now<=it.ticket.getLong("expiresAfter")}){"Review expired"}
+        group.map{it.copy(stage=OrderStage.Submitting,updated=now,ticket=JSONObject(it.ticket.toString()).put("submittedBatch",true))}
+    }
+    @Synchronized fun finishBatch(batch:String,results:List<Pair<OrderStage,String?>>,now:Long,details:List<JSONObject?> = emptyList()):List<JournalOrder> = batchMutation(batch){group->
+        require(results.size==group.size&&group.all{it.stage==OrderStage.Submitting}&&(details.isEmpty()||details.size==group.size))
+        group.mapIndexed{i,row->require(results[i].first in setOf(OrderStage.Filled,OrderStage.Rejected,OrderStage.Resting,OrderStage.Cancelled,OrderStage.Unknown));val ticket=JSONObject(row.ticket.toString());val filled=details.getOrNull(i)?.optJSONObject("filled")
+            if(results[i].first==OrderStage.Filled&&filled!=null){ticket.put("filledSz",filled.getString("totalSz")).put("fillAvgPx",filled.getString("avgPx"))}
+            row.copy(stage=results[i].first,venueId=results[i].second,updated=maxOf(now,row.updated),ticket=ticket)}
+    }
+    @Synchronized fun abandonBatch(batch:String,now:Long):List<JournalOrder> = batchMutation(batch){group->
+        group.map{row->row.copy(stage=when(row.stage){OrderStage.Reviewed,OrderStage.Signing->OrderStage.Cancelled;OrderStage.Submitting->OrderStage.Unknown;else->row.stage},updated=maxOf(now,row.updated))}
+    }
+    private fun batchMutation(batch:String,operation:(List<JournalOrder>)->List<JournalOrder>):List<JournalOrder> {
+        usable();val old=rows.values.filter{it.ticket.optString("batchId")==batch};require(batch.isNotBlank()&&old.isNotEmpty())
+        val next=operation(old);require(next.size==old.size&&next.map{it.id}==old.map{it.id})
+        next.forEach{rows[it.id]=it};try{save()}catch(e:Exception){failed=true;old.forEach{rows[it.id]=it};throw e}
+        return next.map{it.copy(ticket=JSONObject(it.ticket.toString()))}
+    }
     /** Record the owner-confirmed cancel attempt before its signature/HTTP; the original stays unresolved. */
     @Synchronized fun beginCancel(id:String, now:Long, expiresAfter:Long=now+30_000):JournalOrder {
         usable();val old=checkNotNull(rows[id]);require(old.stage==OrderStage.Resting && expiresAfter>=now && expiresAfter-now<=30_000)

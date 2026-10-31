@@ -17,7 +17,7 @@ window.HunchSdk = {
     transport:{isTestnet:ticket.testnet,request:(endpoint,body)=>{if(endpoint!=='exchange')throw new Error('Unexpected SDK route');return rpc('tradeSubmit',{id:ticket.id,body});}}};
    const opts={expiresAfter:ticket.expiresAfter};
    if(ticket.cancel)await cancelByCloid(config,{cancels:[{asset:ticket.asset,cloid:ticket.cloid}]},opts);
-   else await order(config,{orders:[{a:ticket.asset,b:ticket.buy,p:ticket.price,s:ticket.shares,r:false,t:{limit:{tif:ticket.tif}},c:ticket.cloid}],grouping:'na'},
+   else await order(config,{orders:(ticket.orders||[ticket]).map(item=>({a:item.asset,b:item.buy,p:item.price,s:item.shares,r:false,t:{limit:{tif:item.tif}},c:item.cloid})),grouping:'na'},
     opts);
   }catch(e){window.SomaHunch.post(JSON.stringify({type:'tradeFailed',id:ticket.id,message:String(e.message||e)}));}
   finally{active=false;}

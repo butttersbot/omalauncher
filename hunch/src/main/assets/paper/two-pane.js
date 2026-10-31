@@ -26,12 +26,8 @@ function paneSlip(upright=false){
  const label=paneNode('span','rtab on mk');label.append(paneNode('span','',m.title));tabs.append(label);if(upright){const art=paneNode('div','cvart');art.innerHTML=HUNCH_STADIUM;art.append(paneNode('span','tag',m.category+' · PUBLIC MARKET'));fragment.append(tabs,art)}else fragment.append(tabs);tabs.append(watchButton(m));
  const inner=paneNode('div','inner');inner.append(paneNode('div','kicker',m.category+' · '+m.venue+' · '+m.date),paneNode('h2','h1',m.title));
  const received=Hunch.book,b=received&&(!received.valid||Date.now()-received.time<=60000)?received:null;
- const sides=paneNode('div','sides');m.sides.forEach((name,i)=>{const quoted=i===Hunch.side&&b?.valid;const button=paneButton('','sidebtn'+(Hunch.side===i?' on':''),()=>{Hunch.side=i;requestBook();Paper.schedule()});button.setAttribute('aria-pressed',String(Hunch.side===i));button.append(paneNode('b','',name),paneNode('span','c',detailPrice(i)),paneNode('small','',detailStatus(i)));sides.append(button)});inner.append(sides);
- const amounts=paneNode('div','putin');amounts.append(paneNode('span','','PUT IN'));[5,10,20,50].forEach(amt=>{const b=paneButton('$'+amt,'amt'+(amt===Hunch.budget?' on':''),()=>{Hunch.budget=amt;requestBook();Paper.schedule()});b.setAttribute('aria-pressed',String(amt===Hunch.budget));amounts.append(b)});inner.append(amounts);
- inner.append(paneNode('div','payout','$'+Hunch.budget+' → '+(b?.valid?b.payout:'—')));
- const status=b?.valid?(b.complete?'Full preview at current depth.':'Partial fill at current depth.'):b?'No verified executable quote.':received?'Quote expired. Refresh preview.':'Loading live order book…';
- inner.append(paneNode('p','cap',status+' Depth preview only; this does not place an order.'));
- inner.append(paneButton('REVIEW AN ORDER','place',()=>sendNative({type:'trade',id:Hunch.selected.id,side:Hunch.side})),paneButton('READ ONLY · REFRESH','refresh',()=>{requestBook();Paper.schedule()}),paneNode('p','after','Opening the order ticket sends nothing. Review your exact size, then Confirm to sign.'));
+ const sides=paneNode('div','sides');m.sides.forEach((name,i)=>{const quoted=i===Hunch.side&&b?.valid;const button=paneButton('','sidebtn'+(Hunch.side===i?' on':''),()=>openBet(i));button.setAttribute('aria-pressed',String(Hunch.side===i));button.append(paneNode('b','',name),paneNode('span','c',detailPrice(i)),paneNode('small','',detailStatus(i)));sides.append(button)});inner.append(sides);
+ // Shared bottom sheet opens from each outcome button.
  inner.append(paneNode('p','market-volume','24H VOLUME '+dollars(marketVolume(m))+' · ASK DEPTH '+m.sides.map((name,i)=>name+' '+dollars(detailQuote(i)?.depth==null?null:Number(detailQuote(i).depth))).join(' / ')));
  const rules=paneNode('section','box');rules.append(paneNode('h4','','HOW IT SETTLES'));termEntries(m.terms).forEach(([k,v])=>rules.append(paneNode('p','',k+': '+v)));inner.append(rules);fragment.append(inner);return fragment;
 }

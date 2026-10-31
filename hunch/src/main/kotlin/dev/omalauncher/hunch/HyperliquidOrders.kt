@@ -40,6 +40,25 @@ internal class HyperliquidOrders(val testnet: Boolean) {
             require(order.getJSONObject("t").getJSONObject("limit").getString("tif")==ticket.timeInForce)
             require(body.getLong("nonce")==nonce && body.getLong("expiresAfter")==ticket.reviewedAt+30_000 && body.isNull("vaultAddress"))
         }
+        fun validateBatch(body:JSONObject,tickets:List<OrderTicket>,rows:List<JournalOrder>,nonce:Long){
+            require(tickets.isNotEmpty()&&tickets.size==rows.size&&tickets.size<=20)
+            val action=body.getJSONObject("action");val orders=action.getJSONArray("orders")
+            require(action.getString("type")=="order"&&action.getString("grouping")=="na"&&!action.has("builder")&&orders.length()==tickets.size)
+            tickets.forEachIndexed{i,ticket->
+                val one=JSONObject(body.toString());one.getJSONObject("action").put("orders",org.json.JSONArray().put(orders.getJSONObject(i)))
+                validate(one,ticket,rows[i].cloid,nonce)
+            }
+        }
+        fun batchStages(reply:JSONObject,tickets:List<OrderTicket>):List<Pair<OrderStage,String?>> {
+            if(reply.optString("status")=="err")return tickets.map{OrderStage.Rejected to null}
+            val statuses=reply.optJSONObject("response")?.optJSONObject("data")?.optJSONArray("statuses")
+            if(reply.optString("status")!="ok"||reply.optJSONObject("response")?.optString("type")!="order"||statuses?.length()!=tickets.size)return tickets.map{OrderStage.Unknown to null}
+            return tickets.mapIndexed {i,ticket->runCatching{
+                val item=statuses.getJSONObject(i)
+                if(item.has("filled")){val fill=item.getJSONObject("filled");val size=fill.getString("totalSz").toBigDecimal();val price=fill.getString("avgPx").toBigDecimal();require(size>BigDecimal.ZERO&&size<=ticket.shares&&price>BigDecimal.ZERO&&price<=ticket.limitPrice)}
+                replyStage(JSONObject().put("status","ok").put("response",JSONObject().put("type","order").put("data",JSONObject().put("statuses",org.json.JSONArray().put(item)))))
+            }.getOrElse{OrderStage.Unknown to null}}
+        }
         fun validateCancel(body:JSONObject,ticket:OrderTicket,cloid:String,nonce:Long) {
             val action=body.getJSONObject("action");val cancels=action.getJSONArray("cancels")
             require(action.getString("type")=="cancelByCloid" && cancels.length()==1 && !action.has("orders"))

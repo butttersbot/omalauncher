@@ -1,5 +1,5 @@
  'use strict';
-const design=new URLSearchParams(location.search).get('design');let accountMode=(new URLSearchParams(location.search).has('account')||new URLSearchParams(location.search).has('wallet')),started=false;
+const design=new URLSearchParams(location.search).get('design'),batchMode=new URLSearchParams(location.search).has('batch');let accountMode=(batchMode||new URLSearchParams(location.search).has('account')||new URLSearchParams(location.search).has('wallet')),started=false;
 window.paperError=e=>{console.error(e);notice('This page could not be drawn. Return to markets and try again.')};
 async function reference(name){document.body.classList.add('reference');document.getElementById('reference').hidden=false;await Paper.show(name);Paper.active.autoHeight=name==='TodayFeed';Paper.active.fitHeight=name!=='TodayFeed';Paper.fit();if(!document.querySelector('.paper-preview-tools')){const bar=document.createElement('div');bar.className='paper-preview-tools';const select=document.createElement('select');select.setAttribute('aria-label','Design reference page');const pages=await(await fetch('pages.json')).json();pages.forEach(p=>{const o=document.createElement('option');o.value=p.name;o.textContent=p.name;o.selected=p.name===name;select.append(o)});select.onchange=()=>reference(select.value);bar.append(select);document.getElementById('reference').append(bar)}document.querySelector('.paper-preview-tools select').value=name;ribbonSize();Paper.fit()}
 function ribbonSize(){const h=document.getElementById('reference').getBoundingClientRect().height;document.body.style.setProperty('--ribbon-height',h+'px')}
@@ -7,6 +7,8 @@ document.getElementById('leave-reference').onclick=()=>sendNative({type:design?'
 document.addEventListener('click',e=>{const a=e.target.closest('a[href]');if(!a)return;e.preventDefault();const match=/([A-Za-z]+)\.dc\.html/.exec(a.getAttribute('href'));if(design&&match)reference(match[1]);else notice('This action is not connected yet.')});
 window.receiveNative=async data=>{try{
  if(data.type==='config'){if(started)return;started=true;Hunch.chapter=data.chapter||'today';if(design)await reference(design);else{if(data.fixture){document.body.classList.add('reference');const ribbon=document.getElementById('reference');ribbon.hidden=false;ribbon.firstChild.nodeValue=data.fixture==='demo'?'FICTIONAL MARKET DEMO · NO REAL MONEY ':'OFFLINE TEST · NO REAL MONEY ';document.getElementById('leave-reference').textContent='CLOSE DEMO';ribbonSize()}await showLive()}}
+ if(data.type==='drafts')receiveBetDrafts(data);
+ if(data.type==='batch'){accountMode=true;await showBatch(data)}
  if(data.type==='watchlist'){Hunch.watchlist=data.ids||[];Paper.schedule()}
  if(data.type==='volumes'){Hunch.volumes=Object.fromEntries((data.rows||[]).map(v=>[v.id,v]));Hunch.volumesLoaded=true;Hunch.volumeError=data.error;Paper.schedule()}
  if(data.type==='markets'){Hunch.rows=data.rows;Hunch.updated=data.updated;Hunch.error=false;Paper.schedule()}
@@ -17,8 +19,9 @@ window.receiveNative=async data=>{try{
  if(data.type==='auth'){accountMode=true;clearTimeout(resizeTimer);await showAccount(data)}
  }catch(e){paperError(e)}};
 let resizeTimer;window.paperResize=()=>{ribbonSize();Paper.fit();if(accountMode){const field=document.activeElement;if(field?.tagName==='INPUT')requestAnimationFrame(()=>field.scrollIntoView({block:'center'}));return}if(!design&&!accountMode){clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>{if(!accountMode){if(Hunch.layoutWide===(window.innerWidth>=600))Paper.render();else showLive()}},150)}};
-window.paperBack=()=>{if(design||accountMode)return false;if(Hunch.selected){Hunch.selected=null;showLive();return true}if(Hunch.chapter!=='today'){route('today');return true}return false};
+window.paperBack=()=>{if(design||accountMode)return false;if(BetSlip.open){closeBetSheet();return true;}if(Hunch.selected){Hunch.selected=null;showLive();return true}if(Hunch.chapter!=='today'){route('today');return true}return false};
+if(batchMode){const sdk=document.createElement('script');sdk.src='exchange-sdk.js';sdk.onload=()=>sendNative({type:'tradeReady'});document.head.append(sdk)}
 sendNative({type:'ready'});
 
 // Expired depth must disappear even while the owner leaves the page open.
-setInterval(()=>{window.requestListingQuotes?.();let expired=false;for(const snapshot of listingQuotes.values()){for(const q of snapshot.quotes||[snapshot]){if(q.valid&&(Date.now()-q.time>60000||Date.now()-q.time< -5000)){q.valid=false;expired=true}}}if(expired)Paper.schedule();if(Hunch.selected&&Hunch.book?.time&&Date.now()-Hunch.book.time>60000)Paper.schedule()},1000);
+setInterval(()=>{window.refreshBetQuote?.();window.requestListingQuotes?.();let expired=false;for(const snapshot of listingQuotes.values()){for(const q of snapshot.quotes||[snapshot]){if(q.valid&&(Date.now()-q.time>60000||Date.now()-q.time< -5000)){q.valid=false;expired=true}}}if(expired)Paper.schedule();if(Hunch.selected&&Hunch.book?.time&&Date.now()-Hunch.book.time>60000)Paper.schedule()},1000);

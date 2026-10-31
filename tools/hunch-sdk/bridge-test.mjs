@@ -21,8 +21,8 @@ window.SomaHunch={post:raw=>{
     const rawSig=body.signature.r+body.signature.s.slice(2)+body.signature.v.toString(16);
     assert.equal((await recoverTypedDataAddress({...typed,signature:rawSig})).toLowerCase(),wallet.address.toLowerCase());
     if(body.action.type==='order'){
-     assert.equal(body.action.orders[0].s,'20');assert.equal(body.action.orders[0].p,'0.5');
-     window.HunchSdk.reply(data.call,{status:'ok',response:{type:'order',data:{statuses:[{filled:{oid:1,totalSz:'20',avgPx:'0.5'}}]}}},null);
+     assert.equal(body.action.orders[0].s,'20');assert.equal(body.action.orders[0].p,'0.5');if(body.action.orders.length===2){assert.equal(body.action.orders[1].a,100000021);assert.equal(body.action.orders[1].s,'7');assert.equal(body.action.orders[1].p,'0.61');assert.equal(body.action.orders[1].c,'0x22222222222222222222222222222222');}
+     window.HunchSdk.reply(data.call,{status:'ok',response:{type:'order',data:{statuses:body.action.orders.map((o,i)=>({filled:{oid:i+1,totalSz:o.s,avgPx:o.p}}))}}},null);
     }else{
      assert.equal(body.action.type,'cancelByCloid');assert.equal(body.action.cancels[0].cloid,ticket.cloid);
      window.HunchSdk.reply(data.call,{status:'ok',response:{type:'cancel',data:{statuses:['success']}}},null);
@@ -35,5 +35,6 @@ runInNewContext(readFileSync(new URL('../../hunch/src/main/assets/paper/exchange
 const ticket={id:'fictional',wallet:wallet.address,asset:100000010,buy:true,price:'0.5',shares:'20',tif:'Ioc',testnet:true,cloid:'0x11111111111111111111111111111111',nonce:1800000000000,expiresAfter:1800000030000};
 await window.HunchSdk.send(ticket);
 await window.HunchSdk.send({...ticket,id:'fictional-cancel',cancel:true,nonce:ticket.nonce+1});
-assert.deepEqual(failures,[]);assert.equal(signs,2);assert.equal(submits,2);
-console.log('PASS generated Android bundle: native typed-data RPC roundtrip, signer recovery, exact order envelope, cancel envelope; 2 fictional signatures/submissions, zero HTTP');
+await window.HunchSdk.send({...ticket,id:'fictional-batch',nonce:ticket.nonce+2,orders:[ticket,{...ticket,asset:100000021,shares:'7',price:'0.61',cloid:'0x22222222222222222222222222222222'}]});
+assert.deepEqual(failures,[]);assert.equal(signs,3);assert.equal(submits,3);
+console.log('PASS generated Android bundle: native typed-data RPC roundtrip, signer recovery, exact order envelope, cancel envelope; 3 fictional signatures/submissions including a two-order batch, zero HTTP');

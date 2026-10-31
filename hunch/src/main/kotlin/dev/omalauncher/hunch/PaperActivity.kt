@@ -16,7 +16,7 @@ import java.io.ByteArrayInputStream
 /** Only bundled assets can execute script. Provider strings are JSON/text, never markup or code. */
 abstract class PaperActivity:Activity() {
     protected lateinit var paper:WebView
-    private val panelWindow get() = this is WalletActivity || this is AccountActivity
+    private val panelWindow get() = this is WalletActivity || this is AccountActivity || this is BatchActivity
     // Use the full display metrics, not the dialog WebView's narrower content metrics.
     private fun sizePanelWindow(){
         if(!panelWindow)return
@@ -29,8 +29,11 @@ abstract class PaperActivity:Activity() {
         window.setGravity(if(twoPane)Gravity.RIGHT or Gravity.TOP else Gravity.CENTER)
         val header=if(twoPane)((intent.getIntExtra("panelTop",57).takeIf{it>0}?:57)*density).toInt() else 0
         val insets=if(android.os.Build.VERSION.SDK_INT>=30)windowManager.maximumWindowMetrics.windowInsets.getInsetsIgnoringVisibility(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout()) else android.graphics.Insets.NONE
-        val attrs=window.attributes;attrs.y=header;window.attributes=attrs
-        window.setLayout(if(twoPane)bounds.width()/2 else bounds.width(),if(twoPane)bounds.height()-insets.top-insets.bottom-header else WindowManager.LayoutParams.MATCH_PARENT)
+        val available=bounds.height()-insets.top-insets.bottom-header
+        val sheet=this is BatchActivity
+        val attrs=window.attributes;attrs.y=if(sheet)0 else header;window.attributes=attrs
+        if(sheet)window.setGravity(Gravity.BOTTOM or if(twoPane)Gravity.RIGHT else Gravity.CENTER_HORIZONTAL)
+        window.setLayout(if(twoPane)bounds.width()/2 else bounds.width(),if(sheet)(available*.88).toInt() else if(twoPane)available else WindowManager.LayoutParams.MATCH_PARENT)
     }
     override fun onResume(){super.onResume();sizePanelWindow()}
     override fun onConfigurationChanged(config:Configuration){super.onConfigurationChanged(config);sizePanelWindow();paper.post{paper.evaluateJavascript("window.paperResize&&window.paperResize()",null)}}

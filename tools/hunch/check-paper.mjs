@@ -7,7 +7,7 @@ const w=new Window({url:'https://appassets.androidplatform.net/hunch/paper/index
 w.document.write(fs.readFileSync(base+'index.html','utf8').replace(/<script[^>]*><\/script>/g,''));
 w.fetch=async url=>{const s=fs.readFileSync(base+url,'utf8');return {text:async()=>s,json:async()=>JSON.parse(s)}};
 w.SomaHunch={post:()=>{}};w.console=console;
-w.eval(['runtime.js','two-pane.js','live.js','wallet.js','app.js'].map(f=>fs.readFileSync(base+f,'utf8')).join('\n')+'\nwindow.showLive=showLive;window.showAccount=showAccount;window.cropPhone=cropPhone;window.text=text;window.action=action;window.event=event;window.showWallet=showWallet;');
+w.eval(['runtime.js','two-pane.js','live.js','bet-slip.js','wallet.js','app.js'].map(f=>fs.readFileSync(base+f,'utf8')).join('\n')+'\nwindow.showLive=showLive;window.showAccount=showAccount;window.cropPhone=cropPhone;window.text=text;window.action=action;window.event=event;window.showWallet=showWallet;');
 let errors=[];w.paperError=e=>{errors.push(e);console.error(e)};
 for(const {name}of JSON.parse(fs.readFileSync(base+'pages.json','utf8'))){const manifest=JSON.parse(fs.readFileSync(base+'pages.json','utf8')).find(p=>p.name===name);assert.equal(createHash('sha256').update(fs.readFileSync(base+'mockup/'+name+'.dc.html')).digest('hex'),manifest.sha256);await w.Paper.show(name);if(!w.document.getElementById('scene'))throw Error(name);console.log(name,w.document.getElementById('scene').textContent.replace(/\s+/g,' ').slice(0,70))}
 w.Hunch.rows=[{id:'123',title:'Test real market',category:'Sports',venue:'Outcome',date:'Read venue terms',sides:['Yes','No'],terms:{rule:'Official settlement'}}];
@@ -34,9 +34,9 @@ for(const state of [{signed:false,sent:false},{signed:false,sent:true},{signed:t
 w.innerWidth=390;w.Hunch.selected=w.Hunch.rows[0];
 w.Hunch.selected.terms={rule:'<img src=x onerror=alert(1)>',resolutionDeadline:'20291024-1730'};
 w.Hunch.book={valid:true,time:Date.now(),ask:'0.41',complete:true,payout:'$48.78',spent:'$20.00'};
-await w.showLive();assert.match(w.document.getElementById('scene').textContent,/48\.78/);assert.match(w.document.getElementById('scene').textContent,/Resolution Deadline: 2029-10-24 · 17:30 \(venue time\)/);assert.equal(w.document.getElementById('scene').querySelector('img'),null);assert.ok(w.document.querySelector('.cover-market-nav'));assert.equal(w.document.querySelector('.cover-market-nav').nextElementSibling.querySelector('button'),null);
+await w.showLive();assert.doesNotMatch(w.document.getElementById('scene').textContent,/PUT IN/);assert.match(w.document.getElementById('scene').textContent,/Resolution Deadline: 2029-10-24 · 17:30 \(venue time\)/);assert.equal(w.document.getElementById('scene').querySelector('img'),null);assert.ok(w.document.querySelector('.cover-market-nav'));assert.equal(w.document.querySelector('.cover-market-nav').nextElementSibling.querySelector('button'),null);
 w.Hunch.book.time=Date.now()-61000;w.Paper.render();assert.doesNotMatch(w.document.getElementById('scene').textContent,/48\.78/);
-w.Hunch.book={error:true};w.Paper.render();assert.match(w.document.getElementById('scene').textContent,/No verified executable quote/);
+w.Hunch.book={error:true};w.Paper.render();assert.ok(w.document.querySelector('.cover-market-nav'));
 w.Hunch.selected=null;w.Hunch.chapter='today';await w.showLive();const search=w.document.getElementById('scene').querySelector('input[type=search]');search.focus();search.value='nonexistent';search.dispatchEvent(new w.Event('input'));w.Paper.render();assert.equal(w.document.activeElement,search);assert.match(w.document.getElementById('scene').textContent,/No matching markets/);w.paperResize();await new Promise(resolve=>setTimeout(resolve,180));assert.ok(w.document.activeElement===search,'keyboard resize must preserve the focused search input');
 
 const first=w.Hunch.rows[0];w.Hunch.rows=Array.from({length:250},(_,i)=>({...first,id:String(i),title:'Listing '+i,category:i%2?'Prices':'Sports'}));w.Hunch.query='';w.Hunch.chapter='today';w.innerWidth=880;w.Hunch.selected=null;await w.showLive();let listing=w.document.querySelector('.market-list');assert.equal(listing.querySelectorAll('.mkt').length,100);Array.from(listing.querySelectorAll('button')).find(x=>x.textContent==='Show more markets').click();w.Paper.render();listing=w.document.querySelector('.market-list');assert.equal(listing.querySelectorAll('.mkt').length,200);
@@ -45,7 +45,7 @@ Array.from(w.document.querySelectorAll('button')).find(x=>x.textContent==='← M
 // Upright v6 is one enlarged cover-style page, with bottom chapter tabs.
 w.innerWidth=704;w.innerHeight=932;Object.defineProperty(w.screen,'orientation',{configurable:true,value:{type:'portrait-primary'}});w.Hunch.query='';w.Hunch.chapter='today';await w.showLive();
 assert.equal(w.document.querySelectorAll('.hunch-two-pane .pane').length,1);assert.equal(w.document.querySelectorAll('.cvtabs button').length,3);assert.ok(w.document.querySelector('.cvbody .discovery-content'));
-w.document.querySelector('.cvbody').scrollTop=97;w.Hunch.selected=w.Hunch.rows[0];await w.showLive();assert.equal(w.document.querySelector('.cvtabs'),null);assert.ok(w.document.querySelector('.cvart'));assert.match(w.document.querySelector('.cvbody').textContent,/REVIEW AN ORDER/);
+w.document.querySelector('.cvbody').scrollTop=97;w.Hunch.selected=w.Hunch.rows[0];await w.showLive();assert.equal(w.document.querySelector('.cvtabs'),null);assert.ok(w.document.querySelector('.cvart'));assert.ok(w.document.querySelector('.cvbody .sides'));
 w.paperBack();assert.equal(w.document.querySelector('.cvbody').scrollTop,97);
 Array.from(w.document.querySelectorAll('.cvtab')).find(b=>b.getAttribute('aria-label')==='Money').click();assert.match(w.document.querySelector('.cvbody').textContent,/No trading history is connected/);
 w.innerWidth=880;w.innerHeight=768;Object.defineProperty(w.screen,'orientation',{configurable:true,value:{type:'landscape-primary'}});

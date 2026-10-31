@@ -1,7 +1,9 @@
-> Current development checkpoint: **0.8.0 / code18**, emulator-tested discovery
-> and pane fixes: [details](../docs/hunch/discovery-fixes.md). Trading scope and
-> owner-test limits: [owner order checkpoint](../docs/hunch/owner-first-order.md).
-> The older slice descriptions below are historical, not a current feature inventory.
+> Current development checkpoint: **0.9.0 / code19**, emulator-tested bottom
+> sheet, saved multi-bet table and one-confirmation place-all:
+> [details](../docs/hunch/bet-slip.md). Includes the earlier
+> [discovery and pane fixes](../docs/hunch/discovery-fixes.md).
+> Funded wallet/venue acceptance remains unverified. The older slice descriptions
+> below are historical, not a current feature inventory.
 
 # Hunch · owner-confirmed order development slice
 
