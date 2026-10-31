@@ -14,8 +14,8 @@ wait 700
 expect Nothing has been sent to Phone B
 shot last-tab-picked-cover
 # Closed, gone from memory, and an entry lands on Phone C. It was the last turn, and used to take him there.
-# (Needs at least one entry in the emulator's log already. Soma is the home app, so Android starts it again after a stop: the entry goes in within the stop's own command, before it reads the log.)
-shell 'am force-stop dev.omalauncher.boss; sed -i "s/]}$/,{\"time\":$(date +%s)000,\"agent\":\"Claude Code\",\"prompt\":\"walk mail for Phone C\",\"images\":[],\"screen\":false,\"newThread\":true,\"steps\":[],\"result\":\"from the walk\",\"status\":\"done\",\"approvals\":[],\"build\":true,\"builder\":\"C\"}]}/" /data/data/dev.omalauncher.boss/files/oma-chat.json && restorecon /data/data/dev.omalauncher.boss/files/oma-chat.json'
+# (Soma is the home app, so Android starts it again after a stop: the entry goes in within the stop's own command, before it reads the log. A fresh emulator has no log yet: one earlier entry starts it, owned by the app.)
+shell 'am force-stop dev.omalauncher.boss; [ -s /data/data/dev.omalauncher.boss/files/oma-chat.json ] || { echo "{\"version\":1,\"tasks\":[{\"time\":$(date +%s)000,\"agent\":\"Claude Code\",\"prompt\":\"walk earlier entry\",\"images\":[],\"screen\":false,\"newThread\":false,\"steps\":[],\"result\":\"from the walk\",\"status\":\"done\",\"approvals\":[]}]}" > /data/data/dev.omalauncher.boss/files/oma-chat.json; chown $(stat -c %u:%g /data/data/dev.omalauncher.boss/files) /data/data/dev.omalauncher.boss/files/oma-chat.json; }; sed -i "s/]}$/,{\"time\":$(date +%s)000,\"agent\":\"Claude Code\",\"prompt\":\"walk mail for Phone C\",\"images\":[],\"screen\":false,\"newThread\":true,\"steps\":[],\"result\":\"from the walk\",\"status\":\"done\",\"approvals\":[],\"build\":true,\"builder\":\"C\"}]}/" /data/data/dev.omalauncher.boss/files/oma-chat.json && restorecon /data/data/dev.omalauncher.boss/files/oma-chat.json'
 shell am start -W -a dev.omalauncher.action.OMA_CHAT -p dev.omalauncher.boss
 wait 1500
 expect Nothing has been sent to Phone B

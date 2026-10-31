@@ -250,7 +250,7 @@ if [ ${#walks[@]} -gt 0 ]; then
   if [ "$pool" -eq 1 ]; then
     # The fixtures are built once; walk.py puts on each fresh emulator what its script needs. A clean emulator has no
     # leftover fixture to fall back on, so every script that names the preview app gets it (20 scripts, not just 2).
-    preview_apk=; hunch_apk=; refusal_ready=1
+    preview_apk=; hunch_apk=; messages_apk=; refusal_ready=1
     if grep -l 'dev\.omalauncher\.artifactpreview' $(for w in "${walks[@]}"; do echo "tools/walkthrough/scripts/$w.walk"; done) >/dev/null 2>&1; then
       SOMA_VERSION_CODE=$code ./gradlew --console=plain -PartifactPreview :artifact-preview:assembleDebug >"$wdir/artifact-fixture-build.log" 2>&1 &&
         preview_apk=tools/artifact-preview/build/outputs/apk/debug/artifact-preview-debug.apk
@@ -260,6 +260,11 @@ if [ ${#walks[@]} -gt 0 ]; then
         hunch_apk=$(ls hunch/build/outputs/apk/debug/*.apk 2>/dev/null | head -n 1)
       fi
       [ -n "$hunch_apk" ] || echo "Hunch: didn't build ($(tail -1 "$wdir/hunch-build.log")); the hunch walks will fail on that." >>"$wdir/summary.txt"
+    fi
+    # Soma Messages isn't on this branch or the base image: the newest build of it on this Mac (its own branch's worktrees).
+    if grep -l 'dev\.omalauncher\.messages' $(for w in "${walks[@]}"; do echo "tools/walkthrough/scripts/$w.walk"; done) >/dev/null 2>&1; then
+      messages_apk=$(ls -t "$HOME"/Projects/*/messages/build/outputs/apk/debug/*.apk 2>/dev/null | head -n 1)
+      [ -n "$messages_apk" ] || echo "Messages: no build on this Mac; its walks will fail on that." >>"$wdir/summary.txt"
     fi
     for w in "${walks[@]}"; do
       [ "$w" = mac-refusal ] || continue
@@ -290,6 +295,7 @@ if [ ${#walks[@]} -gt 0 ]; then
         needs+=(--apk "$preview_apk")
       fi
       if grep -q 'dev\.omalauncher\.hunch' "$script" && [ -n "$hunch_apk" ]; then needs+=(--apk "$hunch_apk"); fi
+      if grep -q 'dev\.omalauncher\.messages' "$script" && [ -n "$messages_apk" ]; then needs+=(--apk "$messages_apk"); fi
       if [ "$w" = mac-refusal ]; then
         if [ "$refusal_ready" -ne 1 ]; then line="$line $w FAIL (fixture build; see mac-refusal-fixture.log);"; echo "$w FAIL (fixture build; see mac-refusal-fixture.log)" >>"$wdir/verdicts.txt"; continue; fi
         needs+=(--push chat/build/render/mac-refusal.json:/data/local/tmp/mac-refusal.json)
