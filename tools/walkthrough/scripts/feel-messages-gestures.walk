@@ -1,0 +1,50 @@
+# Messages' gestures on its example conversations: the hold menu, the reply pull with its armed mark and its cancel, the
+# times pull, and the back drag's cancel. Read against the same walk on an earlier build. Frames report only.
+fold folded
+rotate portrait
+shell pm clear dev.omalauncher.messages
+launch dev.omalauncher.messages/.MainActivity
+tap Look around with example conversations
+wait 1000
+tap Mina Park
+wait 800
+frames start dev.omalauncher.messages
+hold the counter!! ok you win
+wait 500
+expect Reply
+shot hold-menu
+frames report hold-menu
+# Tapping beside the menu closes it, and the chat is there with nothing new in the field.
+tap 0.5 0.3
+wait 500
+absent Copy
+expect the counter!! ok you win
+frames start dev.omalauncher.messages
+swipefrom the counter!! ok you win 0.26 0 500
+wait 500
+expect QUOTED REPLY
+shot reply-armed
+frames report reply-pull
+tap "Don't reply to this"
+absent QUOTED REPLY
+# A short pull cancels.
+swipefrom the counter!! ok you win 0.06 0 450
+wait 500
+absent QUOTED REPLY
+shot reply-short-cancelled
+# A left pull shows times while held and returns.
+swipefrom the counter!! ok you win -0.22 0 450
+wait 500
+expect the counter!! ok you win
+shot times-returned
+# A short drag on blank paper comes back; a long one leaves.
+swipe 0.5 0.25 0.59 0.25 500
+wait 500
+expect Mina Park
+expect the counter!! ok you win
+frames start dev.omalauncher.messages
+swipe 0.5 0.25 0.98 0.25 600
+wait 800
+frames report back-drag
+absent the counter!! ok you win
+shot back-at-inbox
