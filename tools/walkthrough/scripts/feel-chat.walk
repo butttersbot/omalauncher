@@ -19,8 +19,6 @@ shot after-scroll
 frames tap tabs-open Show the tabs
 expect all
 shot tabs-open
-frames tap tab-to-fold Fold
-shot tab-fold
 frames tap tabs-close Hide the tabs
 frames start dev.omalauncher.artifactpreview
 tap ask soma

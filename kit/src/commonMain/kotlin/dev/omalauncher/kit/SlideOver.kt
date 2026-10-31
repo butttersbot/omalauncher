@@ -6,10 +6,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -43,13 +45,15 @@ fun slidesAway(
  * A screen over another, as Messages' conversation is over its inbox: it slides in from the right, and Android's back
  * gesture or a drag to the right anywhere on it moves it with the finger. Letting go far enough, or flicking, finishes
  * the slide; letting go early puts it back. [background] paints the screen, so what's under it doesn't show through.
- * What's inside sees the drag first, so a sideways pull there can take it.
+ * What's inside sees the drag first, so a sideways pull there can take it. A WebView doesn't say what it did with a
+ * drag, so a screen showing a page says [drag] = false: Back still takes it with the finger.
  */
 @Composable
 fun SlideOver(
     widthPx: Float,
     onGone: () -> Unit,
     background: Modifier = Modifier,
+    drag: Boolean = true,
     content: @Composable (back: () -> Unit, modalChanged: (Boolean) -> Unit) -> Unit,
 ) {
     var modal by remember { mutableStateOf(false) }
@@ -58,16 +62,22 @@ fun SlideOver(
     val scope = rememberCoroutineScope()
     LaunchedEffect(Unit) { x.moveTo(0f, Feel.open) }
     // Gone, it is back in place, in the same frame: if something else stays in this screen, that shows instead of nothing.
+    var leaving by remember { mutableStateOf(false) }
+    val goneNow by rememberUpdatedState(onGone)
     fun gone() {
+        leaving = false
         onGone()
         scope.launch { x.snapTo(0f) }
     }
     val back: () -> Unit = {
+        leaving = true
         scope.launch {
             x.moveTo(widthPx, Feel.close)
             gone()
         }
     }
+    // Taken away while leaving (a fold changed the layout): what was asked still happens.
+    DisposableEffect(Unit) { onDispose { if (leaving) goneNow() } }
     PredictiveBack(enabled = !modal) { progress ->
         try {
             progress.collect { p -> x.snapTo(p * widthPx) }
@@ -81,8 +91,8 @@ fun SlideOver(
     }
     val fling = with(LocalDensity.current) { Feel.SLIDE_AWAY_FLING.dp.toPx() }
     Box(
-        Modifier.fillMaxSize().pointerInput(widthPx, modal) {
-            if (modal) return@pointerInput
+        Modifier.fillMaxSize().pointerInput(widthPx, modal, drag) {
+            if (modal || !drag) return@pointerInput
             val velocity = VelocityTracker()
             var pulling = false
             var decided = false

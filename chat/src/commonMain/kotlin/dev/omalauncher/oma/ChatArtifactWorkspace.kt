@@ -229,7 +229,11 @@ internal fun ChatArtifactWorkspace(
             }
             // On a narrow screen it comes over the chat as Messages' conversation does, and Back or a drag takes it away with the finger.
             if (wide) Box(Modifier.fillMaxSize().background(Pack.background)) { panel(close) }
-            else SlideOver(constraints.maxWidth.toFloat(), close, Modifier.background(Pack.background)) { back, _ -> panel(back) }
+            // An artifact may be a page with sideways motion of its own, so only Back takes that one away with the finger. All
+            // chats closing over what stays under it just shows that: it has nowhere to slide.
+            else SlideOver(constraints.maxWidth.toFloat(), close, Modifier.background(Pack.background), drag = allChatsOpen || selected == null) { back, _ ->
+                panel(if (allChatsOpen && (question != null || listing || selected != null)) close else back)
+            }
         }
     }
 }
