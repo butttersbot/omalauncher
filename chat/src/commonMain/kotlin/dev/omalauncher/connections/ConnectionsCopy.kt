@@ -98,6 +98,8 @@ fun incidentCopy(incident: ConnectionIncident, snapshot: ConnectionsSnapshot, no
     val verify = "Verify ${capabilities.map { it.short }.spoken("&")} connections"
     val note = "One repair. ${counted(capabilities.size, "feature")} back."
     val primary = capabilities.first()
+    // Only say "restart" when a restart is possible: where the host can't do it, the steps are to look at it there.
+    val canRestart = readings.none { r -> r.checks.any { it.name == "restart_unsupported" } }
     val trouble = readings.flatMap { it.checks }.firstNotNullOfOrNull { it.agentTrouble() }
     val missing = readings.flatMap { it.checks }.firstNotNullOfOrNull { it.agentMissing() }
     val owner = readings.firstOrNull()?.capability
@@ -135,13 +137,13 @@ fun incidentCopy(incident: ConnectionIncident, snapshot: ConnectionsSnapshot, no
             "${nouns.spoken().capital()} on $host $are unavailable.$rest",
             listOf("Check $host is awake & online", "Wake or reconnect it", verify), note)
         key.startsWith("runner:") -> IncidentCopy("$host / agent runner",
-            if (reachable) "Your $host is connected.\nIts runner needs a restart." else "$host's runner isn't responding.\nIt may need a restart.",
+            if (reachable) "Your $host is connected.\nIts runner ${if (canRestart) "needs a restart" else "needs attention"}." else "$host's runner isn't responding.\nIt may need a restart.",
             "${nouns.spoken().capital()} on $host $are unavailable.$rest",
-            listOf("Check device & active jobs", "Restart the agent runner", verify), note)
+            if (canRestart) listOf("Check device & active jobs", "Restart the agent runner", verify) else listOf("Check device & active jobs", "Fix the runner on $host: Soma can't restart it from here", verify), note)
         else -> IncidentCopy("$host / ${primary.title}",
-            if (reachable) "Your $host is connected.\nIts ${primary.noun} service needs a restart." else "${primary.noun.capital()} on $host isn't responding.",
+            if (reachable) "Your $host is connected.\nIts ${primary.noun} service ${if (canRestart) "needs a restart" else "needs attention"}." else "${primary.noun.capital()} on $host isn't responding.",
             "${nouns.spoken().capital()} on $host $are unavailable.$rest",
-            listOf("Check device & active jobs", "Restart the ${primary.noun} service", verify), note)
+            if (canRestart) listOf("Check device & active jobs", "Restart the ${primary.noun} service", verify) else listOf("Check device & active jobs", "Fix the ${primary.noun} service on $host: Soma can't restart it from here", verify), note)
     }
 }
 

@@ -15,6 +15,8 @@ fun connectionGet(endpoint: ConnectionEndpoint): ConnectionReply {
     return try {
         val uri = URI(endpoint.url)
         require(uri.scheme in listOf("http", "https") && uri.host != null && uri.userInfo == null)
+        // A name that won't resolve must not hold a check thread: DNS has no timeout of its own.
+        if (!resolvesWithin(uri.host, 3000)) return ConnectionReply(-1, "")
         connection = uri.toURL().openConnection() as HttpURLConnection
         connection.connectTimeout = 2500; connection.readTimeout = 3500; connection.instanceFollowRedirects = false
         if (endpoint.key.isNotEmpty()) connection.setRequestProperty(endpoint.header, if (endpoint.header == "Authorization") "Bearer ${endpoint.key}" else endpoint.key)
@@ -65,3 +67,12 @@ fun runnerWorkCounts(reply: JSONObject): RunnerWorkCounts? = runCatching {
     }
     RunnerWorkCounts(active, queued)
 }.getOrNull()
+
+/** True if [host] resolves within [ms]: an address literal at once, a name on a daemon thread that is abandoned if it hangs. */
+internal fun resolvesWithin(host: String, ms: Long, resolve: (String) -> Any = { java.net.InetAddress.getByName(it) }): Boolean {
+    if (host.all { it.isDigit() || it == '.' } || host.contains(':')) return true
+    var ok = false
+    val worker = Thread { ok = runCatching { resolve(host) }.isSuccess }.apply { isDaemon = true; start() }
+    worker.join(ms)
+    return !worker.isAlive && ok
+}

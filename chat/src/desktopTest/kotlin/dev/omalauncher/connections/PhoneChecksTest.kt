@@ -109,3 +109,29 @@ class PhoneChecksTest {
         assertEquals("whisper isn't checked on MG1 yet.", linux.detail)
     }
 }
+
+class RestartWordingAndDnsTest {
+    private val now = 100_000_000L
+    private fun runnerReply(supported: Boolean) = ConnectionReply(200, JSONObject().put("ok", true).put("host", "macbook").put("checked_at", now)
+        .put("services", JSONArray().put(JSONObject().put("id", "herd").put("state", "running").put("restart", JSONObject().put("supported", supported).put("blocked_reason", "owner_verified_control_broker_unavailable"))
+            .put("probe", JSONObject().put("checked_at", now).put("checks", JSONArray().put(JSONObject().put("check", "herd_reporter").put("code", "no_report").put("result", "fail")))))).toString())
+
+    @Test fun restartIsOnlyAdvisedWhereARestartIsPossible() {
+        fun steps(supported: Boolean): List<String> {
+            val readings = serviceInventoryReadings(runnerReply(supported), "MacBook", "macbook", now) + ConnectionReading(Capability.Network, ConnectionState.Ready, "route", now, "network", "MacBook", "macbook")
+            val snapshot = ConnectionsSnapshot(readings, now)
+            return incidentCopy(snapshot.incidents(now).single(), snapshot, now).steps
+        }
+        assertTrue(steps(true).any { it.startsWith("Restart") })
+        assertFalse(steps(false).any { it.contains("Restart", ignoreCase = true) && !it.contains("can't restart") })
+        assertTrue(steps(false).any { it.contains("Soma can't restart it from here") })
+    }
+    @Test fun aNameThatHangsOrFailsToResolveDoesNotHoldACheck() {
+        val started = System.nanoTime()
+        assertFalse(resolvesWithin("slow.invalid", 200) { Thread.sleep(5_000); "never" })
+        assertTrue((System.nanoTime() - started) / 1_000_000 < 2_000)
+        assertFalse(resolvesWithin("nowhere.invalid", 200) { throw java.net.UnknownHostException() })
+        assertTrue(resolvesWithin("100.64.0.1", 200) { error("literals need no lookup") })
+        assertTrue(resolvesWithin("mac", 200) { "1.2.3.4" })
+    }
+}

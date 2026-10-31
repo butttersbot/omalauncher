@@ -84,7 +84,11 @@ fun serviceInventoryReadings(reply: ConnectionReply, displayHost: String, source
                     "confirmed" -> "$id was restarted, and real traffic has passed since."
                     else -> null
                 }
-                val noted = if (told == null) evidence else evidence + ConnectionCheck(if (note?.optString("state") == "confirmed") "restart_confirmed" else "restart_unconfirmed",
+                // A failing service whose host can't restart it says so, so nothing tells him to restart what only he can fix.
+                val unsupported = row.optJSONObject("restart")?.let { it.has("supported") && !it.optBoolean("supported") } == true && state == ConnectionState.Failed
+                val evidenceR = if (unsupported) evidence + ConnectionCheck("restart_unsupported", "$host/$id", result = "quiet",
+                    fields = mapOf("reason" to row.optJSONObject("restart")?.optString("blocked_reason").orEmpty().take(80))) else evidence
+                val noted = if (told == null) evidenceR else evidenceR + ConnectionCheck(if (note?.optString("state") == "confirmed") "restart_confirmed" else "restart_unconfirmed",
                     "$host/$id", result = if (note?.optString("state") == "confirmed") "pass" else "unverified", fields = mapOf("service" to id, "host" to host))
                 ConnectionReading(scope, if (unconfirmed) ConnectionState.Unknown else state, told?.let { "$it $detail" } ?: detail, if (proofTime > 0) proofTime else checked,
                     if (state in setOf(ConnectionState.Failed, ConnectionState.Auth, ConnectionState.Ready))
