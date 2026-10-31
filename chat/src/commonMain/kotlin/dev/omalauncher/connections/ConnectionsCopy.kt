@@ -60,7 +60,7 @@ fun connectionCause(reading: ConnectionReading, key: String?): String {
         return listOf(reading.host.ifBlank { "This phone" }, t.agent, t.words).joinToString(" · ")
     }
     when (reading.capability) {
-        Capability.GitHub -> return listOf(reading.host.ifBlank { "This phone" }, "GitHub login expired").joinToString(" · ")
+        Capability.GitHub -> return listOf(reading.host.ifBlank { "This phone" }, if (reading.host.isBlank()) "GitHub SSH key refused" else "GitHub login expired").joinToString(" · ")
         Capability.Disk -> return listOf(reading.host.ifBlank { "This phone" }, "low on disk space").joinToString(" · ")
         Capability.Mail -> return listOf(reading.host.ifBlank { "This phone" }, "mail not delivered").joinToString(" · ")
         else -> {}
@@ -102,6 +102,10 @@ fun incidentCopy(incident: ConnectionIncident, snapshot: ConnectionsSnapshot, no
     val missing = readings.flatMap { it.checks }.firstNotNullOfOrNull { it.agentMissing() }
     val owner = readings.firstOrNull()?.capability
     return when {
+        // The phone has no gh and pushes over SSH: its words are about the key, not a gh login.
+        owner == Capability.GitHub && host == "This phone" -> IncidentCopy("This phone / GitHub", "This phone can't push to GitHub.\nIts SSH key needs checking.",
+            "Pushes from this phone will fail until GitHub accepts its key. Only you can fix the key, so nothing was changed.",
+            listOf("Open a terminal on this phone", "Run ssh -T git@github.com", "Fix the key if it is refused", "Check again"), "Signing in is yours; Restore leaves it alone.")
         owner == Capability.GitHub -> IncidentCopy("$host / GitHub", "$host: GitHub login expired.\nRun gh auth login on it.",
             "Pushes from $host will fail until it is signed in again. Only you can sign in, so nothing was changed.",
             listOf("Open a terminal on $host", "Run gh auth login", "Check again"), "Signing in is yours; Restore leaves it alone.")

@@ -8,7 +8,7 @@ package dev.omalauncher.connections
 private val GITHUB_UNREACHABLE = Regex("could not resolve host|failed to connect|connection (timed out|refused|reset)|timed out|network is unreachable|" +
     "returned error: 5\\d\\d|service unavailable|bad gateway|early eof|ssl|unable to access.*(5\\d\\d|resolve)", RegexOption.IGNORE_CASE)
 private val GITHUB_LOGIN = Regex("could not read (username|password)|authentication failed|invalid username|bad credentials|returned error: 40[13]|" +
-    "terminal prompts disabled|permission denied|repository not found|support for password authentication", RegexOption.IGNORE_CASE)
+    "terminal prompts disabled|permission denied|repository not found|support for password authentication|host key verification failed", RegexOption.IGNORE_CASE)
 
 /** (code, result) for one device's GitHub access from what git said: only a refused login is a failure; GitHub's outage or no route is unreachable. */
 fun classifyGithub(lsCode: Int?, lsText: String, pushCode: Int?, pushText: String): Pair<String, String> {
@@ -27,11 +27,11 @@ fun githubReading(outcome: Pair<String, String>?, now: Long): ConnectionReading 
     if (outcome == null) return ConnectionReading(Capability.GitHub, ConnectionState.Disabled, "This phone doesn't use GitHub.", now,
         checks = listOf(ConnectionCheck("github_access", "phone", result = "not_installed", fields = mapOf("code" to "no_github_use"))))
     val (code, result) = outcome
-    val check = ConnectionCheck("github_access", "phone", result = result, fields = mapOf("code" to code, "fix" to "run gh auth login"))
+    val check = ConnectionCheck("github_access", "phone", result = result, fields = mapOf("code" to code, "fix" to "check the SSH key with ssh -T git@github.com"))
     val root = "github:phone"
     return when (result) {
         "pass" -> ConnectionReading(Capability.GitHub, ConnectionState.Ready, "GitHub is reachable and this phone's login is valid.", now, root, checks = listOf(check))
-        "fail" -> ConnectionReading(Capability.GitHub, ConnectionState.Failed, "This phone: GitHub login expired. Run gh auth login.", now, root, checks = listOf(check))
+        "fail" -> ConnectionReading(Capability.GitHub, ConnectionState.Failed, "This phone can't push to GitHub: its SSH key was refused. Check it with ssh -T git@github.com.", now, root, checks = listOf(check))
         else -> ConnectionReading(Capability.GitHub, ConnectionState.Unknown,
             if (code == "github_unreachable") "This phone can't reach GitHub right now (GitHub or the network); that is not a login problem." else "GitHub could not be checked from this phone yet.",
             now, checks = listOf(check))

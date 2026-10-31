@@ -12,6 +12,8 @@ class PhoneChecksTest {
         assertEquals("github_ok" to "pass", classifyGithub(0, "abc refs/heads/x", 0, "Everything up-to-date"))
         assertEquals("github_ok" to "pass", classifyGithub(0, "", 1, " ! [rejected] a -> b (fetch first)"))
         assertEquals("github_login_invalid" to "fail", classifyGithub(0, "", 128, "fatal: could not read Username for 'https://github.com': terminal prompts disabled"))
+        assertEquals("github_login_invalid" to "fail", classifyGithub(255, "git@github.com: Permission denied (publickey).", null, ""))
+        assertEquals("github_login_invalid" to "fail", classifyGithub(128, "Host key verification failed.", null, ""))
         assertEquals("github_login_invalid" to "fail", classifyGithub(128, "fatal: Authentication failed for 'https://github.com/x'", null, ""))
         assertEquals("github_unreachable" to "unverified", classifyGithub(128, "fatal: unable to access: Could not resolve host: github.com", null, ""))
         assertEquals("github_unreachable" to "unverified", classifyGithub(128, "The requested URL returned error: 503", null, ""))
@@ -20,11 +22,11 @@ class PhoneChecksTest {
     @Test fun githubReadingsNameThePhoneAndTheFixAndNoCheckoutIsNoFailure() {
         val bad = githubReading("github_login_invalid" to "fail", now)
         assertEquals(ConnectionState.Failed, bad.state)
-        assertEquals("This phone: GitHub login expired. Run gh auth login.", bad.detail)
+        assertEquals("This phone can't push to GitHub: its SSH key was refused. Check it with ssh -T git@github.com.", bad.detail) // no gh on the phone
         val snapshot = ConnectionsSnapshot(listOf(bad), now)
         val incident = snapshot.incidents(now).single()
         assertTrue(incident.ownerOnly) // signing in is his: Restore is not offered
-        assertEquals("This phone: GitHub login expired.\nRun gh auth login on it.", incidentCopy(incident, snapshot, now).headline)
+        assertEquals("This phone can't push to GitHub.\nIts SSH key needs checking.", incidentCopy(incident, snapshot, now).headline)
         assertEquals(ConnectionState.Unknown, githubReading("github_unreachable" to "unverified", now).state) // not an incident
         assertTrue(ConnectionsSnapshot(listOf(githubReading("github_unreachable" to "unverified", now)), now).incidents(now).isEmpty())
         assertEquals(ConnectionState.Disabled, githubReading(null, now).state)

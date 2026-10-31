@@ -969,8 +969,9 @@ private fun TabStrip(
                     .spans(key)
                     .padding(end = 6.dp)
                     .fillMaxHeight()
-                    // The tab no longer shows its machine, so a screen reader still hears the name and where it runs.
-                    .semantics { contentDescription = "${tabTitle(key, threads)}${if (thread?.machine.isNullOrEmpty()) "" else " on the ${thread!!.machine}"}" }
+                    // The tab no longer shows its machine, so a screen reader is told where it runs; a tab with none keeps what it says itself
+                    // (a description equal to the name would match the "New chat" button of the same name).
+                    .then(if (thread?.machine.isNullOrEmpty()) Modifier else Modifier.semantics { contentDescription = "${tabTitle(key, threads)} on the ${thread!!.machine}" })
                     // A bot's tab has round ends, so bots read apart from sessions at a glance.
                     .framed(Pack.hair, if (on) Pack.foreground else Pack.border, if (on) Pack.foreground else Pack.surface, radius = if (thread?.bot != null) 50.dp else 6.dp)
                     .combinedClickable(
