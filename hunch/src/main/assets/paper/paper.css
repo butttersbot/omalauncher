@@ -91,3 +91,11 @@
 .hunch-two-pane.discovery-shell .chips{margin:12px 0}
 
 .hunch-two-pane .quote-cell b{white-space:normal;overflow-wrap:anywhere}
+
+/* Boss, Oct31: the summary rail belongs entirely above the right-hand pane. */
+.hunch-two-pane .top{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0;padding:10px 0 8px}
+.hunch-two-pane .top .brand{margin-left:20px}
+.hunch-two-pane .header-metrics{width:auto;min-width:0;max-width:none;margin:0 18px;grid-template-columns:repeat(4,minmax(0,1fr))}
+.hunch-two-pane .header-metrics>div{padding:2px 6px;min-width:0}
+.hunch-two-pane .header-metrics small{white-space:normal;overflow-wrap:anywhere;line-height:1.3}
+.hunch-two-pane .header-metrics b{white-space:normal;overflow-wrap:anywhere}

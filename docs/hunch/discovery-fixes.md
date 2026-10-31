@@ -63,3 +63,10 @@ and use the owner's existing signer for any Fold update.
 Sources inspected: official Hyperliquid info-endpoint/spot and asset-ids docs;
 public outcomeMeta and spotMetaAndAssetCtxs responses read2026-10-31. Unknown
 source metadata remains unknown; the sole unclassified Events listing is retained.
+
+## Header alignment follow-up
+
+Boss clarified that the summary stays entirely on the right. The landscape
+header now uses the same two equal columns as the panes: Hunch on the left,
+all four summary cells inside the right half with18px side insets. Labels
+wrap rather than extending outside their cells on narrower unfolded widths.
