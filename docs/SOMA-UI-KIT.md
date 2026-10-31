@@ -72,36 +72,37 @@ against it. They only report; no number can hold a build, a take or an install.
 - Compare only on one run of one emulator, alternating builds. Its 60 Hz, shared GPU and load say nothing of the phone.
 - A screen with a pulsing dot draws all the time, so its first-frame number is only the next frame.
 
-## Widgets
+## Widgets, later
 
-`.owl` widgets run in the launcher, so what the runtime does, every widget has with no work of its own.
+`.owl` widgets run in the launcher, so what the runtime takes, every widget has with no work of its own. Boss, 2026-10-30:
+first prove the kit works, then everything else. So nothing here is in yet; the work is on branch `soma/ui-kit-widgets`.
 
-**Takes:** a node with `onTap` or `onLongPress` gives under the finger; plain `animate x: spring()` is Soma's spring
-(`spring(damping, stiffness)` stays as named, and the three bundled widgets that say `spring()` lose their bounce);
-a new target for an animated value keeps the speed it had. Remove-animations is honoured. Values already change in the
-draw phase, and slow widgets already drop to half the frame rate.
+**It can take:** a node with `onTap` or `onLongPress` giving under the finger; plain `animate x: spring()` as Soma's
+spring (`spring(damping, stiffness)` stays as named, and the three bundled widgets that say `spring()` lose their bounce);
+a new target for an animated value keeping the speed it had.
 
-**Can't take:**
+**It can't take:**
 - `if` and `for` swap their nodes at once. A fade would have to wrap them, which changes the layout widgets were
   written for and would soften a widget that uses `if` for sprites or a blink.
 - Scrolling, drags and `onDrag` stay the widget's own: the runtime doesn't know what a drag means.
 - Its expressions run on the main thread, by design (they are read while drawing), so the frame budget is theirs.
 - A widget's own `Canvas`, `Web` and `Terminal` nodes draw for themselves.
-- The tile on home: its tap grows into the screen (`Motion`) and has no press give yet, since that's home's gesture.
 
 ## Follow-ups, one job each
 
 | App | What it needs |
 |---|---|
-| Messages | Merge `messages/ui-kit`. `offMain` for its six `produceState` + IO loads and `pressable` wait for that: its rows keep their plain press until Boss wants more. |
-| Soma Notes (`notes/`) | No `:chat`: add `:kit`. Its Compose screens (Stream, Page, Reader) take `pressable`, `SlideOver` for Reader, `KitOverlay` for its dialogs. Its branch isn't on this one yet. |
-| Launcher home and settings | Already on `Motion`. `pressable` for its rows and menus (`SettingsList`, `Menu`), the tile press. Its own check, `MotionSourceCheckTest`, stays. |
-| Desktop | Has what's in `commonMain` from this job, tested by its own tests only. Nobody has felt it. Mouse hover, wheel and window resize aren't in the kit. |
-| News reader | A WebView in the launcher: link `feel.css`, `.feel-press` on its rows and controls. |
-| Hunch | Views and WebViews, no Compose. `feel.css` for `paper/`; `.feel-press` on markets and tickets, nothing near the order button's confirmation without looking at it. Its native screens would need Compose first: not worth it for this. |
+| Widgets | Land `soma/ui-kit-widgets` (above). |
+| Launcher home | Measure against Messages first: page swipes, opening and closing a widget, the overview, the drawer, tile press and drag, returning from an app, cover and unfolded. Already on `Motion`. Then `pressable` for rows, menus and tiles. `MotionSourceCheckTest` stays. |
+| Messages | `offMain` for its `produceState` + IO loads, once the Messages bugs thread's work has landed. Its rows keep their plain press unless Boss wants more. |
+| Soma Notes (`notes/`) | No `:chat`: add `:kit`. Its Compose screens (Stream, Page, Reader) take `pressable`, `SlideOver` for Reader, `KitOverlay` for its dialogs. |
+| Desktop | Has what's in `commonMain` from this job, proven by its tests only. Nobody has felt it. Mouse hover, wheel and window resize aren't in the kit. |
+| News reader | A WebView in the launcher: link `kit/web/feel.css`, `.feel-press` on its rows and controls. |
+| Hunch | Views and WebViews, no Compose: CSS tokens, `kit/web/feel.css` for `paper/`, `.feel-press` on markets and tickets. Its native screens would need Compose first, which isn't worth it for this. |
 | The build itself | Soma on the phone is debug-type and debuggable; Messages is a release build. See below. |
 
 ## What the emulator measured
 
-Messages on the same emulator, opening a chat for the first time: debug build 283-300 ms to the first frame, release
-build 101-105 ms. So part of a good feel is the build type, which no kit can fix.
+The same launcher code on the same emulator, opening Soma chat cold: debuggable (as on his phone) about 1200 ms, not
+debuggable about 300 ms, with R8 about 270 ms. Home's page swipes: 14-24% janky frames, against 3%. So much of a good feel
+is the build type, which no kit can fix. Whether to change it is Boss's decision, and it has costs (`run-as`, the debug door).
