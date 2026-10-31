@@ -9,10 +9,11 @@ package dev.omalauncher.phone
  */
 object PhoneGuard {
     /**
-     * What agents' links tell the browser they come from: Chromium browsers open every link with one such id in the one
-     * tab that id already has (Boss, 2026-10-30: "there were 355 tabs open"). All agents share it, and his own links carry none.
+     * What an agent's links tell the browser they come from: Chromium browsers open every link with one such id in the one
+     * tab that id already has (Boss, 2026-10-30: "there were 355 tabs open", "make max four"). One each for builders A to D;
+     * a caller that is no builder uses A's, so there can never be more than four. His own links carry none.
      */
-    const val AGENT_BROWSER_ID = "dev.omalauncher.agents"
+    fun agentBrowserId(builder: String?): String = "dev.omalauncher.agents." + (builder?.takeIf { it in setOf("A", "B", "C", "D") } ?: "A").lowercase()
 
     /** Longer than this is not a link anyone means to open. */
     const val MAX_URL = 2000

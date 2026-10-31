@@ -51,6 +51,9 @@ class PhoneService : AccessibilityService() {
     internal val connectionsBusy get() = busy || activePlan != null
     private var requestDeadline = 0L
     private var requestCommand = ""
+
+    /** Which builder the request says it is from, as OMA_BUILDER has it. */
+    private var requestBuilder = ""
     private var snapshot: String
         get() = displayState.snapshot
         set(value) { displayState.snapshot = value }
@@ -620,7 +623,7 @@ class PhoneService : AccessibilityService() {
                 PhoneDisplays.background(this).id
             } else 0
         } catch (e: Exception) { callback(JSONObject().put("ok", false).put("error", e.message)); return }
-        displayId = target; busy = true; requestCommand = command
+        displayId = target; busy = true; requestCommand = command; requestBuilder = input.optString("builder")
         val generation = ++requestGeneration
         val requestStart = SystemClock.elapsedRealtimeNanos()
         readCalls = 0; readNanos = 0; nodesRead = 0; searchScrolls = 0; quickFinds = 0
@@ -804,7 +807,7 @@ class PhoneService : AccessibilityService() {
                 "url" -> {
                     val link = PhoneGuard.webUrl(input.getString("url")).getOrThrow()
                     val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(link)).addCategory(Intent.CATEGORY_BROWSABLE)
-                        .putExtra(android.provider.Browser.EXTRA_APPLICATION_ID, PhoneGuard.AGENT_BROWSER_ID)
+                        .putExtra(android.provider.Browser.EXTRA_APPLICATION_ID, PhoneGuard.agentBrowserId(requestBuilder))
                     input.optString("app").takeIf { it.isNotEmpty() }?.let { intent.setPackage(it) }
                     val handler = packageManager.resolveActivity(intent, 0)?.activityInfo?.packageName
                         ?: error(if (intent.`package` != null) "${intent.`package`} can't open that link. Nothing was opened." else "No app on the phone opens that link. Nothing was opened.")

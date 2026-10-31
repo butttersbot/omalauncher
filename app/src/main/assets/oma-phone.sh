@@ -357,6 +357,8 @@ status|pages|apps|read|screenshot|back|home|recents|notifications|stay|stop|subm
 esac
 request=$(jq -c --argjson timing "$timing" '. + (if $timing then {timing:true} else {} end)' <<<"$request")
 request=$(jq -c --arg display "$display" '. + {display:$display}' <<<"$request")
+# Which builder asks: each has its own tab in the browser (PhoneGuard.agentBrowserId).
+[ -z "${OMA_BUILDER:-}" ] || request=$(jq -c --arg builder "$OMA_BUILDER" '. + {builder:$builder}' <<<"$request")
 request=$(jq -c --arg front "$front" --argjson any "$any" '. + (if $front=="" then {} else {in:$front} end) + (if $any then {any:true} else {} end)' <<<"$request")
 limit=12
 if [ "$command" = plan ]; then limit=35; fi
