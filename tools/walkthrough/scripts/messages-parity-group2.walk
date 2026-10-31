@@ -53,18 +53,14 @@ doubletap Perfect, see you there
 expect Tapback like
 shot double-tap-menu card=messages-parity-reaction-menu
 tap Tapback like
-expect Reactions on: Perfect, see you there
-tap Reactions on: Perfect, see you there
-expect People who reacted
-expect Reaction from You: like
-shot reaction-attribution card=messages-parity-reaction-attribution
-tap Done
+expect Remove your reaction, like
 doubletap Perfect, see you there
 tap Tapback love
-expect Reactions on: Perfect, see you there
-doubletap Perfect, see you there
-tap Tapback love
-absent Reactions on: Perfect, see you there
+expect Remove your reaction, love
+# His own chip takes it off with a tap (no list since 0.8.14).
+tap Remove your reaction, love
+absent Remove your reaction, love
+absent People who reacted
 shot reaction-removed
 swipefrom Perfect, see you there 0.26 0 500
 expect Replying

@@ -385,7 +385,6 @@ fun Thread(
     var stuck by remember(c.id) { mutableStateOf(false) }
     var noOpenBubbles by remember(c.id) { mutableStateOf(false) }
     var held by remember(c.id) { mutableStateOf<Message?>(null) }
-    var reactors by remember(c.id) { mutableStateOf<Message?>(null) }
     var editing by remember(c.id) { mutableStateOf<MessageEditDraft?>(null) }
     var history by remember(c.id) { mutableStateOf<Message?>(null) }
     val changes by Messages.pendingChanges.collectAsState()
@@ -413,7 +412,7 @@ fun Thread(
         if (!current.unsent) MessageEditHistory(current) { history = null }
         else LaunchedEffect(current.unsent) { history = null }
     }
-    val modal = held != null || reactors != null || threadRoot != null || editing != null || history != null || searching
+    val modal = held != null || threadRoot != null || editing != null || history != null || searching
     DisposableEffect(c.id, modal) { onModalChange(modal); onDispose { onModalChange(false) } }
     val timeWidth = with(LocalDensity.current) { 72.dp.toPx() }
     var timePull by remember(c.id) { mutableFloatStateOf(0f) }
@@ -664,7 +663,7 @@ fun Thread(
                             PartContent(part, ink, m.files, onHold = { held = m }, richLink = richLink)
                         }
                     }
-                    Tapbacks(m, { kind: String -> Messages.tapback(c.id, m, kind) }.takeIf { Messages.linked && m.id?.startsWith("c:") == false }) { reactors = m }
+                    Tapbacks(m, { kind: String -> Messages.tapback(c.id, m, kind) }.takeIf { Messages.linked && m.id?.startsWith("c:") == false })
                         if (m.edited) BasicText("Edited", Modifier.fillMaxWidth().padding(top = 3.dp, end = 6.dp)
                             .semantics { contentDescription = "Edit history for: ${m.text.take(40)}"; role = Role.Button }.clickable { history = m },
                             style = Pack.body(Pack.size.small, Pack.muted).copy(textAlign = if (m.fromMe) androidx.compose.ui.text.style.TextAlign.End else androidx.compose.ui.text.style.TextAlign.Start))
@@ -714,11 +713,7 @@ fun Thread(
             }
             // Back closes the menu, and only the menu: it went to the screen's own back (the slide away), which left the
             // conversation's taps dead after it (the 0.7.8 walk: a link tapped after closing the menu did nothing).
-            androidx.activity.compose.BackHandler(enabled = held != null || reactors != null) { held = null; reactors = null }
-            reactors?.let { selected ->
-                val current = c.messages.firstOrNull { it.renderKey == selected.renderKey } ?: selected
-                ReactorMenu(current) { reactors = null }
-            }
+            androidx.activity.compose.BackHandler(enabled = held != null) { held = null }
             held?.let { selected ->
                 val m = c.messages.firstOrNull { it.renderKey == selected.renderKey } ?: selected
                 val changing = m.id?.let { Messages.changeKey(c.id, it) in changes } == true
@@ -1525,9 +1520,8 @@ private fun HoldMenu(
 private val TAPBACKS = listOf("love" to "❤️", "like" to "👍", "dislike" to "👎", "laugh" to "😂", "emphasize" to "‼️", "question" to "❓")
 
 /** The tapbacks on [m], small, under its balloon on its side: the owner's own outlined. An emoji tapback shows as itself. */
-@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun Tapbacks(m: Message, onTakeOff: ((String) -> Unit)?, onOpen: () -> Unit) {
+private fun Tapbacks(m: Message, onTakeOff: ((String) -> Unit)?) {
     AnimatedContent(targetState = m.tapbacks, label = "tapback change", transitionSpec = {
         if (Motion.reduced) EnterTransition.None togetherWith ExitTransition.None
         else (fadeIn(Motion.fade()) + scaleIn(Motion.spatial, initialScale = 0.8f)) togetherWith fadeOut(Motion.fade())
@@ -1540,30 +1534,15 @@ private fun Tapbacks(m: Message, onTakeOff: ((String) -> Unit)?, onOpen: () -> U
                 val kind = reaction.removePrefix("me:")
                 val glyph = TAPBACKS.firstOrNull { it.first == kind }?.second ?: kind
                 val mine = reaction.startsWith("me:")
-                // His own comes off with a tap (Boss, 0.8.12), and a hold still lists who reacted; anyone else's opens the list.
+                // His own comes off with a tap, at once (Boss, 0.8.13: "just remove the tap back"); anyone else's does nothing.
                 val takeOff = onTakeOff?.takeIf { mine }
                 Box(Modifier.padding(end = 4.dp).clip(CircleShape).background(Pack.surface)
                     .then(if (mine) Modifier.border(1.5.dp, Pack.foreground, CircleShape) else Modifier)
-                    .semantics { contentDescription = if (takeOff != null) "Remove your reaction, $kind" else "Reactions on: " + m.text.take(40); role = Role.Button }
-                    .then(if (takeOff != null) Modifier.combinedClickable(onLongClick = onOpen) { takeOff(kind) } else Modifier.clickable(onClick = onOpen))
+                    .semantics { contentDescription = if (takeOff != null) "Remove your reaction, $kind" else "Reaction on: " + m.text.take(40) }
+                    .then(if (takeOff != null) Modifier.clickable { takeOff(kind) } else Modifier)
                     .padding(horizontal = 6.dp, vertical = 2.dp)) { BasicText(glyph, style = Pack.body(Pack.size.small)) }
             }
         } else Spacer(Modifier.height(0.dp))
-    }
-}
-
-@Composable private fun ReactorMenu(m: Message, onDismiss: () -> Unit) {
-    MessageOverlay(onDismiss) {
-        Column(Modifier.widthIn(min = 220.dp, max = 320.dp).background(Pack.background, composerShape(14.dp))
-            .border(2.dp, Pack.foreground, composerShape(14.dp)).pointerInput(Unit) { detectTapGestures(onTap = {}) }.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            BasicText("Reactions", Modifier.semantics { contentDescription = "People who reacted" }, style = Pack.body(Pack.size.item).copy(fontWeight = FontWeight.SemiBold))
-            val labels = if (m.reactions.isNotEmpty()) m.reactions.map { (it.name ?: if (it.fromMe) "You" else it.sender.ifEmpty { "Someone" }) to it.kind }
-                else m.tapbacks.map { (if (it.startsWith("me:")) "You" else "Someone") to it.removePrefix("me:") }
-            labels.forEach { (name, kind) ->
-                BasicText((TAPBACKS.firstOrNull { it.first == kind }?.second ?: kind) + "  " + name, Modifier.semantics { contentDescription = "Reaction from $name: $kind" }, style = Pack.body(Pack.size.body))
-            }
-            BasicText("Done", Modifier.semantics { role = Role.Button }.clickable(onClick = onDismiss).padding(vertical = 8.dp), style = Pack.body(Pack.size.item))
-        }
     }
 }
 

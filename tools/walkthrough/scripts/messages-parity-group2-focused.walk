@@ -16,18 +16,14 @@ doubletap Perfect, see you there
 expect Tapback like
 shot current-reaction-menu card=messages-parity-reaction-menu
 tap Tapback like
-tap Reactions on: Perfect, see you there
-expect People who reacted
-expect Reaction from You: like
-shot current-attribution card=messages-parity-reaction-attribution
-key BACK
-expect Perfect, see you there
+# His own chip takes it off with a tap (no list since 0.8.14); someone else's does nothing.
+expect Remove your reaction, like
+tap Remove your reaction, like
 absent People who reacted
-# The existing other person's reaction preserves its name from the Mac's direct-chat data.
-tap Reactions on: Yes! 7pm
-expect Reaction from Ana Demo: love
-shot other-reactor card=messages-parity-reaction-attribution
-tap Done
+absent Remove your reaction, like
+tap Reaction on: Yes! 7pm
+absent People who reacted
+expect Reaction on: Yes! 7pm
 # A raw drag cannot navigate the underlying chat while a reaction menu is open.
 doubletap Perfect, see you there
 expect Tapback like

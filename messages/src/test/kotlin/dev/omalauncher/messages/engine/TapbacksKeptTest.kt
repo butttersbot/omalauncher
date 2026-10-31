@@ -21,6 +21,13 @@ class TapbacksKeptTest {
         assertEquals(emptyList<String>(), kept.applied("c", listOf(message("M", "me:like")), 1_000).single().tapbacks)
     }
 
+    @Test fun aCopyWithoutARemovedOneDoesNotEndTheWait() {
+        val kept = TapbacksKept().apply { hold("c", "M", null, emptyList(), 0) }
+        kept.applied("c", listOf(message("M")), 1_000)
+        assertEquals(emptyList<String>(), kept.applied("c", listOf(message("M", "me:like")), 2_000).single().tapbacks)
+        assertEquals(listOf("me:like"), kept.applied("c", listOf(message("M", "me:like")), 60_000).single().tapbacks)
+    }
+
     @Test fun afterTheMacAgreesItsCopiesAreBelievedAgain() {
         val kept = TapbacksKept().apply { hold("c", "M", "me:like", listOf(me), 0) }
         kept.applied("c", listOf(message("M", "me:like")), 1_000)

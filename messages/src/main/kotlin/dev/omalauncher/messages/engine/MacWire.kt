@@ -76,7 +76,7 @@ object MacWire {
 
     fun normalized(handle: String) = handle.removePrefix("tel:").removePrefix("mailto:").lowercase()
 
-    private fun isOwn(sender: String) = sender.isNotEmpty() && normalized(sender) in ownHandles
+    fun isOwn(sender: String) = sender.isNotEmpty() && normalized(sender) in ownHandles
 
     /** A person has one tapback on a message; the Mac can list him under two of his handles. The last is his. */
     private fun <T> oneOfHis(all: List<T>, his: (T) -> Boolean): List<T> {

@@ -559,6 +559,10 @@ object Messages {
         val changed = message.copy(tapbacks = message.tapbacks.filterNot { it.startsWith("me:") } + listOfNotNull(mine.takeIf { !remove }),
             reactions = message.reactions.filterNot { it.fromMe } + if (remove) emptyList() else listOf(Reaction(kind, "", true, "You")))
         publish(real.fromMac(id, null, null, listOf(changed), counting = false))
+        // A live update kept from before this tap would otherwise bring the old tapback back over a later history read.
+        liveUpdates.value[id]?.let { facts ->
+            liveUpdates.value = liveUpdates.value + (id to facts.map { if (it.id == changed.id) it.copy(tapbacks = changed.tapbacks, reactions = changed.reactions) else it })
+        }
         watchTapbacks(id, changed.id)
         val kept = tapbacksKept.hold(id, macId, mine.takeIf { !remove }, changed.reactions.filter { it.fromMe }, System.currentTimeMillis())
         MacLink.tapback(id, macId, kind, remove, java.util.UUID.randomUUID().toString()) { failure ->
@@ -577,7 +581,7 @@ object Messages {
         tapbacksShown.keys.filter { it.startsWith("$id\u0000") }.forEach { key ->
             val message = messages.firstOrNull { it.id == key.substringAfter('\u0000') } ?: return@forEach
             val mine = message.tapbacks.firstOrNull { it.startsWith("me:") }
-            if (mine != null && message.tapbacks.count { it.removePrefix("me:") == mine.removePrefix("me:") } > 1) {
+            if (message.tapbacks.count { it.startsWith("me:") } > 1 || message.reactions.count { !it.fromMe && it.sender.isNotEmpty() && MacWire.isOwn(it.sender) } > 0) {
                 android.util.Log.i("SomaWalk", "tapback doubled $mine")
             }
             if (mine != tapbacksShown[key]) {

@@ -3,12 +3,12 @@
 
 Live, 2026-10-30: the Direct service sends from his number, but chat.db's rows carry his email, so his own reactions
 came back as fromMe false with sender his email, which health lists among his handles. Handles here are fictional.
-Usage: HOST PORT UP_PORT
+A tapback is answered at once and reaches the demo LAG seconds later, as chat.db lags the send. Usage: HOST PORT UP_PORT LAG
 """
-import http.client, json, sys, urllib.parse
+import http.client, json, sys, threading, time, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-HOST, PORT, UP = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
+HOST, PORT, UP, LAG = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), float(sys.argv[4])
 OTHER = "owner@example.test"
 
 
@@ -43,10 +43,27 @@ class Proxy(BaseHTTPRequestHandler):
     def log_message(self, *_):
         pass
 
+    @staticmethod
+    def later(path, body, headers):
+        time.sleep(LAG)
+        c = http.client.HTTPConnection("127.0.0.1", UP, timeout=30)
+        c.request("POST", path, body=body, headers=headers)
+        c.getresponse().read()
+        c.close()
+
     def forward(self):
         n = int(self.headers.get("Content-Length") or 0)
         body = self.rfile.read(n) if n else None
         headers = {k: v for k, v in self.headers.items() if k.lower() not in ("host", "connection")}
+        if self.command == "POST" and self.path.endswith("/tapback"):
+            threading.Thread(target=self.later, args=(self.path, body, headers), daemon=True).start()
+            data = b'{"ok":true}'
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
         c = http.client.HTTPConnection("127.0.0.1", UP, timeout=120)
         c.request(self.command, self.path, body=body, headers=headers)
         r = c.getresponse()

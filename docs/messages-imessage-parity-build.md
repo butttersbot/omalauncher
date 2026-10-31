@@ -314,6 +314,6 @@ Live metadata, on Boss's own OK and deleted afterwards: the Direct service sends
 
 `MacWire` now counts a reaction as his when its sender is any handle in health, and the phone keeps those handles between runs. Walk: `messages-tapback-chips.walk`, on `Fold8-ParityBuild` with a fresh demo behind `tools/walkthrough/messages-own-handle-proxy.py`. It reopens the chat to force the Mac's copy.
 
-## 0.8.14: one tapback under two handles, and his icon takes his off, 2026-10-30
+## 0.8.15: his icon takes his off, and the reactions list is gone, 2026-10-30
 
-Boss saw one reaction attributed to his email and one to his number. The app now keeps one of his per message, wherever the Mac lists him. A tap on his own icon removes it for real; a hold on it, or a tap on anyone else's, opens the list of who reacted. Fixture handles are fictional.
+Boss saw one reaction attributed to his email and one to his number. The app now keeps one of his per message, wherever the Mac lists him. A tap on his own chip removes it at once and sends the real removal; the hold from 0.8.11 keeps it off for its full 60 s, since a copy without the tapback may only predate it, and kept live updates take the tap too, so one cannot bring it back. The list of who reacted is gone (Boss, 0.8.13: "We need to get rid of that and then just remove the tap back"), and a tap on anyone else's chip does nothing. Fixture handles are fictional.

@@ -3,8 +3,8 @@ package dev.omalauncher.messages.engine
 /**
  * The owner's tapback while the Mac's copy catches up. The Direct service sends through its transport but reads history
  * from chat.db, which has a tapback only once Messages.app has received Apple's copy; a copy of the message read before
- * then says it isn't there (Boss, 0.8.10: "it lands and then it'll disappear and then land again"). Until a copy agrees,
- * or [PATIENCE_MS] pass, the owner's own tapback on that message stays as he left it; everyone else's come as the Mac says.
+ * then says it isn't there. Until a copy shows his tapback, or [PATIENCE_MS] pass, the owner's own tapback on that
+ * message stays as he left it; everyone else's come as the Mac says.
  */
 internal class TapbacksKept {
     data class Kept(val mine: String?, val reactions: List<Reaction>, val until: Long)
@@ -30,7 +30,9 @@ internal class TapbacksKept {
             val kept = waiting[key(chat, target)] ?: return@map message
             // The Mac puts a message's tapbacks on its last part, so a part with none says nothing about the rest.
             val parts = incoming.filter { it.id?.removeSuffix("#a") == target }
-            if (parts.any { part -> part.tapbacks.firstOrNull { it.startsWith("me:") } == kept.mine && (kept.mine != null || part === parts.last()) }) {
+            // On is confirmed by a copy that has it. Off isn't: a copy without it may simply predate it, so a tapback taken
+            // off stays off for the whole wait.
+            if (kept.mine != null && parts.any { part -> part.tapbacks.firstOrNull { it.startsWith("me:") } == kept.mine }) {
                 held.remove(key(chat, target))
                 return@map message
             }
