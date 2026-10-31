@@ -299,3 +299,11 @@ Proof on the emulator against a demo built from 8d710f81: `~/Projects/msg-bugs-e
 Boss, 0.8.10: "It fires twice every single time... it lands and then it'll disappear and then land again." The Direct service sends through its transport and reads history from chat.db, so a copy of the message read before Messages.app has Apple's copy says the tapback isn't there, and the phone believed it. `engine/TapbacksKept.kt` holds the owner's own tapback, on or off, until a copy agrees or 60 s pass.
 
 Walk: `messages-tapback-steady.walk`, on `Fold8-ParityBuild` with a fresh demo behind `tools/walkthrough/messages-mac-lag-proxy.py` at 15 s. The walk needs a clean demo each run, since it assumes no earlier tapback. The real sequence of copies on the live service was not observed: chat.db and the service's token are out of this shell's reach.
+
+## 0.8.12: Latest floats, pictures hold their place, 2026-10-30
+
+The Latest pill makes no room at all (the band in 0.8.10 read as a white row), so messages run behind it and nothing moves when it comes or goes. The earlier room, from the 0.7.6 walk, is gone too.
+
+A lone photo started at a guessed shape and resized when decoded, again each time it scrolled back in; the Mac's width and height were ignored. `PictureShapes` keeps each shape, from the Mac then from the picture, on the phone. `PictureCache` keeps decoded pictures, posters and link images in memory. A kept video's frame takes its place from the start, and X posts read earlier have their card size at once.
+
+Walk: `messages-images-steady.walk`, on `Fold8-ParityBuild` with a fresh demo holding the fixture from `~/Projects/msg-bugs-evidence/images/fixture.py`, behind `tools/walkthrough/messages-slow-images-proxy.py`. Numbers in that evidence folder. Frame times did not change, and a text-only chat has the same ones, so on the emulator they are not from pictures.

@@ -39,14 +39,15 @@ internal fun linkCardFor(url: String, known: RichLink?, settleMs: Long = 0): Ric
         delay(settleMs)
         XPreviews.request(context, url)
     }
-    return XPost.fill(known, found[url])
+    return XPost.fill(known, found[url] ?: XPreviews.kept(url))
 }
 
 /** Same metadata card in either direction, the draft, and the unfolded shared table. */
 @Composable
 internal fun RichLinkCard(link: RichLink, ink: Color, compact: Boolean = false, draft: Boolean = false, onRemove: () -> Unit = {}) {
     val context = LocalContext.current
-    val picture by produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, link.imageAttachmentId) {
+    val picture by produceState(link.imageAttachmentId?.let { PictureCache[it] }, link.imageAttachmentId) {
+        if (value != null) return@produceState
         value = withContext(Dispatchers.IO) {
             link.imageAttachmentId?.let { if (XPreviews.owns(it)) XPreviews.image(context, it) else MacLink.file(context, it, picture = true) }?.let { file ->
                 runCatching {
@@ -54,6 +55,7 @@ internal fun RichLinkCard(link: RichLink, ink: Color, compact: Boolean = false, 
                     android.graphics.BitmapFactory.decodeFile(file.path, bounds)
                     val sample = Integer.highestOneBit(maxOf(bounds.outWidth, bounds.outHeight).coerceAtLeast(1) / 720).coerceAtLeast(1)
                     android.graphics.BitmapFactory.decodeFile(file.path, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample })?.asImageBitmap()
+                        ?.also { PictureCache[link.imageAttachmentId] = it }
                 }.getOrNull()
             }
         }

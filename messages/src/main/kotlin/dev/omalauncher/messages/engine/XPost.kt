@@ -106,6 +106,22 @@ internal object XPreviews {
     private val io = Executors.newFixedThreadPool(2)
     private val asked = ConcurrentHashMap<String, Long>()
     val found = MutableStateFlow<Map<String, RichLink>>(emptyMap())
+    private val onDisk = ConcurrentHashMap<String, Pair<String, Boolean>>()
+
+    /** Posts read in an earlier run, so a card takes its size at once rather than growing when its file is read. */
+    fun preload(context: Context) {
+        io.execute {
+            dir(context).listFiles { f -> f.name.endsWith(".json") }?.forEach { f ->
+                val id = f.name.removeSuffix(".json")
+                runCatching { JSONObject(f.readText()) }.getOrNull()?.let { saved ->
+                    val image = saved.optBoolean("image")
+                    if (!image || File(f.parentFile, "$id.img").length() > 0) onDisk[id] = saved.getString("title") to image
+                }
+            }
+        }
+    }
+
+    fun kept(url: String): RichLink? = XPost.statusId(url)?.let { id -> onDisk[id]?.let { (title, image) -> link(url, id, title, image) } }
 
     fun owns(imageId: String) = imageId.startsWith(PREFIX)
 

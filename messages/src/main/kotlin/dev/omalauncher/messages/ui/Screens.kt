@@ -27,7 +27,6 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.IntOffset
@@ -59,6 +58,7 @@ import dev.omalauncher.messages.engine.Alerts
 import dev.omalauncher.messages.engine.Desk
 import dev.omalauncher.messages.engine.CafOpus
 import dev.omalauncher.messages.engine.MacLink
+import dev.omalauncher.messages.engine.PictureShapes
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -592,26 +592,19 @@ fun Thread(
             keyboard?.hide(); searching = true
         }) else null)
         Box(Modifier.weight(1f).fillMaxWidth()) {
-            // Room under the last message for the Latest pill, so it never covers the end of its words (the 0.7.6 walk),
-            // but only while the pill is there: kept always, it left a strip of empty paper between the last message and
-            // the composer whenever the owner was at the latest (the Fold, 0.8.2). Its height is the pill's own, measured.
+            // The Latest pill floats over the conversation (Boss, 0.8.10: "it draws a massive white row"): nothing makes
+            // room for it, so nothing moves when it comes or goes.
             val pillShown = !contextView && !latest && size > 0
             val density = LocalDensity.current
-            var pillHeight by remember { mutableIntStateOf(0) }
-            val pillRoom by androidx.compose.animation.core.animateDpAsState(
-                if (pillShown) with(density) { pillHeight.toDp() } + PILL_GAP * 2 else 0.dp,
-                label = "pill room",
-            )
             // A short conversation sits down on the composer too, as in Messages, not up under the name with paper below.
             LazyColumn(
-                // The pill's room comes off the list itself, so no message runs under the pill (0.8.8 walk, unfolded).
-                Modifier.fillMaxSize().padding(start = 12.dp, end = 12.dp, bottom = pillRoom)
+                Modifier.fillMaxSize().padding(horizontal = 12.dp)
                     .messageDrag(c.id, { 0f }, with(density) { 24.dp.toPx() }, allowReply = false,
                         delta = { _, dx -> onTimeDelta(dx) }, end = { _, _ -> onTimeEnd() }),
                 state = list,
                 verticalArrangement = Arrangement.Bottom,
             ) {
-                itemsIndexed(c.messages, key = { _, m -> m.renderKey }) { i, m ->
+                itemsIndexed(c.messages, key = { _, m -> m.renderKey }, contentType = { _, m -> m.files.isNotEmpty() }) { i, m ->
                     val entering = remember(m.renderKey) { SendMotion.take(m.renderKey) && !Motion.reduced }
                     val entrance = remember(m.renderKey) { Animatable(if (entering) 0f else 1f) }
                     LaunchedEffect(m.renderKey) { entrance.moveTo(1f, MessageMotion.send) }
@@ -712,7 +705,7 @@ fun Thread(
                 }
             }
             if (pillShown) {
-                LatestPill(fresh, Modifier.align(Alignment.BottomCenter).padding(bottom = PILL_GAP).onSizeChanged { pillHeight = it.height }) {
+                LatestPill(fresh, Modifier.align(Alignment.BottomCenter).padding(bottom = PILL_GAP)) {
                     scope.launch {
                         list.animateScrollToItem(size - 1)
                         latest = true
@@ -976,6 +969,8 @@ private fun mediaClip(
     return android.content.ClipData(if (mime.startsWith("video/")) "Video" else "Photo", arrayOf(mime), android.content.ClipData.Item(uri))
 }
 
+private const val POSTER = "poster:"
+
 /** A photo's or video's own corners, iMessage's: it stands without a balloon. */
 private val MEDIA_SHAPE = RoundedCornerShape(18.dp)
 
@@ -1037,11 +1032,13 @@ private fun Photos(
             // A GIF moves, as in iMessage (Boss, 2026-10-27): the Mac's own file, not its still JPEG.
             val gif = f.substringAfter('|') == "image/gif"
             val file by produceState<java.io.File?>(null, id) { if (local == null) value = withContext(Dispatchers.IO) { MacLink.file(context, id, picture = !gif) } }
+            val kept = remember(id) { PictureCache[id] }
             val moving by produceState<android.graphics.drawable.Drawable?>(null, file, local) {
                 if (gif) value = withContext(Dispatchers.IO) { runCatching { moving(context, local, file) }.getOrNull() }
             }
             DisposableEffect(moving) { onDispose { (moving as? android.graphics.drawable.AnimatedImageDrawable)?.stop() } }
-            val picture by produceState<ImageBitmap?>(null, file, local) {
+            val picture by produceState(kept, file, local) {
+                if (value != null) return@produceState
                 value =
                     withContext(Dispatchers.IO) {
                         runCatching {
@@ -1051,14 +1048,24 @@ private fun Photos(
                                 file?.let { decode(it, 1080) }
                             }
                         }.getOrNull()
+                    }?.also {
+                        PictureCache[id] = it
+                        PictureShapes.learned(id, it.height.toFloat() / it.width.coerceAtLeast(1))
                     }
             }
             // Round in every look, as the balloons are; the composer's square looks square only the field.
             val shape = MEDIA_SHAPE
             // One alone: 240 dp wide, as tall as its shape asks within 120-320 dp; several: 132 dp squares. The picture
             // fills its frame whatever its own size (a tiny one is scaled up, never drawn at its few pixels).
-            val ratio = moving?.let { it.intrinsicHeight.toFloat() / it.intrinsicWidth.coerceAtLeast(1) } ?: picture?.let { it.height.toFloat() / it.width.coerceAtLeast(1) } ?: 0.75f
-            val size = if (one) Modifier.width(240.dp).height((240 * ratio).coerceIn(120f, 320f).dp) else Modifier.size(132.dp)
+            val ratio = moving?.let { it.intrinsicHeight.toFloat() / it.intrinsicWidth.coerceAtLeast(1) } ?: picture?.let { it.height.toFloat() / it.width.coerceAtLeast(1) } ?: PictureShapes.of(id) ?: 0.75f
+            val tall = (240 * ratio).coerceIn(120f, 320f)
+            // A lone photo changing height moves everything under it; the walks read this (Log tag SomaWalk).
+            val laidOut = remember(id) { floatArrayOf(tall) }
+            if (one && tall != laidOut[0]) {
+                android.util.Log.i("SomaWalk", "photo resized")
+                laidOut[0] = tall
+            }
+            val size = if (one) Modifier.width(240.dp).height(tall.dp) else Modifier.size(132.dp)
             Box(
                 // A hold is the balloon's (tapbacks, reply): the picture's own tap would otherwise take it (Boss, 2026-10-23).
                 size.clip(shape).background(Pack.surface).combinedClickable(onLongClick = onHold, onDoubleClick = onHold) { file?.let { PhotoViewer.show(it, moving = gif) } }
@@ -1124,8 +1131,12 @@ private fun Videos(
             var loading by remember(id) { mutableStateOf(false) }
             var failed by remember(id) { mutableStateOf(false) }
             var kept by remember(id) { mutableStateOf(MacLink.cached(context, id, picture = false).takeIf { it.isFile && it.length() > 0 }) }
-            val frame by produceState<ImageBitmap?>(null, kept) {
-                value = kept?.let { k -> withContext(Dispatchers.IO) { posterOf(k) } }
+            val frame by produceState(PictureCache[POSTER + id], kept) {
+                if (value != null) return@produceState
+                value = kept?.let { k -> withContext(Dispatchers.IO) { posterOf(k) } }?.also {
+                    PictureCache[POSTER + id] = it
+                    PictureShapes.learned(id, it.height.toFloat() / it.width.coerceAtLeast(1))
+                }
             }
             fun open() {
                 kept?.let { return play(context, it, mime) }
@@ -1142,14 +1153,15 @@ private fun Videos(
                 }
             }
             val p = frame
-            if (p != null) {
-                val ratio = (p.height.toFloat() / p.width.coerceAtLeast(1)).coerceIn(0.5f, 1.4f)
+            val shape = p?.let { it.height.toFloat() / it.width.coerceAtLeast(1) } ?: kept?.let { PictureShapes.of(id) }
+            if (shape != null) {
+                val ratio = shape.coerceIn(0.5f, 1.4f)
                 Box(
                     Modifier.width(240.dp).height((240 * ratio).dp).clip(MEDIA_SHAPE).background(Pack.surface)
                         .combinedClickable(onLongClick = onHold, onDoubleClick = onHold) { open() }.semantics { contentDescription = "Video, tap to play" },
                     contentAlignment = Alignment.Center,
                 ) {
-                    Image(p, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                    if (p != null) Image(p, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                     Box(Modifier.size(48.dp).background(Color.Black.copy(alpha = 0.55f), androidx.compose.foundation.shape.CircleShape), contentAlignment = Alignment.Center) {
                         BasicText("▶", style = Pack.body(Pack.size.item, Color.White))
                     }

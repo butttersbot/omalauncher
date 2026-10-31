@@ -109,6 +109,8 @@ object Messages {
     fun init(context: Context) {
         if (file != null) return
         app = context.applicationContext
+        PictureShapes.load(java.io.File(context.filesDir, "picture-shapes.json"))
+        XPreviews.preload(context)
         ChatChoices.init(context)
         val f = File(context.filesDir, "conversations.json")
         file = f

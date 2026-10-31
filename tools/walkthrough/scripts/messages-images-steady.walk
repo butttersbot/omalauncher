@@ -1,0 +1,37 @@
+# canvas-app: soma-messages
+# Boss, 0.8.10: "it draws a massive white row to cover that latest button" and "the scrolling will shift and then it'll stutter".
+# Isolated DEMO fixtures only: a long chat with pictures of many shapes, behind tools/walkthrough/messages-slow-images-proxy.py
+# (pictures 2 s late, their sizes in the history, as the Mac sends them). INJECT_EPHEMERAL_DEMO_TOKEN, INJECT_DEMO_HOST, INJECT_DEMO_PORT.
+fold folded
+wait 1200
+shell cmd statusbar collapse
+shell pm clear dev.omalauncher.messages
+shell pm grant dev.omalauncher.messages android.permission.READ_CONTACTS
+shell pm grant dev.omalauncher.messages android.permission.POST_NOTIFICATIONS
+shell am start -a android.intent.action.VIEW -d "'soma-messages://link?url=http%3A%2F%2FINJECT_DEMO_HOST%3AINJECT_DEMO_PORT&token=INJECT_EPHEMERAL_DEMO_TOKEN'" dev.omalauncher.messages
+wait 2500
+tap Link
+wait 3500
+# Pictures loading, none cached: no photo changes height, so nothing under one moves.
+clearlog
+tap Long thread
+wait 5000
+nolog photo resized
+# Up through the pictures, back down, up again: already known, they don't change either.
+swipe 0.5 0.25 0.5 0.7 700
+swipe 0.5 0.25 0.5 0.7 700
+wait 4000
+swipe 0.5 0.7 0.5 0.25 700
+wait 1500
+swipe 0.5 0.25 0.5 0.7 700
+wait 2000
+nolog photo resized
+# Scrolled up, the Latest button floats: messages run behind it, no band around it.
+expect Latest
+shot latest-floats-cover
+fold open
+wait 3000
+expect Latest
+shot latest-floats-unfolded
+fold folded
+wait 1500

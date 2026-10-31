@@ -82,6 +82,7 @@ object MacWire {
                 (0 until list.length()).map {
                     val a = list.getJSONObject(it)
                     val name = a.optString("name")
+                    PictureShapes.fromTheMac(a.getString("id"), a.optInt("width"), a.optInt("height"))
                     Attachment(a.getString("id"), name, mimeOf(name, a.optString("mime"), a.optBoolean("voiceNote")))
                 },
             replyTo = o.str("replyTo"),
