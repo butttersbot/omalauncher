@@ -308,7 +308,7 @@ class DesktopEndToEndTest {
         assertTrue("the Claude thread runs in ~/Projects", File(work, "Projects/starts.log").isFile)
         hold.writeText("")
         // His long press on the chat's tab, then Switch agent, then Codex.
-        onAllNodes(hasText("New chat") and hasClickAction()).onFirst().performTouchInput { longClick() }
+        onAllNodes(hasText("New chat") and hasClickAction())[1].performTouchInput { longClick() }
         settle()
         onNodeWithText("Switch agent").performClick(); settle()
         onNodeWithText("Codex").performClick(); settle()
@@ -935,7 +935,7 @@ class DesktopEndToEndTest {
     }
 
     /**
-     * Slice 4 (Boss approved design/soma-all-chats-mockup.html, 2026-10-28): the strip's "all" opens All chats beside the
+     * Slice 4 (Boss approved design/soma-all-chats-mockup.html, 2026-10-28): the header's name opens All chats beside the
      * chat; a search finds a chat by what was said in it; tapping a row opens that chat.
      */
     @Test fun allChatsListsEveryChatAndFindsOneByItsWords() = runComposeUiTest {

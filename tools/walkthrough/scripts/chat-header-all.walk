@@ -1,0 +1,71 @@
+# The header opens All chats (Boss, 2026-10-30: "take that all button, get rid of it ... turn the left side header ... that
+# whole thing will be a button"). The same panel, reached by a real tap on the name or the device, on the cover and
+# unfolded. Fictional fixture running the production OmaChatScreen. Prerequisite: -PartifactPreview :artifact-preview:assembleDebug installed.
+# canvas-app: soma-chat
+fold folded
+rotate portrait
+shell am force-stop dev.omalauncher.artifactpreview
+shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --ez links true
+tap Show the tabs
+expect Connections audit
+# Fails if the strip's "all" comes back: no node reads exactly "all". Look: the strip ends in +, with nothing after it.
+shell 'uiautomator dump /sdcard/no-all.xml >/dev/null; ! grep -q "text=\"all\"" /sdcard/no-all.xml'
+shot header-strip-no-all-cover card=soma-chat-chat-cover
+swipefrom Connections audit -0.70 0 500
+wait 500
+shell 'uiautomator dump /sdcard/no-all.xml >/dev/null; ! grep -q "text=\"all\"" /sdcard/no-all.xml'
+shot header-strip-end-cover
+# From the Soma tab, a tap on the header (the middle of its left side).
+tap All chats
+expect Search chats
+shot header-all-chats-cover
+tap [ close ]
+wait 500
+absent Search chats
+# From a thread's tab, a tap on its device label; closed by Back; then a tab picked from it.
+tap Connections on the strip
+wait 700
+expect MAC PRO
+tap MAC PRO
+expect Search chats
+key BACK
+wait 500
+absent Search chats
+expect Connections audit
+tap MAC PRO
+expect Search chats
+tap Open Phone B
+wait 700
+absent Search chats
+expect to Phone B
+shot header-picked-phone-b-cover
+key BACK
+wait 700
+shell am force-stop dev.omalauncher.artifactpreview
+fold open
+rotate landscape
+wait 900
+shell am start -W -n dev.omalauncher.artifactpreview/.PreviewActivity --ez links true
+tap Show the tabs
+expect Connections audit
+shell 'uiautomator dump /sdcard/no-all.xml >/dev/null; ! grep -q "text=\"all\"" /sdcard/no-all.xml'
+shot header-strip-no-all-unfolded card=soma-chat-chat
+tap All chats
+expect Search chats
+# Look: beside the chat, with the chat still in view.
+shot header-all-chats-unfolded
+tap [ close ]
+wait 500
+absent Search chats
+tap Connections on the strip
+wait 700
+tap MAC PRO
+expect Search chats
+tap Open Phone B
+wait 700
+absent Search chats
+expect to Phone B
+shot header-picked-phone-b-unfolded
+key BACK
+fold folded
+rotate portrait

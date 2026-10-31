@@ -12,7 +12,7 @@ tap Show the tabs
 tap Phone B
 wait 700
 expect Nothing has been sent to Phone B
-shot last-tab-picked-cover card=soma-chat-chat-cover
+shot last-tab-picked-cover
 # Closed, gone from memory, and an entry lands on Phone C. It was the last turn, and used to take him there.
 # (Needs at least one entry in the emulator's log already. Soma is the home app, so Android starts it again after a stop: the entry goes in within the stop's own command, before it reads the log.)
 shell 'am force-stop dev.omalauncher.boss; sed -i "s/]}$/,{\"time\":$(date +%s)000,\"agent\":\"Claude Code\",\"prompt\":\"walk mail for Phone C\",\"images\":[],\"screen\":false,\"newThread\":true,\"steps\":[],\"result\":\"from the walk\",\"status\":\"done\",\"approvals\":[],\"build\":true,\"builder\":\"C\"}]}/" /data/data/dev.omalauncher.boss/files/oma-chat.json && restorecon /data/data/dev.omalauncher.boss/files/oma-chat.json'
@@ -20,7 +20,7 @@ shell am start -W -a dev.omalauncher.action.OMA_CHAT -p dev.omalauncher.boss
 wait 1500
 expect Nothing has been sent to Phone B
 absent walk mail for Phone C
-shot last-tab-after-entry-elsewhere-cover card=soma-chat-chat-cover
+shot last-tab-after-entry-elsewhere-cover
 key BACK
 wait 1000
 absent Nothing has been sent to Phone B
@@ -41,13 +41,13 @@ shell 'am start -W -a android.intent.action.VIEW -d soma://phone/B --es android.
 wait 1500
 expect Nothing has been sent to Phone B
 absent words from a web page
-shot link-from-outside-cover card=soma-chat-chat-cover
+shot link-from-outside-cover
 # A dead link from outside while it is open: said, and he stays.
 shell am start -W -a android.intent.action.VIEW -d soma://thread/tdeadbeef
 wait 3800
 expect "Can't find that thread"
 expect Nothing has been sent to Phone B
-shot link-from-outside-dead-cover card=soma-chat-chat-cover
+shot link-from-outside-dead-cover
 key BACK
 wait 1000
 # The home tile on page 1 is a plain open: back on Phone B, though its status names Phone C's turn.
@@ -56,7 +56,7 @@ shot last-tab-home-before-tile
 tap oma
 wait 1500
 expect Nothing has been sent to Phone B
-shot last-tab-from-tile-cover card=soma-chat-chat-cover
+shot last-tab-from-tile-cover
 key BACK
 wait 1000
 # The remembered tab is gone: the Soma tab, never a blank one.
@@ -64,7 +64,7 @@ shell 'am force-stop dev.omalauncher.boss; sed -i "s/>phone-b</>mac:tdeadbeef</"
 shell am start -W -a dev.omalauncher.action.OMA_CHAT -p dev.omalauncher.boss
 wait 1500
 absent Nothing has been sent to
-shot last-tab-gone-cover card=soma-chat-chat-cover
+shot last-tab-gone-cover
 key BACK
 # Unfolded: the same comes back.
 shell am force-stop dev.omalauncher.boss

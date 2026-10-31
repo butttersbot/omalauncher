@@ -71,7 +71,7 @@ class ChatScreenTapTest : ChatScreenTestBase() {
         assertEquals(listOf("ticket-1"), saved)
         onNodeWithContentDescription("Show the tabs").performClick()
         mainClock.advanceTimeBy(500)
-        onAllNodes(hasText("Build") and hasClickAction()).onFirst().performTouchInput { longClick() }
+        onAllNodes(hasText("Build") and hasClickAction())[1].performTouchInput { longClick() }
         mainClock.advanceTimeBy(500)
         onNodeWithText("Forget saved commands").performClick()
         mainClock.advanceTimeBy(500)
@@ -304,6 +304,40 @@ class ChatScreenTapTest : ChatScreenTestBase() {
         onAllNodes(hasText("Old notes", substring = true)).onFirst().assertExists()
     }
 
+    /** The header's name and device open All chats on every tab (Boss, 2026-10-30); the strip has no "all" any more. */
+    @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
+    @Test fun theHeaderOpensAllChatsAndTheStripHasNoAll() = androidx.compose.ui.test.runComposeUiTest {
+        var wanted by mutableStateOf<String?>(null)
+        val host = object : SampleHost() {
+            val shown = listOf(AgentThread(PHONE_THREAD, "Phone A", ThreadState.Idle, "", "idle", worked = now), AgentThread("mac:t850cdc07", "Connections", ThreadState.Idle, "", "idle", worked = now, machine = "MacBook"))
+            override fun threads() = shown
+            override fun liveThreads(all: List<AgentThread>, pinned: Set<String>, archived: Set<String>) = shown
+        }
+        mainClock.autoAdvance = false
+        setContent { androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.size(420.dp, 800.dp)) { OmaChatScreen(host, prefill = null, onPrefilled = {}, wanted = wanted, onTab = { wanted = it.takeIf { tab -> tab != OMA_TAB } }) } }
+        fun settle() = mainClock.advanceTimeBy(1_200)
+        settle()
+        onNodeWithContentDescription("Show the tabs").performClick()
+        settle()
+        onNodeWithText("all").assertDoesNotExist()
+        // On the Soma tab; closed; on a thread's tab, by the device beside its name too; and a tab picked from it.
+        onNodeWithContentDescription("All chats").performClick()
+        settle()
+        onNodeWithText("Search chats").assertExists()
+        onNodeWithText("[ close ]", substring = true).performClick()
+        settle()
+        onNodeWithText("Search chats").assertDoesNotExist()
+        wanted = "mac:t850cdc07"
+        settle()
+        onNodeWithText("MacBook").performClick()
+        settle()
+        onNodeWithText("Search chats").assertExists()
+        onNodeWithContentDescription("Open Phone A").performClick()
+        settle()
+        assertEquals(PHONE_THREAD, wanted)
+        onNodeWithText("Search chats").assertDoesNotExist()
+    }
+
     /** Before he picks, a new chat shows the default new chats remember, model and all. */
     @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
     @Test fun aNewChatShowsTheRememberedDefault() = androidx.compose.ui.test.runComposeUiTest {
@@ -332,7 +366,7 @@ class ChatScreenTapTest : ChatScreenTestBase() {
         settle()
         onNodeWithContentDescription("Show the tabs").performClick()
         settle()
-        onAllNodes(hasText("New chat") and hasClickAction()).onFirst().performTouchInput { longClick() }
+        onAllNodes(hasText("New chat") and hasClickAction())[1].performTouchInput { longClick() }
         settle()
         onNodeWithText("Switch agent").performClick()
         settle()
@@ -356,7 +390,7 @@ class ChatScreenTapTest : ChatScreenTestBase() {
         settle()
         onNodeWithContentDescription("Show the tabs").performClick()
         settle()
-        onAllNodes(hasText("New chat") and hasClickAction()).onFirst().performTouchInput { longClick() }
+        onAllNodes(hasText("New chat") and hasClickAction())[1].performTouchInput { longClick() }
         settle()
         onNodeWithText("Rename").performClick()
         settle()

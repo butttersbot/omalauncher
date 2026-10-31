@@ -253,7 +253,7 @@ private fun ChatScreen(
         keyboard?.hide()
         onTab(key)
     }
-    // All chats (slice 4): opened from the strip's "all", beside the chat or over it, as an artifact is.
+    // All chats (slice 4): opened from the header's name, beside the chat or over it, as an artifact is.
     var allChatsOpen by remember { mutableStateOf(false) }
 
     // What is in the field, one for each tab: switching tabs puts away this tab's words and brings back the other's.
@@ -545,7 +545,12 @@ private fun ChatScreen(
             Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 // The title gives way first: the device label after it keeps its width, quieter than the title.
                 val onMachine = threads.firstOrNull { it.key == tab }?.machine.orEmpty()
-                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                // All of it, name and device, opens All chats (Boss, 2026-10-30), on every tab.
+                Row(Modifier.weight(1f).pressable {
+                    focusManager.clearFocus()
+                    keyboard?.hide()
+                    allChatsOpen = true
+                }.semantics { contentDescription = "All chats" }, verticalAlignment = Alignment.CenterVertically) {
                     BasicText(Pack.heading(tabTitle(tab, threads)), Modifier.weight(1f, fill = false), style = Pack.display(color = Pack.accent), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     if (onMachine.isNotEmpty()) BasicText(Pack.caption(onMachine), Modifier.padding(horizontal = 8.dp), style = Pack.mono(Pack.size.small, Pack.muted), maxLines = 1, softWrap = false)
                 }
@@ -579,11 +584,6 @@ private fun ChatScreen(
                     soma = host.somaTab,
                     wheelSideways = host.wheelScrollsTabs,
                     onMenu = { menuFor = it },
-                    onAll = {
-                        focusManager.clearFocus()
-                        keyboard?.hide()
-                        allChatsOpen = true
-                    },
                     onNew = {
                         // An empty new chat is opened again rather than a second one made.
                         onTab(newChatTab(host))
@@ -1004,7 +1004,6 @@ private fun TabStrip(
     onMenu: (String) -> Unit,
     onNew: () -> Unit,
     soma: Boolean = true,
-    onAll: () -> Unit = {},
     wheelSideways: Boolean = false,
 ) {
     val haptics = LocalHapticFeedback.current
@@ -1073,17 +1072,6 @@ private fun TabStrip(
                 .semantics { contentDescription = "New chat" },
             contentAlignment = Alignment.Center,
         ) { BasicText("+", style = Pack.mono(Pack.size.body, Pack.foreground)) }
-        // Every chat and thread, older ones too, and a search (slice 4).
-        Box(
-            Modifier
-                .padding(start = 6.dp)
-                .fillMaxHeight()
-                .pressable(onClick = onAll)
-                .framed(Pack.hair, Pack.accent, Pack.background, radius = 6.dp)
-                .semantics { contentDescription = "All chats" }
-                .padding(horizontal = 10.dp),
-            contentAlignment = Alignment.Center,
-        ) { BasicText("all", style = Pack.mono(Pack.size.body, Pack.accent)) }
     }
 }
 

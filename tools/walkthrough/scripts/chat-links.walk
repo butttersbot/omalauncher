@@ -16,7 +16,7 @@ tap Connections on the strip
 wait 700
 expect Connections audit
 # Look: the tab is open, its name in the header, and the strip shows it.
-shot links-in-strip-cover card=soma-chat-chat-cover
+shot links-in-strip-cover
 key BACK
 wait 700
 absent Connections audit
@@ -27,7 +27,7 @@ tap Last tab past the edge
 wait 900
 expect Last tab on the strip
 # Look: the strip has scrolled, and that tab is wholly in view, marked open.
-shot links-past-edge-cover card=soma-chat-chat-cover
+shot links-past-edge-cover
 key BACK
 wait 700
 absent Last tab on the strip
@@ -39,7 +39,7 @@ tap Old notes with no tab
 wait 900
 expect Old notes thread
 # Look: its tab has joined the strip, in view; a sixteen-digit id.
-shot links-off-strip-cover card=soma-chat-chat-cover
+shot links-off-strip-cover
 key BACK
 wait 700
 absent Old notes thread
@@ -51,7 +51,7 @@ tap Link to the other Mac
 wait 900
 expect MacBook
 # Look: the MacBook thread's tab, the device label "MacBook" in the header.
-shot links-other-mac-cover card=soma-chat-chat-cover
+shot links-other-mac-cover
 key BACK
 wait 700
 absent MacBook thread
@@ -61,7 +61,7 @@ tap Show the tabs
 tap Phone B tab
 wait 700
 # Look: Phone B's tab is open.
-shot links-phone-b-cover card=soma-chat-chat-cover
+shot links-phone-b-cover
 key BACK
 wait 700
 # Dead: said in plain words, and he stays. Nothing new on the strip.
@@ -72,14 +72,14 @@ wait 3600
 expect "Can't find that thread"
 expect A dead thread
 # Look: the message above the field; still the same tab and entry; no blank tab.
-shot links-dead-cover card=soma-chat-chat-cover
+shot links-dead-cover
 # Malformed: the same.
 tap A malformed link
 wait 500
 expect "That link doesn't open anything"
 expect A malformed link
 absent "Can't find that thread"
-shot links-malformed-cover card=soma-chat-chat-cover
+shot links-malformed-cover
 key BACK
 wait 700
 absent A malformed link
@@ -95,7 +95,7 @@ shot links-entry-unfolded card=soma-chat-chat
 tap Connections on the strip
 wait 700
 expect Connections audit
-shot links-in-strip-unfolded card=soma-chat-chat
+shot links-in-strip-unfolded
 key BACK
 wait 700
 absent Connections audit
@@ -104,7 +104,7 @@ tap Show the tabs
 tap Old notes with no tab
 wait 900
 expect Old notes thread
-shot links-off-strip-unfolded card=soma-chat-chat
+shot links-off-strip-unfolded
 key BACK
 wait 700
 absent Old notes thread
@@ -113,7 +113,7 @@ tap Show the tabs
 tap Link to the other Mac
 wait 900
 expect MacBook
-shot links-other-mac-unfolded card=soma-chat-chat
+shot links-other-mac-unfolded
 key BACK
 wait 700
 absent MacBook thread
@@ -123,7 +123,7 @@ tap A dead thread
 wait 3600
 expect "Can't find that thread"
 expect A dead thread
-shot links-dead-unfolded card=soma-chat-chat
+shot links-dead-unfolded
 key BACK
 wait 700
 absent A dead thread
