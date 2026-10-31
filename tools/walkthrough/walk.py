@@ -455,7 +455,10 @@ def get_emulator(a, script, out):
     pool.use_sdk_tools()
     who = a[a.index("--who") + 1] if "--who" in a else "walk of %s by %s" % (os.path.basename(script), os.environ.get("SOMA_THREAD") or "pid %d" % os.getpid())
     if "--serial" in a:
-        got = pool.named(a[a.index("--serial") + 1], who)
+        serial = a[a.index("--serial") + 1:a.index("--serial") + 2]
+        if not serial or serial[0].startswith("-"):
+            raise RuntimeError("--serial needs an emulator's name")
+        got = pool.named(serial[0], who)
         apks, pushes = many(a, "--apk"), many(a, "--push")
         if apks or pushes:
             pool.put_on(got.serial, apks, pushes)
@@ -507,7 +510,7 @@ def main():
     os.makedirs(out, exist_ok=True)
     try:
         claim, elsewhere = get_emulator(a, script, out)
-    except RuntimeError as e:  # emu_pool.NoEmulator: nothing was walked, which is no verdict on the app
+    except Exception as e:  # nothing was walked (no emulator, a copy or install that failed): no verdict on the app
         print(f"Walk not run: {e}", flush=True)
         sys.exit(3)
     if claim is None:

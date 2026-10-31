@@ -97,9 +97,9 @@ def say(words):
 
 # ---- locks
 
-def record(lock, who):
+def record(lock, who, **more):
     lock.seek(0); lock.truncate()
-    lock.write(json.dumps({"who": who, "pid": os.getpid(), "since": int(time.time()), "thread": os.environ.get("SOMA_THREAD", "")}))
+    lock.write(json.dumps({"who": who, "pid": os.getpid(), "since": int(time.time()), "thread": os.environ.get("SOMA_THREAD", ""), **more}))
     lock.flush()
 
 
@@ -131,13 +131,19 @@ def ancestors():
     return out
 
 
+def not_theirs(rec):
+    """A claim belongs to any caller, unless both name their threads and the threads differ."""
+    me = os.environ.get("SOMA_THREAD")
+    return not (rec.get("thread") and me and rec["thread"] != me)
+
+
 def mine(rec):
-    """A lock taken by whoever started this walk (soma-macbuild's hold, a claim of this thread's): it isn't taken again."""
+    """A lock taken by whoever started this walk (soma-macbuild's hold, an oma-emu claim made for this): it isn't taken again."""
     if not rec.get("pid"):
         return False
     if int(rec["pid"]) in ancestors():
         return True
-    return bool(rec.get("thread")) and rec["thread"] == os.environ.get("SOMA_THREAD")
+    return bool(rec.get("claim")) and not_theirs(rec)
 
 
 def slot_of(serial):
@@ -379,21 +385,33 @@ def watch(n):
         time.sleep(0.2)
 
 
-def try_slot(who):
+def port_taken(port):
+    """Someone else's emulator can sit in the pool's ports: adb's automatic ones overlap them."""
+    with socket.socket() as s:
+        s.settimeout(0.5)
+        return s.connect_ex(("127.0.0.1", port)) == 0
+
+
+def try_slot(who, skip=()):
     """The first free slot with its emulator booting, or (None, why not). One claim decides at a time, so two can't both
     take the last place; the boot itself is waited for outside that."""
     with open(os.path.join(pool_dir(), "pool.lock"), "a") as decide:
         fcntl.flock(decide, fcntl.LOCK_EX)
         lock, n = None, None
         for i in range(1, SLOTS + 1):
+            if i in skip:
+                continue
             lock = try_lock(os.path.join(pool_dir(), "slot-%d.lock" % i))
             if lock:
+                stop_slot(i)  # a dead walk's leftovers, if its watcher hasn't got there
+                if port_taken(FIRST_PORT + 2 * (i - 1)):
+                    lock.close(); lock = None
+                    continue
                 n = i
                 break
         if not lock:
             return None, "all %d slots taken" % SLOTS
         record(lock, who)
-        stop_slot(n)  # a dead walk's leftovers, if its watcher hasn't got there
         why = no_room()
         if why:
             lock.seek(0); lock.truncate(); lock.close()
@@ -421,12 +439,12 @@ def try_slot(who):
 def claim(who, seconds=WAIT_SECONDS, when_full=None):
     """A fresh emulator, waiting until there is room. when_full is asked now and then while waiting: anything it returns
     but None ends the wait, and claim returns that (a walk that ran on the other Mac). A slot that fails to boot is
-    tried once more before giving up."""
+    tried once more, on the next slot, before giving up."""
     if not have_golden():
         raise NoEmulator("no pool on this Mac (no %s: emu_pool.py golden makes it)" % GOLDEN)
-    started, told, next_ask, failures = time.monotonic(), False, 0, 0
+    started, told, next_ask, failures, bad = time.monotonic(), False, 0, 0, set()
     while True:
-        got, why = try_slot(who)
+        got, why = try_slot(who, bad)
         if got:
             try:
                 wait_boot(got.serial, got.process, got.log_path)
@@ -434,6 +452,7 @@ def claim(who, seconds=WAIT_SECONDS, when_full=None):
                 got.note = "%s, fresh in %d s" % (got.avd, time.monotonic() - started)
                 return got
             except Exception as e:
+                bad.add(got.slot)
                 got.release()
                 failures += 1
                 if failures >= 2:
@@ -546,7 +565,7 @@ def walk_on_peer(host, script, out, apks, pushes, who):
     def ssh(command, **kw):
         return subprocess.run(SSH + [host, command], **kw)
     def copy(*paths):
-        return subprocess.run(["scp", "-q", "-o", "BatchMode=yes", "-o", "ConnectTimeout=6", *paths, "%s:%s/" % (host, remote)],
+        return subprocess.run(["scp", "-q", *SSH[1:], *paths, "%s:%s/" % (host, remote)],
                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
     battery = "SOMA_EMU_OVERFLOW_BATTERY=1 " if os.environ.get("SOMA_EMU_OVERFLOW_BATTERY") == "1" else ""
     try:
@@ -579,7 +598,7 @@ def walk_on_peer(host, script, out, apks, pushes, who):
             say("the connection to %s dropped: this walk goes on waiting here" % host)
             return None
         os.makedirs(out, exist_ok=True)
-        subprocess.run(["rsync", "-a", "%s:%s/out/" % (host, remote), out.rstrip("/") + "/"], stdout=subprocess.DEVNULL)
+        subprocess.run(["rsync", "-a", "-e", " ".join(SSH), "%s:%s/out/" % (host, remote), out.rstrip("/") + "/"], stdout=subprocess.DEVNULL)
         results = os.path.join(out, "results.json")
         if os.path.exists(results):
             with open(results) as f:
@@ -746,6 +765,7 @@ def finish_golden(serial, apk, arch, info=None):
 def hold(who, minutes, parent):
     """Backs emu_pool.py claim: stays alive holding the emulator; its first line of output is the serial."""
     got = claim(who)
+    record(got.lock, who, claim=True)
     def done(*_):
         got.release()
         os._exit(0)
@@ -820,10 +840,14 @@ def main():
             print(serial)
         elif command == "release":
             path = lock_path(args[0])
-            rec = holder(path)
-            if not rec.get("pid"):
-                say("%s isn't claimed" % args[0]); sys.exit(1)
-            if rec.get("thread") and os.environ.get("SOMA_THREAD") and rec["thread"] != os.environ["SOMA_THREAD"]:
+            # Only a live claim: never whatever pid a dead holder left, or a build script holding walks.lock.
+            free = try_lock(path)
+            rec = {} if free else holder(path)
+            if free:
+                free.close()
+            if not rec.get("claim"):
+                say("%s has no oma-emu claim to release" % args[0]); sys.exit(1)
+            if not not_theirs(rec):
                 say("%s is %s's, not this thread's" % (args[0], rec.get("who"))); sys.exit(1)
             os.kill(int(rec["pid"]), signal.SIGTERM)
         elif command == "status":

@@ -23,7 +23,7 @@ def fake_machine(test):
     """A claim with nothing real behind it: no copy, no emulator, always room."""
     for name, value in dict(have_golden=lambda: True, no_room=lambda: "", stop_slot=lambda n: None, copy_golden=lambda n: None,
                             spawn=lambda *a: None, wait_boot=lambda *a, **k: None, make_ready=lambda s: None,
-                            start_watcher=lambda n: None, emulators=lambda: [(1, "Fold8-Pool-%d" % i) for i in range(1, 7)]).items():
+                            start_watcher=lambda n: None, port_taken=lambda port: False, emulators=lambda: [(1, "Fold8-Pool-%d" % i) for i in range(1, 7)]).items():
         p = patch.object(pool, name, value)
         p.start(); test.addCleanup(p.stop)
 
@@ -66,6 +66,19 @@ class Slots(Base):
         with patch.object(pool, "wait_boot", boot), patch.object(pool, "say"):
             self.assertTrue(pool.claim("test").serial.startswith("emulator-"))
         self.assertEqual(len(tries), 2)
+
+    def test_a_bad_slot_does_not_stop_the_others(self):
+        fake_machine(self)
+        with patch.object(pool, "port_taken", lambda port: port == pool.FIRST_PORT):
+            self.assertEqual(pool.claim("test").serial, "emulator-%d" % (pool.FIRST_PORT + 2))
+        tries = []
+        def boot(serial, *a, **k):
+            tries.append(serial)
+            if len(tries) == 1:
+                raise pool.NoEmulator("stalled")
+        with patch.object(pool, "wait_boot", boot), patch.object(pool, "say"):
+            pool.claim("test")
+        self.assertNotEqual(tries[0], tries[1])
 
     def test_a_killed_walk_lets_the_slot_go(self):
         # A real process holding a real lock, killed with -9.
@@ -115,6 +128,32 @@ class Named(Base):
             with self.assertRaises(pool.NoEmulator):
                 pool.named("emulator-5554", "child 2", seconds=0)
         c.release(); held.close()
+
+    def test_a_claim_is_walked_on_by_its_claimer_but_not_by_another_thread(self):
+        path = pool.lock_path("emulator-5574")
+        held = pool.try_lock(path)
+        # A holder process of its own, as oma-emu claim's is: pid 1 is nobody's ancestor here.
+        held.write(json.dumps({"who": "my claim", "pid": 1, "since": 1, "thread": "", "claim": True})); held.flush()
+        c = pool.named("emulator-5574", "walk", seconds=0)  # no thread named, as from a plain shell
+        c.release()
+        with patch.dict(os.environ, {"SOMA_THREAD": "tOther"}):
+            held.seek(0); held.truncate()
+            held.write(json.dumps({"who": "my claim", "pid": 1, "since": 1, "thread": "tMine", "claim": True})); held.flush()
+            with patch.object(pool, "say"), self.assertRaises(pool.NoEmulator):
+                pool.named("emulator-5574", "walk", seconds=0)
+        held.close()
+
+    def test_release_touches_only_a_live_claim(self):
+        env = dict(os.environ)
+        # A free lock with a stale pid, and a build script's held lock with no claim: both refused, nothing signalled.
+        path = pool.lock_path("emulator-5554")
+        Path(path).write_text(json.dumps({"who": "dead", "pid": os.getpid(), "since": 1, "claim": True}))
+        run = lambda: subprocess.run([sys.executable, "-I", str(HERE / "emu_pool.py"), "release", "emulator-5554"], env=env, capture_output=True, text=True)
+        self.assertEqual(run().returncode, 1)
+        held = pool.try_lock(path)
+        held.seek(0); held.truncate(); held.write(json.dumps({"who": "soma-macbuild", "pid": os.getpid(), "since": 1})); held.flush()
+        self.assertEqual(run().returncode, 1)
+        held.close()
 
     def test_what_a_dead_holder_wrote_means_nothing(self):
         path = pool.lock_path("emulator-5554")

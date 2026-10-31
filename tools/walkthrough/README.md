@@ -79,7 +79,7 @@ own (`emu_pool.py`), walks, and gives it back, even if the walk crashes. Two wal
   other old locks still hold; a script that already holds the lock isn't made to wait for itself.
 - **More than a walk** (prepare by hand, look at it after a FAIL): `tools/oma-emu claim --minutes 30` prints a serial, then
   `SOMA_EMU_SERIAL=emulator-5574 tools/oma-emu adb ...` and `walk.py ... --serial emulator-5574`, then
-  `tools/oma-emu release emulator-5574`. A claim stays on this Mac. `tools/oma-emu pool status` shows who has what.
+  `tools/oma-emu release emulator-5574`. Your walks run on your claim; another thread's wait for it. A claim stays on this Mac. `tools/oma-emu pool status` shows who has what.
 
 The numbers, the limits and what the base image holds: docs/EMULATOR.md. Tests: `test_emu_pool.py`.
 
