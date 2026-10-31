@@ -101,8 +101,12 @@ data class ConnectionsSnapshot(val readings: List<ConnectionReading> = emptyList
         worst?.copy(capability = c, detail = said.trim())
             ?: ConnectionReading(c, ConnectionState.Unknown, "Not checked yet.", now)
     }
-    /** Every computer a runner has been heard from, by its display name. */
-    private fun deviceHosts() = readings.filter { it.sourceHost.isNotBlank() && it.host.isNotBlank() }.map { it.host }.distinct()
+    /**
+     * Every computer a runner has been heard from, by its display name: only readings that carry the runner's own identity check count. Other
+     * rows put a service's name in the host (Whisper, Herd, a configured Canvas), and those are not devices that will ever report GitHub or disk.
+     */
+    private fun deviceHosts() = readings.filter { r -> r.sourceHost.isNotBlank() && r.host.isNotBlank() && r.checks.any { it.name == "runner_self" || it.name == "runner_identity" } }
+        .map { it.host }.distinct()
     /** True when no reading is fresh: nothing has been checked lately, which a header must not call fine. */
     fun nothingFresh(now: Long) = readings.none { it.checkedAt > 0 && it.checkedAt - now <= CLOCK_TOLERANCE_MS && now - it.checkedAt <= FRESH_MS }
 

@@ -107,4 +107,18 @@ class RunnerFleetTest {
             ConnectionReading(it, ConnectionState.Ready, "checked", now, checks = listOf(ConnectionCheck("soma_sync", "mac", result = "pass"))) }, now)
         assertTrue(full.rows(now).filterNot { it.settled }.toString(), full.rows(now).all { it.settled })
     }
+    @Test fun servicesNamedAsHostsAreNotDevicesSoGitHubAndDiskCanBeReadyAndAllSettled() {
+        val s = snapshot(mapOf("Mac Pro" to "pass", "MacBook" to "pass"))
+        // The monitor's configured checks put a service's name in the host (Whisper, Herd, Embeddings, Tailshare, Canvas) with the Mac's source host.
+        val withServices = ConnectionsSnapshot(s.readings + listOf("Whisper", "Herd", "Embeddings", "Tailshare", "Configured Design Canvas").map {
+            ConnectionReading(Capability.Network, ConnectionState.Ready, "Service route responded.", now, "network", it, "mac-pro") }, now)
+        assertEquals(ConnectionState.Ready, row(withServices, Capability.GitHub).state)
+        assertEquals(ConnectionState.Ready, row(withServices, Capability.Disk).state)
+        assertTrue(withServices.rows(now).filter { it.capability in setOf(Capability.GitHub, Capability.Disk) }.all { it.settled })
+        // A real failure still counts: the Mac Pro failing is one incident.
+        val failing = snapshot(mapOf("Mac Pro" to "fail", "MacBook" to "pass"))
+        val fails = ConnectionsSnapshot(failing.readings + ConnectionReading(Capability.Network, ConnectionState.Ready, "route", now, "network", "Whisper", "mac-pro"), now)
+        assertEquals(1, fails.incidents(now).size)
+        assertEquals(ConnectionState.Failed, row(fails, Capability.GitHub).state)
+    }
 }

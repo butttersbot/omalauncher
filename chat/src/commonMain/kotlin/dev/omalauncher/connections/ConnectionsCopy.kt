@@ -115,7 +115,7 @@ fun incidentCopy(incident: ConnectionIncident, snapshot: ConnectionsSnapshot, no
             listOf("Open a terminal on $host", "Run gh auth login", "Check again"), "Signing in is yours; Restore leaves it alone.")
         owner == Capability.Disk -> IncidentCopy("$host / disk space", "$host is low on disk space.\nBuilds and sync may fail.",
             readings.first().detail + " Nothing was deleted.", listOf("Free space on $host", "Empty its trash or old builds", "Check again"), "Only you decide what to delete.")
-        owner == Capability.Mail -> IncidentCopy("$host / agent mail", "Mail to $host isn't being delivered.\nIt was handed off but never arrived.",
+        owner == Capability.Mail -> IncidentCopy("$host / agent mail", "Agent mail was lost.\nA restart dropped it before it was delivered.",
             readings.first().detail, listOf("Ask the sender to send it again", "Check again"), "Nothing was resent; a later delivered mail from the same sender clears this.")
         missing != null -> IncidentCopy("$host / $missing", "$missing isn't installed on ${if (host == "This phone") "this phone" else host}.\nWork that needs it can't start.",
             readings.first().detail.ifBlank { "$missing is missing." } + " Nothing was changed.",

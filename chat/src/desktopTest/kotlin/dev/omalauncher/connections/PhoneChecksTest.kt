@@ -51,6 +51,7 @@ class PhoneChecksTest {
         assertTrue(stuck.detail, stuck.detail.contains("mac-pro:t9b152c95"))
         val lost = mailReading(listOf(r("not-delivered", 3_600_000L)), false, now)
         assertEquals(ConnectionState.Failed, lost.state)
+        assertEquals("Agent mail was lost.\nA restart dropped it before it was delivered.", incidentCopy(ConnectionsSnapshot(listOf(lost), now).incidents(now).single(), ConnectionsSnapshot(listOf(lost), now), now).headline)
         assertEquals(ConnectionState.Ready, mailReading(listOf(r("not-delivered", 30 * 3_600_000L), r("delivered", 1000)), false, now).state)
         // Dropped by a restart (not redelivered): an incident until a later mail from that sender is delivered, then it clears.
         assertEquals(ConnectionState.Failed, mailReading(listOf(r("not-delivered", 3_600_000L), r("delivered", 7_200_000L)), false, now).state) // the delivery came BEFORE the loss

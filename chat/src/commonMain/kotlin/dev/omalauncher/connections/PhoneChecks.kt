@@ -63,7 +63,7 @@ const val MAIL_UNDELIVERED_KEEP_MS = 24 * 3_600_000L
  */
 fun mailReading(receipts: List<MailReceipt>, builderBusy: Boolean, now: Long): ConnectionReading {
     val stuck = receipts.filter { it.state == "queued" && !builderBusy && now - it.updated > MAIL_STUCK_MS }
-    // Mail an interruption dropped is not redelivered (the queue is memory only and the sender's id is already seen): it stays an incident only until
+    // Mail that was lost (the app ended before it was kept, or it could not be sent: waiting mail is saved and restored now, so a plain restart no longer loses it) is not redelivered, since the sender's id is already seen. It stays an incident only until
     // something from that sender is delivered after it, which shows the route works again.
     val lost = receipts.filter { r -> r.state == "not-delivered" && now - r.updated < MAIL_UNDELIVERED_KEEP_MS &&
         receipts.none { d -> d.state == "delivered" && d.sender == r.sender && d.updated > r.updated } }
