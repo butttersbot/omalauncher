@@ -85,7 +85,7 @@ def claim(codes_file, lane, commit, floor, exact):
 
 def status(state):
     state = pathlib.Path(state)
-    for lock in sorted(p for p in state.glob('*.lock') if p.name != 'codes.json.lock'):
+    for lock in sorted(p for p in [*state.glob('*.lock'), *state.glob('pool/slot-*.lock')] if p.name != 'codes.json.lock'):
         try:
             who = json.loads(lock.read_text() or '{}')
         except ValueError:

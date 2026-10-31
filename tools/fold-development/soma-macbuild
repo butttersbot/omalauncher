@@ -7,7 +7,7 @@
 # --lane: each phone builder has a lane of its own (its own runner thread and worktree, omalauncher-fold-build-a/-b/-c),
 # so the three build at once. Then VERSION_CODE is the lowest it may carry: two lanes never get the same code (the
 # next free one is taken and said). Without --lane it builds in omalauncher-fold-build at exactly VERSION_CODE, as
-# before. Lanes wait for each other only to fetch, and to walk on the Mac's one emulator, after the app is sent.
+# before. Lanes wait for each other only to fetch, and, on a Mac without an emulator pool, to walk, after the app is sent.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 lane=
@@ -215,14 +215,16 @@ if [ -f tools/walkthrough/walk.py ]; then
     [ ${#walks[@]} -gt 0 ] || echo "Walks: none needed (nothing since $(git rev-parse --short=9 "$base") reaches the app's screens)."
   fi
 fi
-# The Mac has one emulator for walks, so lanes walk one at a time (the app is already on its way to the phone).
-# Each lane walks on its own emulator when this Mac has one for it (Fold8-B, Fold8-C beside Fold8), so lanes don't wait
-# for each other; a lane without one shares lane A's, one at a time, as before.
+# With the pool (tools/walkthrough/emu_pool.py), each walk gets a fresh emulator of its own, and no lane waits for another.
+# On a Mac without it, each lane walks on its own emulator when this Mac has one for it (Fold8-B, Fold8-C beside Fold8), so
+# lanes don't wait for each other; a lane without one shares lane A's, one at a time, as before.
+pool=0
+if [ -f tools/walkthrough/emu_pool.py ] && [ -f "$HOME/.android/avd/Fold8-Golden.avd/golden.json" ]; then pool=1; fi
 emu_lane=A
 if [ -n "$lane" ] && [ "$lane" != A ] && [ -d "$HOME/.android/avd/Fold8-$lane.avd" ]; then emu_lane=$lane; fi
 export SOMA_EMU_LANE=$emu_lane
 walks_lock=walks; [ "$emu_lane" = A ] || walks_lock=walks-$emu_lane
-if [ ${#walks[@]} -gt 0 ] && ! hold "$walks_lock" 2700; then
+if [ ${#walks[@]} -gt 0 ] && [ "$pool" -eq 0 ] && ! hold "$walks_lock" 2700; then
   echo "Walks: not run (the emulator was still walking another lane's build after 45 minutes: $(busy "$walks_lock"))."
   walks=()
 fi
@@ -232,6 +234,66 @@ if [ ${#walks[@]} -gt 0 ]; then
   wdir=app/build/walk
   rm -rf "$wdir"; mkdir -p "$wdir"
   started=$(date +%s)
+  # The verdict is walk.py's own exit and its FAIL lines, never the $? of the retry check (that read every walk as PASS
+  # since the retry came in, 164's hunch-wallet with 5 FAIL steps among them).
+  verdict() { # WALK EXIT
+    local fails
+    fails=$(grep -c '^FAIL' "$wdir/$1.log")
+    if [ "$2" -eq 0 ] && [ "$fails" -eq 0 ]; then line="$line $1 PASS;"; echo "$1 PASS" >>"$wdir/verdicts.txt"
+    elif [ "$2" -eq 3 ]; then line="$line $1 NOT RUN ($(tail -1 "$wdir/$1.log"));"; echo "$1 NOT RUN" >>"$wdir/verdicts.txt"
+    else
+      line="$line $1 FAIL ($fails of $(grep -c '^\(PASS\|FAIL\)' "$wdir/$1.log") steps, exit $2);"
+      echo "$1 FAIL ($fails of $(grep -c '^\(PASS\|FAIL\)' "$wdir/$1.log") steps, exit $2)" >>"$wdir/verdicts.txt"
+    fi
+  }
+  if [ "$pool" -eq 1 ]; then
+    # The fixtures are built once; walk.py puts on each fresh emulator what its script needs. A clean emulator has no
+    # leftover fixture to fall back on, so every script that names the preview app gets it (20 scripts, not just 2).
+    preview_apk=; hunch_apk=; refusal_ready=1
+    if grep -l 'dev\.omalauncher\.artifactpreview' $(for w in "${walks[@]}"; do echo "tools/walkthrough/scripts/$w.walk"; done) >/dev/null 2>&1; then
+      SOMA_VERSION_CODE=$code ./gradlew --console=plain -PartifactPreview :artifact-preview:assembleDebug >"$wdir/artifact-fixture-build.log" 2>&1 &&
+        preview_apk=tools/artifact-preview/build/outputs/apk/debug/artifact-preview-debug.apk
+    fi
+    if grep -l 'dev\.omalauncher\.hunch' $(for w in "${walks[@]}"; do echo "tools/walkthrough/scripts/$w.walk"; done) >/dev/null 2>&1; then
+      if ./gradlew --console=plain -Phunch :hunch:assembleDebug >"$wdir/hunch-build.log" 2>&1; then
+        hunch_apk=$(ls hunch/build/outputs/apk/debug/*.apk 2>/dev/null | head -n 1)
+      fi
+      [ -n "$hunch_apk" ] || echo "Hunch: didn't build ($(tail -1 "$wdir/hunch-build.log")); the hunch walks will fail on that." >>"$wdir/summary.txt"
+    fi
+    for w in "${walks[@]}"; do
+      [ "$w" = mac-refusal ] || continue
+      ./gradlew --console=plain :chat:desktopTest --tests dev.omalauncher.oma.ChatScreenRenderTest >"$wdir/mac-refusal-fixture.log" 2>&1 || refusal_ready=0
+    done
+    line="Walks on the emulators:"
+    for w in "${walks[@]}"; do
+      script=tools/walkthrough/scripts/$w.walk
+      if [ ! -f "$script" ]; then line="$line $w MISSING;"; continue; fi
+      needs=(--apk "$apk")
+      if grep -q 'dev\.omalauncher\.artifactpreview' "$script"; then
+        if [ -z "$preview_apk" ]; then line="$line $w FAIL (fixture build; see logs);"; echo "$w FAIL (fixture build; see logs)" >>"$wdir/verdicts.txt"; continue; fi
+        needs+=(--apk "$preview_apk")
+      fi
+      if grep -q 'dev\.omalauncher\.hunch' "$script" && [ -n "$hunch_apk" ]; then needs+=(--apk "$hunch_apk"); fi
+      if [ "$w" = mac-refusal ]; then
+        if [ "$refusal_ready" -ne 1 ]; then line="$line $w FAIL (fixture build; see mac-refusal-fixture.log);"; echo "$w FAIL (fixture build; see mac-refusal-fixture.log)" >>"$wdir/verdicts.txt"; continue; fi
+        needs+=(--push chat/build/render/mac-refusal.json:/data/local/tmp/mac-refusal.json)
+      fi
+      who="lane ${lane:-main} ${commit:0:9} $w"
+      python3 tools/walkthrough/walk.py "$script" --out "$wdir/$w" --who "$who" "${needs[@]}" > "$wdir/$w.log" 2>&1
+      rc=$?
+      # The emulator itself fell over mid-walk: that is no verdict on the app, so walk this once more on a fresh one.
+      if grep -q "device 'emulator-[0-9]*' not found" "$wdir/$w.log"; then
+        echo "  ($w: the emulator stopped mid-walk; walked again)" >>"$wdir/restarts.txt"
+        rm -rf "$wdir/$w"
+        python3 tools/walkthrough/walk.py "$script" --out "$wdir/$w" --who "$who" "${needs[@]}" > "$wdir/$w.log" 2>&1
+        rc=$?
+      fi
+      verdict "$w" "$rc"
+    done
+    echo "${line%;} ($(( $(date +%s) - started )) s)." | tee -a "$wdir/summary.txt"
+    grep -h '^FAIL' "$wdir"/*.log | sed 's/^/  /' | tee -a "$wdir/summary.txt"
+    echo "$commit" > "$state/walked-commit"
+  else
   # The emulator only: it must answer as one (ro.kernel.qemu), never the phone.
   if ! adb -s $emu get-state >/dev/null 2>&1; then tools/oma-emu start --headless >/dev/null; fi
   if [ "$(adb -s $emu shell getprop ro.kernel.qemu 2>/dev/null | tr -d '\r')" != 1 ]; then
@@ -307,14 +369,7 @@ if [ ${#walks[@]} -gt 0 ]; then
           python3 tools/walkthrough/walk.py "$script" --serial $emu --out "$wdir/$w" > "$wdir/$w.log" 2>&1
           rc=$?
         fi
-        # The verdict is walk.py's own exit and its FAIL lines, never the $? of the retry check above (that read every
-        # walk as PASS since the retry came in, 164's hunch-wallet with 5 FAIL steps among them).
-        fails=$(grep -c '^FAIL' "$wdir/$w.log")
-        if [ "$rc" -eq 0 ] && [ "$fails" -eq 0 ]; then line="$line $w PASS;"; echo "$w PASS" >>"$wdir/verdicts.txt"
-        else
-          line="$line $w FAIL ($fails of $(grep -c '^\(PASS\|FAIL\)' "$wdir/$w.log") steps${rc:+, exit $rc});"
-          echo "$w FAIL ($fails of $(grep -c '^\(PASS\|FAIL\)' "$wdir/$w.log") steps, exit $rc)" >>"$wdir/verdicts.txt"
-        fi
+        verdict "$w" "$rc"
       done
       if [ -s "$wdir/oma-chat.before.json" ]; then
         adb -s $emu push "$wdir/oma-chat.before.json" /data/local/tmp/oma-chat.before.json >/dev/null 2>&1 &&
@@ -325,6 +380,7 @@ if [ ${#walks[@]} -gt 0 ]; then
       # What the next build compares with, to walk only what changed since (only once walks really ran).
       echo "$commit" > "$state/walked-commit"
     fi
+  fi
   fi
   # Each passed walk's carded screenshots (shot NAME card=ID) become Shipped on Soma Canvas, with one quick diff per
   # changed screen. Advisory: nothing on Canvas holds a build (design/soma-canvas/DESIGN-GATE.md).

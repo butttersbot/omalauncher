@@ -7,7 +7,14 @@
 #   oma-emu fold-bars           turn the Fold-match bar overlay back on (start does this)
 #   oma-emu adb ARGS...         adb aimed at the emulator only, never the phone
 #   oma-emu stop
+#   oma-emu claim [--who WORDS] [--minutes N]  a fresh emulator of your own from the pool: prints its serial, kept until
+#   oma-emu release SERIAL                     released or N minutes (60). Use it with SOMA_EMU_SERIAL=SERIAL oma-emu ...
+#   oma-emu pool status | golden --apk APK     the pool (tools/walkthrough/emu_pool.py)
 set -euo pipefail
+case "${1:-}" in
+  claim|release) exec python3 -I "$(dirname "$0")/walkthrough/emu_pool.py" "$@" ;;
+  pool) shift; exec python3 -I "$(dirname "$0")/walkthrough/emu_pool.py" "$@" ;;
+esac
 export ANDROID_HOME="${ANDROID_HOME:-/opt/homebrew/share/android-commandlinetools}"
 export ANDROID_SDK_ROOT="$ANDROID_HOME"
 # One emulator per build lane, so lanes walk at the same time (Boss, 2026-10-26): SOMA_EMU_LANE=B uses AVD Fold8-B on
@@ -17,7 +24,7 @@ case "${SOMA_EMU_LANE:-A}" in
   C) AVD=Fold8-C; PORT=5558 ;;
   *) AVD=Fold8; PORT=5554 ;;
 esac
-SERIAL=emulator-$PORT
+SERIAL=${SOMA_EMU_SERIAL:-emulator-$PORT}
 A() { adb -s "$SERIAL" "$@"; }
 display_id() { # inner is the first SurfaceFlinger display, cover the second
   A shell dumpsys SurfaceFlinger --display-id | awk '{print $2}' | sed -n "$1p"
@@ -45,6 +52,7 @@ fold_bars() {
 
 case "${1:-}" in
   start)
+    if [ -n "${SOMA_EMU_SERIAL:-}" ] && ! A get-state >/dev/null 2>&1; then echo "$SERIAL isn't running; oma-emu claim gives you one" >&2; exit 1; fi
     if A get-state >/dev/null 2>&1; then echo "already running"; exit 0; fi
     extra=(); [ "${2:-}" = --headless ] && extra=(-no-window -no-audio)
     # In a session of its own, tied to nothing that started it: from a non-tty nohup dies ("can't detach from console",
@@ -93,5 +101,5 @@ print(subprocess.Popen(sys.argv[2:], stdin=subprocess.DEVNULL, stdout=log, stder
   fold-bars) fold_bars ;;
   adb) shift; A "$@" ;;
   stop) A emu kill ;;
-  *) sed -n '2,9p' "$0"; exit 2 ;;
+  *) sed -n '2,12p' "$0"; exit 2 ;;
 esac

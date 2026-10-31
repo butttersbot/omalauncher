@@ -128,7 +128,9 @@ class CanvasCards(unittest.TestCase):
         import tempfile, json
         with tempfile.TemporaryDirectory() as out:
             script = Path(out) / "c.walk"; script.write_text("# canvas-app: soma-widgets\nshot tile card=conn-tile\n")
-            with patch.object(walk, "prepare"), patch.object(walk, "shot"), patch.object(walk.sys, "argv", ["walk.py", str(script), "--out", out]):
+            emulator = type("Claim", (), {"serial": "emulator", "note": "test", "release": lambda self: None})()
+            with patch.object(walk, "prepare"), patch.object(walk, "shot"), patch.object(walk, "get_emulator", return_value=(emulator, None)), \
+                 patch.object(walk.signal, "signal"), patch.object(walk.sys, "argv", ["walk.py", str(script), "--out", out]):
                 with self.assertRaises(SystemExit) as end:
                     walk.main()
             self.assertEqual(0, end.exception.code)

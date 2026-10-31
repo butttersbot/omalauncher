@@ -3,12 +3,17 @@
 simple test run using the feature like a human would"). Runs a .walk script's [emu] steps on an emulator over adb and
 lists its [phone] steps for the check on the real Fold after promotion. See README.md.
 
-    walk.py SCRIPT.walk [--serial emulator-5554] [--out DIR] [--phone]
+    walk.py SCRIPT.walk [--out DIR] [--apk APK]... [--push LOCAL:DEVICE]... [--serial emulator-NNNN] [--phone]
 
 --phone prints only the [phone] checklist. Exit 0 when every [emu] step passed, 1 otherwise; results.json and a
 screenshot per `shot`/`expect` go to --out (default ./walk-out/<script>).
+
+With no --serial the walk gets a fresh emulator of its own and gives it back at the end, even if it crashes (emu_pool.py):
+it waits if there's no room, or goes to the other Mac. On it go the --apk builds, or else this checkout's builds of the
+apps the script names, and the --push fixtures. --serial takes that emulator as it is, once its lock is free.
+Exit 3 when no emulator could be had: no step ran.
 """
-import json, os, re, shlex, subprocess, sys, time, xml.etree.ElementTree as ET
+import json, os, re, shlex, signal, subprocess, sys, time, xml.etree.ElementTree as ET
 
 def adb(serial, *args, text=True, check=False, timeout=60):
     r = subprocess.run(["adb", "-s", serial, *args], capture_output=True, text=text, timeout=timeout)
@@ -440,12 +445,53 @@ def canvas_map(results):
     return {os.path.splitext(os.path.basename(r["screenshot"]))[0]: r["card"]
             for r in results if r.get("card") and r.get("screenshot") and r["result"] == "LOOK"}
 
+def many(a, flag):
+    return [a[i + 1] for i, v in enumerate(a) if v == flag]
+
+def get_emulator(a, script, out):
+    """(the emulator's claim, None), or (None, the exit of a walk that ran on the other Mac)."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # python3 -I leaves the script's folder off
+    import emu_pool as pool
+    pool.use_sdk_tools()
+    who = a[a.index("--who") + 1] if "--who" in a else "walk of %s by %s" % (os.path.basename(script), os.environ.get("SOMA_THREAD") or "pid %d" % os.getpid())
+    if "--serial" in a:
+        got = pool.named(a[a.index("--serial") + 1], who)
+        apks, pushes = many(a, "--apk"), many(a, "--push")
+        if apks or pushes:
+            pool.put_on(got.serial, apks, pushes)
+        return got, None
+    apks, pushes = many(a, "--apk"), many(a, "--push")
+    if not pool.have_golden():
+        # A Mac with no pool walks as before: its one emulator, under its lock, with whatever is on it.
+        print("No emulator pool on this Mac: walking on emulator-5554.", flush=True)
+        got = pool.named("emulator-5554", who)
+        if apks or pushes:
+            pool.put_on(got.serial, apks, pushes)
+        return got, None
+    if not apks:
+        root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        apks, missing = pool.needed_apks(open(script, encoding="utf-8").read(), root)
+        for package in missing:
+            print(f"No build of {package} in this checkout: the walk has only what the base image holds of it. Build it or pass --apk.", flush=True)
+    for apk in apks:
+        print(f"Build going on: {apk} (built {time.strftime('%m-%d %H:%M', time.localtime(os.path.getmtime(apk)))})", flush=True)
+    host = None if "--here" in a else pool.peer()
+    when_full = (lambda: pool.walk_on_peer(host, script, out, apks, pushes, who)) if host else None
+    got = pool.claim(who, when_full=when_full)
+    if isinstance(got, int):
+        return None, got
+    try:
+        pool.put_on(got.serial, apks, pushes)
+    except Exception:
+        got.release()
+        raise
+    return got, None
+
 def main():
     a = sys.argv[1:]
     if not a:
         print(__doc__); sys.exit(2)
     script = a[0]
-    serial = a[a.index("--serial") + 1] if "--serial" in a else "emulator-5554"
     out = a[a.index("--out") + 1] if "--out" in a else os.path.join("walk-out", os.path.splitext(os.path.basename(script))[0])
     steps = parse(script)
     # The Canvas app its cards belong to, carried in the output, since the script's path means nothing on another machine.
@@ -455,7 +501,24 @@ def main():
             if s["where"] == "phone":
                 print(f"[phone] {s['text']}")
         return
+    # A signal ends the walk like an exception, so the emulator goes back at once (a kill -9 leaves it to the pool's watcher).
+    for sig in (signal.SIGTERM, signal.SIGHUP):
+        signal.signal(sig, lambda *_: sys.exit(1))
     os.makedirs(out, exist_ok=True)
+    try:
+        claim, elsewhere = get_emulator(a, script, out)
+    except RuntimeError as e:  # emu_pool.NoEmulator: nothing was walked, which is no verdict on the app
+        print(f"Walk not run: {e}", flush=True)
+        sys.exit(3)
+    if claim is None:
+        sys.exit(elsewhere)
+    print(f"Emulator: {claim.serial} on {os.uname().nodename.split('.')[0]} ({claim.note})", flush=True)
+    try:
+        walk(claim.serial, script, steps, out, app)
+    finally:
+        claim.release()
+
+def walk(serial, script, steps, out, app):
     prepare(serial)
     results, failed = [], 0
     for n, s in enumerate(steps, 1):
@@ -474,7 +537,8 @@ def main():
     looks = sum(r["result"] == "LOOK" for r in results)
     if looks:
         print(f"\n{looks} screenshots to look at before this walk counts: a LOOK is not a PASS.")
-    json.dump({"script": script, "failed": failed, "looks": looks, "steps": results, **({"canvasApp": app} if app else {})},
+    json.dump({"script": script, "emulator": serial, "machine": os.uname().nodename.split(".")[0], "failed": failed, "looks": looks,
+               "steps": results, **({"canvasApp": app} if app else {})},
               open(os.path.join(out, "results.json"), "w"), indent=1)
     cards = canvas_map(results)
     if cards:

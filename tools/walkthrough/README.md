@@ -8,7 +8,7 @@ he reports gets a step that would have caught it.
 
 - **[emu]**, the default: our own app on standard Android: layouts, spacing, wrapping, taps, drags, scrolling,
   handles, back, the keyboard's panels, news, chat, widgets, home, tiles, cover vs unfolded sizes, rotation, network
-  features. Run on the Mac Pro's Fold emulator with each build; they must PASS, and their screenshots be looked at,
+  features. Run on a Fold emulator of its own with each build; they must PASS, and their screenshots be looked at,
   before a build is called ready.
 - **[phone]**: what only the real Fold has: Samsung's own software (One UI, its Quick Settings, status strip, Samsung
   apps, lock screen), hardware and sensors (step counter, the physical fold, mic, camera, haptics, sleep), locked or
@@ -56,13 +56,32 @@ walk, of 128, "passed" the GIF keyboard while its swipes had missed the handle a
 
 ## Running
 
-    tools/walkthrough/walk.py tools/walkthrough/scripts/gif-keyboard.walk --serial emulator-5554 --out /tmp/walk/gif
+    tools/walkthrough/walk.py tools/walkthrough/scripts/gif-keyboard.walk --out /tmp/walk/gif
     tools/walkthrough/walk.py tools/walkthrough/scripts/gif-keyboard.walk --phone     # the [phone] checklist
 
-On the Mac, `soma-macbuild` installs the build on the Mac's Fold emulator (AVD `Fold8`, shaped like his phone; docs/EMULATOR.md; started headless when it isn't running)
-and walks the scripts named in the commit's `Walk:` trailer, or every script whose feature the commit touched; the
-results and screenshots come back with the build. Keyboard steps tap by position (the keys are drawn, not labelled):
-when a layout change moves them, fix the coordinates in the script in the same commit.
+On the Mac, `soma-macbuild` walks the scripts named in the commit's `Walk:` trailer, or every script whose feature the
+commit touched; the results and screenshots come back with the build. Keyboard steps tap by position (the keys are drawn,
+not labelled): when a layout change moves them, fix the coordinates in the script in the same commit.
+
+## One emulator per walk
+
+Boss, 2026-10-30: "Why don't we run the tests on separate emulators?" Name no emulator and a walk gets a fresh one of its
+own (`emu_pool.py`), walks, and gives it back, even if the walk crashes. Two walks never share one. Nothing to think about:
+
+- **What goes on it.** `--apk APK` (repeatable), or else this checkout's builds of the apps the script names: Soma, the
+  artifact preview, Hunch. It says which build, and how old. No build of an app the script names: it says so, and the walk
+  has only the base image's copy. `--push LOCAL:DEVICE` for a fixture file.
+- **It starts clean.** Each claim boots a new APFS copy of one base image, and the copy is deleted at the end. Nothing a walk
+  changes can reach another. A walk starts on the cover, upright, at home.
+- **No room:** it waits (45 minutes at most, then exit 3: `Walk not run`, no verdict on the app). Or, if the other Mac can
+  take it, the whole walk goes there and its output comes back.
+- **Naming one:** `--serial emulator-5554` takes that one as it is, under its lock, and waits for it. `walks.lock` and the
+  other old locks still hold; a script that already holds the lock isn't made to wait for itself.
+- **More than a walk** (prepare by hand, look at it after a FAIL): `tools/oma-emu claim --minutes 30` prints a serial, then
+  `SOMA_EMU_SERIAL=emulator-5574 tools/oma-emu adb ...` and `walk.py ... --serial emulator-5574`, then
+  `tools/oma-emu release emulator-5574`. A claim stays on this Mac. `tools/oma-emu pool status` shows who has what.
+
+The numbers, the limits and what the base image holds: docs/EMULATOR.md. Tests: `test_emu_pool.py`.
 
 ## The design gate: done = PASS + as approved
 

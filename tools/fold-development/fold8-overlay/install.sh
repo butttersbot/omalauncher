@@ -10,6 +10,8 @@ BT=$(ls -d "$ANDROID_HOME"/build-tools/* | tail -1)
 JAR=$(ls "$ANDROID_HOME"/platforms/android-3*/android.jar | tail -1)
 # The lane's own emulator (SOMA_EMU_LANE=B -> 5556, C -> 5558), as tools/oma-emu picks it; lane A's is 5554.
 case "${SOMA_EMU_LANE:-A}" in B) SERIAL=emulator-5556 ;; C) SERIAL=emulator-5558 ;; *) SERIAL=emulator-5554 ;; esac
+# Or the one named (the pool's base image, tools/walkthrough/emu_pool.py).
+SERIAL=${SOMA_EMU_SERIAL:-$SERIAL}
 A() { adb -s "$SERIAL" "$@"; }
 [ "$(A shell getprop ro.kernel.qemu | tr -d '\r')" = 1 ] || { echo "$SERIAL is not an emulator; nothing done" >&2; exit 1; }
 out=$(mktemp -d); trap 'rm -rf "$out"' EXIT
