@@ -181,7 +181,7 @@ object Messages {
         val contiguous = if (!transientUpdate || oldest == null) refreshed else refreshed.filter { m ->
             m.time >= oldest || m.id in known || m.id?.let { "$it#a" in known } == true
         }
-        var next = real.fromMac(id, title, isGroup, contiguous, unread, counting)
+        var next = real.fromMac(id, title, isGroup, tapbacksKept.applied(id, contiguous, System.currentTimeMillis()), unread, counting)
         // Quoted children can live in cache even when their changed parent does not.
         if (transientUpdate) next = next.quoteFacts(id, refreshed)
         readIntents[id]?.let { intent ->
@@ -189,6 +189,7 @@ object Messages {
             next = next.unreadCount(id, intent.target + intent.arrivals)
         }
         publish(next)
+        watchTapbacks(id)
         val confirmed = pendingChanges.value.filter { (key, pending) ->
             key.startsWith(id + "\u0000") && incoming.any(pending::confirmedBy)
         }.keys
@@ -556,7 +557,29 @@ object Messages {
         val changed = message.copy(tapbacks = message.tapbacks.filterNot { it.startsWith("me:") } + listOfNotNull(mine.takeIf { !remove }),
             reactions = message.reactions.filterNot { it.fromMe } + if (remove) emptyList() else listOf(Reaction(kind, "", true, "You")))
         publish(real.fromMac(id, null, null, listOf(changed), counting = false))
-        MacLink.tapback(id, macId, kind, remove, java.util.UUID.randomUUID().toString()) { failure -> warn(id, failure.told("Tapback not sent")) }
+        watchTapbacks(id, changed.id)
+        val kept = tapbacksKept.hold(id, macId, mine.takeIf { !remove }, changed.reactions.filter { it.fromMe }, System.currentTimeMillis())
+        MacLink.tapback(id, macId, kind, remove, java.util.UUID.randomUUID().toString()) { failure ->
+            synchronized(this) { tapbacksKept.drop(id, macId, kept) }
+            warn(id, failure.told("Tapback not sent"))
+        }
+    }
+
+    /** The owner's tapback as last shown on a message he reacted to; the walks read its changes (Log tag SomaWalk). */
+    private val tapbacksShown = HashMap<String, String?>()
+    private val tapbacksKept = TapbacksKept()
+
+    private fun watchTapbacks(id: String, tapped: String? = null) {
+        val messages = real[id]?.messages ?: return
+        if (tapped != null) tapbacksShown.getOrPut("$id\u0000$tapped") { null }
+        tapbacksShown.keys.filter { it.startsWith("$id\u0000") }.forEach { key ->
+            val message = messages.firstOrNull { it.id == key.substringAfter('\u0000') } ?: return@forEach
+            val mine = message.tapbacks.firstOrNull { it.startsWith("me:") }
+            if (mine != tapbacksShown[key]) {
+                android.util.Log.i("SomaWalk", if (mine == null) "tapback left" else "tapback shown $mine")
+                tapbacksShown[key] = mine
+            }
+        }
     }
 
     private val loadingEarlier = ConcurrentHashMap.newKeySet<String>()

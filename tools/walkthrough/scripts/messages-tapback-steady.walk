@@ -1,0 +1,49 @@
+# canvas-app: soma-messages
+# Boss, 0.8.10: "I'll do the tap back and then it lands and then it'll disappear and then land again."
+# Isolated DEMO fixtures only, behind tools/walkthrough/messages-mac-lag-proxy.py with 15 seconds of delay, as the Direct
+# service's chat.db has: INJECT_EPHEMERAL_DEMO_TOKEN, INJECT_DEMO_HOST, INJECT_DEMO_PORT. Reopening the chat fetches
+# the history while the Mac's copy doesn't have the tapback yet. Fails on 0.8.10.
+fold folded
+wait 1200
+shell cmd statusbar collapse
+shell pm clear dev.omalauncher.messages
+shell pm grant dev.omalauncher.messages android.permission.READ_CONTACTS
+shell pm grant dev.omalauncher.messages android.permission.POST_NOTIFICATIONS
+shell am start -a android.intent.action.VIEW -d "'soma-messages://link?url=http%3A%2F%2FINJECT_DEMO_HOST%3AINJECT_DEMO_PORT&token=INJECT_EPHEMERAL_DEMO_TOKEN'" dev.omalauncher.messages
+wait 2500
+tap Link
+wait 4000
+expect Ana Demo
+tap Ana Demo
+wait 1500
+expect Perfect, see you there
+# Putting one on: it lands, the stale history comes, the Mac's copy comes; it never leaves.
+clearlog
+doubletap Perfect, see you there
+wait 800
+tap Tapback like
+log tapback shown
+wait 800
+key BACK
+wait 800
+tap Ana Demo
+wait 2000
+shot tapback-held-through-history card=messages-parity-reaction-menu
+wait 16000
+nolog tapback left
+shot tapback-after-macs-copy card=messages-parity-reaction-menu
+# Taking it off: it goes, the stale history still has it, the Mac's copy comes; it never returns.
+clearlog
+doubletap Perfect, see you there
+wait 800
+tap Tapback like
+log tapback left
+wait 800
+key BACK
+wait 800
+tap Ana Demo
+wait 2000
+shot tapback-off-held-through-history
+wait 16000
+nolog tapback shown
+shot tapback-off-after-macs-copy

@@ -293,3 +293,9 @@ A failed send remembers how it failed (`unanswered`, `notConfirmed`, kept across
 Latest pill: its room now comes off the list rather than off the list's content padding, so no message runs under it.
 
 Proof on the emulator against a demo built from 8d710f81: `~/Projects/msg-bugs-evidence/client-ids/`. The 409 and 503 answers were played by a test proxy, except the direct `client_id_conflict` from the demo.
+
+## 0.8.11: a tapback stays put while the Mac's copy catches up, 2026-10-30
+
+Boss, 0.8.10: "It fires twice every single time... it lands and then it'll disappear and then land again." The Direct service sends through its transport and reads history from chat.db, so a copy of the message read before Messages.app has Apple's copy says the tapback isn't there, and the phone believed it. `engine/TapbacksKept.kt` holds the owner's own tapback, on or off, until a copy agrees or 60 s pass.
+
+Walk: `messages-tapback-steady.walk`, on `Fold8-ParityBuild` with a fresh demo behind `tools/walkthrough/messages-mac-lag-proxy.py` at 15 s. The walk needs a clean demo each run, since it assumes no earlier tapback. The real sequence of copies on the live service was not observed: chat.db and the service's token are out of this shell's reach.
