@@ -167,6 +167,9 @@ interface ChatHost {
     /** The tab book, after [change], saved when it changed. */
     fun changeBook(change: (TabMeta) -> TabMeta): TabMeta
 
+    /** Asks the computers for their threads again, now: a link may name one made since the last look. */
+    fun listThreads() {}
+
     /** Names new chats in the background, once each. */
     fun checkTitles()
 

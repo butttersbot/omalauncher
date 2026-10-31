@@ -108,6 +108,8 @@ class AndroidChatHost(
 
     override fun threads(): List<AgentThread> = agentThreadsNow(context)
 
+    override fun listThreads() = MacThreads.refresh(context)
+
     override fun liveThreads(all: List<AgentThread>, pinned: Set<String>, archived: Set<String>): List<AgentThread> =
         dev.omalauncher.widgets.liveThreads(all, savedTileStamps(context), System.currentTimeMillis(), MacThreads.view.listed, pinned, archived)
 

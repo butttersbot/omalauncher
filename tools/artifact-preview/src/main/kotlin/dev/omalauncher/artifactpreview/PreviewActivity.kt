@@ -70,7 +70,7 @@ class PreviewActivity : ComponentActivity() {
                     val updates = remember { intent.getStringExtra("updates")?.let(::updatesFixture) }
                     if (updates != null) androidx.compose.runtime.CompositionLocalProvider(dev.omalauncher.oma.LocalTopBarExtra provides { dev.omalauncher.updates.PhoneUpdatePill(updates) }) {
                         OmaChatScreen(host, null, {}, start, {})
-                    } else if (intent.getBooleanExtra("tabWidth", false)) {
+                    } else if (intent.getBooleanExtra("tabWidth", false) || intent.getBooleanExtra("links", false)) {
                         // The tab walk opens tabs by tapping them, so this fixture keeps the open tab.
                         var open by remember { mutableStateOf(start) }
                         OmaChatScreen(host, null, {}, open, { open = it })
@@ -108,6 +108,7 @@ Open the preview to try the layout. We can keep talking while you look at it.
         }
 
         override fun tasks(): List<ChatTask> {
+            if (links) return listOf(ChatTask(now - 60_000, "oma", "where is everything?", result = LINKS_ANSWER, status = TaskStatus.Done, answeredBy = "Haiku"))
             if (mailMode != null) {
                 val pending = (1L..4L).map { ChatTask(it, "Codex", "Fictional update $it", mail = "Agent mail", status = TaskStatus.Queued) }
                 if (mailMode == "pending") return pending
@@ -224,8 +225,20 @@ Open the preview to try the layout. We can keep talking while you look at it.
         override fun agentBin() = "claude"
         @Composable override fun linuxInstalled() = true
         override fun frontReady() = true
+        /** --ez links true: chat links' walk. Two of its threads have no tab until a link opens them. */
+        private val links get() = (context as? android.app.Activity)?.intent?.getBooleanExtra("links", false) == true
+
         override fun threads() = if (reconnect != null) listOf(
             dev.omalauncher.assist.macThreadNow(reconnectThread, RECONNECT_ID, reconnectTasks, emptyList(), true),
+        ) else if (links) listOf(
+            AgentThread(PHONE_THREAD, "Phone A", ThreadState.Idle, "", "idle", worked = now),
+            AgentThread(PHONE_THREAD_B, "Phone B", ThreadState.Idle, "", "idle", worked = now),
+            AgentThread("mac:t850cdc07", "Connections audit", ThreadState.Idle, "", "idle", worked = now - 1000, machine = "Mac Pro"),
+            AgentThread("mac:tfeed0001", "Release notes for the update pill", ThreadState.Idle, "", "idle", worked = now - 2000, machine = "Mac Pro"),
+            AgentThread("mac:omarchy-mg1/tfeed0002", "Skills cleanup on the MG1 box", ThreadState.Idle, "", "idle", worked = now - 3000, machine = "MG1"),
+            AgentThread("mac:tfeed0003", "Last tab on the strip", ThreadState.Idle, "", "idle", worked = now - 4000, machine = "Mac Pro"),
+            AgentThread("mac:t13d39067ed6a9bef", "Old notes thread", ThreadState.Idle, "", "idle", worked = now - 900_000_000, machine = "Mac Pro"),
+            AgentThread("mac:macbook-pro/t2b7e41f0", "MacBook thread", ThreadState.Idle, "", "idle", worked = now - 900_000_000, machine = "MacBook"),
         ) else if ((context as? android.app.Activity)?.intent?.getBooleanExtra("tabWidth", false) == true) listOf(
             // Tab widths and the header's device label: a phone thread, Mac threads on two machines (one with a very long name), one with no machine.
             AgentThread(PHONE_THREAD, "Phone", ThreadState.Working, "running the tests", "working", worked = now),
@@ -240,7 +253,7 @@ Open the preview to try the layout. We can keep talking while you look at it.
         ) else listOf(AgentThread(PHONE_THREAD, "Phone", ThreadState.Working, "running the tests", "working", worked = now)) +
             (if (empty) listOf(AgentThread(PHONE_THREAD_B, "Phone B", ThreadState.Idle, "", "idle", worked = now)) else emptyList()) +
             book.chats.map { dev.omalauncher.assist.chatThread(it, NEW_CHAT_NAME, thread, MacView()) }
-        override fun liveThreads(all: List<AgentThread>, pinned: Set<String>, archived: Set<String>) = all
+        override fun liveThreads(all: List<AgentThread>, pinned: Set<String>, archived: Set<String>) = if (links) all.filter { it.key !in LINKS_OFF_STRIP } else all
         var book = TabMeta()
         override fun changeBook(change: (TabMeta) -> TabMeta) = change(book).also { book = it }
         override fun checkTitles() {}
@@ -307,3 +320,24 @@ private object LinkedFixture {
 }
 
 private const val RECONNECT_ID = "t0ecc0ecc"
+
+private val LINKS_OFF_STRIP = setOf("mac:t13d39067ed6a9bef", "mac:macbook-pro/t2b7e41f0")
+
+/** One link to a paragraph, so a walk's tap by its words lands on the link. */
+private val LINKS_ANSWER = """
+[Connections on the strip](soma://thread/t850cdc07)
+
+[Last tab past the edge](soma://thread/tfeed0003)
+
+[Old notes with no tab](soma://thread/t13d39067ed6a9bef)
+
+[Link to the other Mac](soma://thread/macbook-pro/t2b7e41f0)
+
+[Phone B tab](soma://phone/B)
+
+[A dead thread](soma://thread/macbook-pro/tdeadbeef)
+
+[A malformed link](soma://nonsense/here)
+
+[A web link for its colour](https://example.com)
+""".trimIndent()

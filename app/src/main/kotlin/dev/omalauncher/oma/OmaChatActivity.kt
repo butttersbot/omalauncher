@@ -44,6 +44,9 @@ class OmaChatActivity : ComponentActivity() {
     private var wanted by mutableStateOf<String?>(null)
     private var wantedQuestion by mutableStateOf<String?>(null)
 
+    /** A soma:// link that opened the chat, until the screen has followed it. */
+    private var link by mutableStateOf<String?>(null)
+
     // Whose finger sent what he sends here: only his own touch lets Soma sign it as his (BossReceipt).
     override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
         noteTouch(ev)
@@ -58,15 +61,16 @@ class OmaChatActivity : ComponentActivity() {
         // Asked on a thread of its own: the chat never waits for the Mac, and shows what was last known until it answers.
         MacThreads.open(this)
         if (savedInstanceState == null) prefill = textOf(intent)
+        if (savedInstanceState == null) link = linkOf(intent)
         wanted = if (savedInstanceState == null) opened(intent) else savedInstanceState.getString(STATE_TAB)
-        wantedQuestion = if (savedInstanceState == null) intent.getStringExtra(EXTRA_QUESTION) else savedInstanceState.getString(STATE_QUESTION)
+        wantedQuestion = if (savedInstanceState == null) intent.takeIf { linkOf(it) == null }?.getStringExtra(EXTRA_QUESTION) else savedInstanceState.getString(STATE_QUESTION)
         applySystemBars(this, Pack.isLight)
         val host = AndroidChatHost(this, runtime)
         setContent {
             LaunchedEffect(Pack.isLight) { applySystemBars(this@OmaChatActivity, Pack.isLight) }
             // The update pill before [ artifacts · N ] (cards soma-chat/Updates), as on the desktop.
             androidx.compose.runtime.CompositionLocalProvider(LocalTopBarExtra provides { dev.omalauncher.updates.PhoneUpdatePill(runtime.phoneUpdates.model) }) {
-                OmaChatScreen(host, prefill, onPrefilled = { prefill = null }, wanted = wanted, onTab = { wanted = it.takeIf { tab -> tab != OMA_TAB } }, wantedQuestion = wantedQuestion, onQuestionOpened = { wantedQuestion = null; intent.removeExtra(EXTRA_QUESTION) })
+                OmaChatScreen(host, prefill, onPrefilled = { prefill = null }, wanted = wanted, onTab = { wanted = it.takeIf { tab -> tab != OMA_TAB } }, wantedQuestion = wantedQuestion, onQuestionOpened = { wantedQuestion = null; intent.removeExtra(EXTRA_QUESTION) }, link = link, onLinkTaken = { link = null })
             }
         }
     }
@@ -75,6 +79,11 @@ class OmaChatActivity : ComponentActivity() {
         super.onNewIntent(intent)
         // Kept as the intent the chat was opened by, as one that started it is.
         setIntent(intent)
+        // A link stays on the tab that shows until it has found its own, and says so there if it can't.
+        linkOf(intent)?.let {
+            link = it
+            return
+        }
         textOf(intent)?.let { prefill = it }
         // A tile, or a thread named from outside while the chat is open, opens that thread's tab as a start would.
         wanted = opened(intent)
@@ -94,9 +103,13 @@ class OmaChatActivity : ComponentActivity() {
         outState.putString(STATE_QUESTION, wantedQuestion)
     }
 
-    private fun threadOf(intent: Intent?) = intent?.getStringExtra(EXTRA_THREAD)
+    // Anything on the phone, a web page too, can send a link: of such an intent only its address is read, so it can pick a
+    // tab and no more. Its extras are not his: no words put in his field, no question opened.
+    private fun linkOf(intent: Intent?) = intent?.takeIf { it.action == Intent.ACTION_VIEW }?.dataString
 
-    private fun textOf(intent: Intent?) = intent?.getStringExtra(Intent.EXTRA_TEXT)?.take(ChatHistory.MAX_PROMPT)?.takeIf { it.isNotBlank() }
+    private fun threadOf(intent: Intent?) = intent?.takeIf { linkOf(it) == null }?.getStringExtra(EXTRA_THREAD)
+
+    private fun textOf(intent: Intent?) = intent?.takeIf { linkOf(it) == null }?.getStringExtra(Intent.EXTRA_TEXT)?.take(ChatHistory.MAX_PROMPT)?.takeIf { it.isNotBlank() }
 
     companion object {
         const val ACTION = "dev.omalauncher.action.OMA_CHAT"

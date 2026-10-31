@@ -55,6 +55,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -149,7 +150,10 @@ fun OmaChatScreen(
     onTab: (String) -> Unit,
     wantedQuestion: String? = null,
     onQuestionOpened: () -> Unit = {},
-) = CompositionLocalProvider(LocalChatHost provides host) { ChatScreen(host, prefill, onPrefilled, wanted, onTab, wantedQuestion, onQuestionOpened) }
+    /** A soma:// link from outside the chat; taken once ([onLinkTaken]). */
+    link: String? = null,
+    onLinkTaken: () -> Unit = {},
+) = CompositionLocalProvider(LocalChatHost provides host) { ChatScreen(host, prefill, onPrefilled, wanted, onTab, wantedQuestion, onQuestionOpened, link, onLinkTaken) }
 
 @Composable
 private fun ChatScreen(
@@ -162,6 +166,8 @@ private fun ChatScreen(
     onTab: (String) -> Unit,
     wantedQuestion: String?,
     onQuestionOpened: () -> Unit,
+    link: String?,
+    onLinkTaken: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     // The agent works on its own thread and reports through plain fields, read here twice a second like the home rail does.
@@ -267,6 +273,60 @@ private fun ChatScreen(
             // Attached but never sent: the copies in the guest go with the screen.
             images.forEach { it.file.delete() }
             drafts.remove(images.map { it.file })
+        }
+    }
+
+    /** The tab a link led to, as All chats opens one: an archived tab comes back. */
+    fun follow(to: String) {
+        if (to in host.changeBook { it }.archived) host.changeBook { it.restored(to, System.currentTimeMillis()) }
+        allChatsOpen = false
+        pick(to)
+        tick++
+    }
+    // A link to a thread not listed here: the computers are asked again, and its tab opens if it is there after all. Until
+    // then, and if it isn't, he stays where he is; picking another tab himself calls the look off.
+    var seeking by remember { mutableStateOf<String?>(null) }
+    val wantedNow by rememberUpdatedState(wanted)
+    LaunchedEffect(seeking) {
+        val url = seeking ?: return@LaunchedEffect
+        host.listThreads()
+        var said: String? = null
+        // From the first look on: a desktop just started opens its new chat in the meantime, which is not his doing.
+        var from: String? = null
+        for (look in 1..LINK_LOOKS) {
+            delay(LINK_LOOK_MS)
+            if (look == 1) from = wantedNow else if (wantedNow != from) break
+            when (val found = somaLinkTarget(url, host.threads(), host.changeBook { it })) {
+                is SomaLinkTarget.Tab -> {
+                    notice = null
+                    follow(found.key)
+                    break
+                }
+                is SomaLinkTarget.Nothing -> if (look == LINK_LOOKS) said = found.said
+            }
+        }
+        notice = said
+        noticeFine = false
+        seeking = null
+    }
+    fun openLink(url: String) {
+        notice = null
+        seeking = null
+        when (val found = somaLinkTarget(url, host.threads(), host.changeBook { it })) {
+            is SomaLinkTarget.Tab -> follow(found.key)
+            is SomaLinkTarget.Nothing -> {
+                notice = if (found.listing) "Looking for that thread…" else found.said
+                noticeFine = found.listing
+                if (found.listing) seeking = url
+            }
+        }
+    }
+    val openLinkNow by rememberUpdatedState<(String) -> Unit> { openLink(it) }
+    val linkOpen = remember<(String) -> Unit> { { openLinkNow(it) } }
+    LaunchedEffect(link) {
+        if (link != null) {
+            openLink(link)
+            onLinkTaken()
         }
     }
     LaunchedEffect(prefill) {
@@ -439,7 +499,7 @@ private fun ChatScreen(
     }
     val madeLive = remember(tick) { host.liveArtifacts() }
     Box(Modifier.fillMaxSize().background(Pack.background).safeDrawingPadding().padding(PageGap), contentAlignment = Alignment.TopCenter) {
-        CompositionLocalProvider(LocalEarlierThread provides earlierThread.orEmpty()) {
+        CompositionLocalProvider(LocalEarlierThread provides earlierThread.orEmpty(), LocalSomaLinkOpen provides linkOpen) {
         val requestedQuestion = builders.filterKeys { it.thread == tab }.values.flatMap { it.pending }.firstOrNull { it.nonce == wantedQuestion && questionInput(it.approval.tool, it.approval.input.toString()) }?.let {
             WaitingQuestion(it.nonce, "Phone builder", it.approval.input.toString()) { answers, done -> host.sendWaitingAnswers(it.nonce, answers, done) }
         }
@@ -1514,3 +1574,7 @@ internal fun newlineTyped(before: String, after: String): Boolean {
     val at = before.indices.firstOrNull { before[it] != after[it] } ?: before.length
     return after[at] == '\n' && after.removeRange(at, at + 1) == before
 }
+
+/** How long a link to a thread not listed waits for the computers to answer, before saying it can't be found. */
+private const val LINK_LOOKS = 6
+private const val LINK_LOOK_MS = 500L

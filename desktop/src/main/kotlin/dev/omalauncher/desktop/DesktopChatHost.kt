@@ -112,6 +112,8 @@ class DesktopChatHost(
         return agentThreads(tasks(), BuilderNow(), engine.view, asks, BuilderNow(), book.chats, book.names).filter { BuilderId.ofThread(it.key) == null }
     }
 
+    override fun listThreads() = engine.refresh()
+
     override fun liveThreads(all: List<AgentThread>, pinned: Set<String>, archived: Set<String>): List<AgentThread> {
         val now = System.currentTimeMillis()
         return all.filter { threadLife(it.state, it.worked, now, it.key in pinned, it.key in archived) != TileLife.Gone }

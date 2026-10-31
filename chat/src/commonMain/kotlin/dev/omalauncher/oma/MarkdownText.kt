@@ -59,11 +59,12 @@ private class MarkdownLook(
     val link: Color,
     val onLink: LinkInteractionListener,
     val artifactLinks: Boolean = false,
+    val somaLinks: Boolean = false,
 ) {
     val strong = body.copy(fontWeight = FontWeight.Bold)
 
     /** The same look with its text in [color]. */
-    fun inked(color: Color) = MarkdownLook(body.copy(color = color), code, link, onLink, artifactLinks)
+    fun inked(color: Color) = MarkdownLook(body.copy(color = color), code, link, onLink, artifactLinks, somaLinks)
 
     fun styled(spans: List<MdSpan>): AnnotatedString =
         buildAnnotatedString {
@@ -72,8 +73,8 @@ private class MarkdownLook(
                 if (span.bold) style = style.copy(fontWeight = FontWeight.Bold)
                 if (span.italic) style = style.copy(fontStyle = FontStyle.Italic)
                 if (span.strike) style = style.copy(textDecoration = TextDecoration.LineThrough)
-                // Chat replies can open outputs beside the conversation; other Markdown keeps its web-only behavior.
-                val url = span.link?.takeIf { Markdown.isWebLink(it) || (artifactLinks && artifactPath(it) != null) }
+                // Chat replies can open outputs beside the conversation, and other tabs; other Markdown keeps its web-only behavior.
+                val url = span.link?.takeIf { Markdown.isWebLink(it) || (artifactLinks && artifactPath(it) != null) || (somaLinks && isSomaLink(it)) }
                 if (url != null) {
                     style = style.copy(color = link)
                     pushLink(LinkAnnotation.Clickable(url, linkInteractionListener = onLink))
@@ -87,10 +88,11 @@ private class MarkdownLook(
 }
 
 /** The chat may handle a link in its workspace; other web links use the platform opener. */
-private fun webLinks(open: (String) -> Unit, intercept: ((String) -> Boolean)? = null) =
+private fun webLinks(open: (String) -> Unit, intercept: ((String) -> Boolean)? = null, soma: ((String) -> Unit)? = null) =
     object : LinkInteractionListener {
         override fun onClick(link: LinkAnnotation) {
             val url = (link as? LinkAnnotation.Clickable)?.tag ?: return
+            if (soma != null && isSomaLink(url)) return soma(url)
             if (intercept?.invoke(url) != true && Markdown.isWebLink(url)) open(url)
         }
     }
@@ -108,7 +110,8 @@ fun MarkdownText(
     val open = rememberWebOpener()
     val pack = Pack.look
     val intercept = LocalMarkdownArtifactOpen.current
-    val look = remember(pack, open, intercept) { MarkdownLook(Pack.body(), Pack.mono().toSpanStyle().copy(background = Pack.surface), Pack.accent, webLinks(open, intercept), intercept != null) }
+    val soma = LocalSomaLinkOpen.current
+    val look = remember(pack, open, intercept, soma) { MarkdownLook(Pack.body(), Pack.mono().toSpanStyle().copy(background = Pack.surface), Pack.accent, webLinks(open, intercept, soma), intercept != null, soma != null) }
     Blocks(blocks, look, modifier)
 }
 

@@ -35,7 +35,6 @@ import dev.omalauncher.canvas.chatHostModules
 import dev.omalauncher.canvas.cockpitFeeds
 import dev.omalauncher.canvas.moduleProjects
 import dev.omalauncher.oma.somaLinkKey
-import dev.omalauncher.oma.somaLinkTab
 import dev.omalauncher.ui.BackStack
 import dev.omalauncher.ui.LocalBackStack
 import androidx.compose.runtime.CompositionLocalProvider
@@ -110,6 +109,7 @@ fun main(args: Array<String>) {
     // The dashboard (the canvas of modules and widgets) in a window of its own, opened from the tray; it remembers whether it was open.
     val dashboard = mutableStateOf(SomaHome.read(SomaHome.settings).optBoolean("dashboard"))
     val wantedTab = mutableStateOf<String?>(null)
+    val wantedLink = mutableStateOf<String?>(null)
     // Set once the engine is up; a link heard before then waits in [early]. Both are only ever touched on the event
     // thread (the listener and the Apple-event handler post there, and so does the code that sets them), so a link that
     // arrives while the engine is being built can't fall between the two. Of links heard before then, the last one wins.
@@ -185,13 +185,11 @@ fun main(args: Array<String>) {
             Thread.sleep(MODULE_FEEDS_MS)
         }
     }
-    // A link shows the window on its tab: a thread's own, or the chat that lives on it. One for no tab known opens nothing.
+    // A link shows the window, and the chat there opens its tab, or says it can't.
     javax.swing.SwingUtilities.invokeLater {
         opener = { url ->
-            somaLinkTab(url, platform.book())?.let { tab ->
-                wantedTab.value = tab.takeIf { it != OMA_TAB }
-                showWindow()
-            }
+            wantedLink.value = url
+            showWindow()
         }
         early?.let { url -> opener?.invoke(url) }
         early = null
@@ -334,7 +332,7 @@ fun main(args: Array<String>) {
                     t.isDataFlavorSupported(java.awt.datatransfer.DataFlavor.javaFileListFlavor) || t.isDataFlavorSupported(java.awt.datatransfer.DataFlavor.imageFlavor)
                 }, target = drops)) {
                     CompositionLocalProvider(LocalTopBarExtra provides { UpdatePill(updater, engineInstaller) }) {
-                        OmaChatScreen(host, prefill = null, onPrefilled = {}, wanted = wanted, onTab = { wanted = it.takeIf { tab -> tab != OMA_TAB } })
+                        OmaChatScreen(host, prefill = null, onPrefilled = {}, wanted = wanted, onTab = { wanted = it.takeIf { tab -> tab != OMA_TAB } }, link = wantedLink.value, onLinkTaken = { wantedLink.value = null })
                     }
                 }
             }

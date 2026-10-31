@@ -406,6 +406,13 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- A soma:// link from outside the chat opens Soma on that tab (SomaLinks.kt). It picks a tab and does nothing else. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="soma" />
+            </intent-filter>
         </activity-alias>
 
         <activity android:name=".connections.ConnectionRestoreActivity" android:exported="false"

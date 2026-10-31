@@ -245,7 +245,7 @@ if [ ${#walks[@]} -gt 0 ]; then
       # This walk drives the production chat/WebView through fictional outputs, never a real runner/send.
       # Build without mac.init.gradle: its global .boss suffix belongs only to the working launcher.
       artifact_fixture=0
-      for w in "${walks[@]}"; do case $w in chat-artifacts|phone-d) artifact_fixture=1 ;; esac; done
+      for w in "${walks[@]}"; do case $w in chat-artifacts|chat-links|phone-d) artifact_fixture=1 ;; esac; done
       fixture_ready=1
       if [ "$artifact_fixture" -eq 1 ]; then
         SOMA_VERSION_CODE=$code ./gradlew --console=plain -PartifactPreview :artifact-preview:assembleDebug >"$wdir/artifact-fixture-build.log" 2>&1
@@ -283,7 +283,7 @@ if [ ${#walks[@]} -gt 0 ]; then
       done
       line="Walks on the emulator:"
       for w in "${walks[@]}"; do
-        if { [ "$w" = chat-artifacts ] || [ "$w" = phone-d ]; } && [ "$fixture_ready" -ne 1 ]; then
+        if { [ "$w" = chat-artifacts ] || [ "$w" = chat-links ] || [ "$w" = phone-d ]; } && [ "$fixture_ready" -ne 1 ]; then
           line="$line $w FAIL (fixture build/install; see logs);"; echo "$w FAIL (fixture build/install; see logs)" >>"$wdir/verdicts.txt"; continue
         fi
         if [ "$w" = mac-refusal ] && [ "$refusal_ready" -ne 1 ]; then

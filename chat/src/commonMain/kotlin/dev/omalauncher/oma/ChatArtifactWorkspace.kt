@@ -39,6 +39,9 @@ internal val LocalEarlierThread = staticCompositionLocalOf { "" }
 
 internal val LocalMarkdownArtifactOpen = staticCompositionLocalOf<((String) -> Boolean)?> { null }
 
+/** Opens a soma:// link tapped in the chat ([somaLinkTarget]); null where Markdown isn't in a chat, and it stays words. */
+internal val LocalSomaLinkOpen = staticCompositionLocalOf<((String) -> Unit)?> { null }
+
 internal val LocalArtifactOpen = staticCompositionLocalOf<((ChatArtifact) -> Unit)?> { null }
 
 /** The artifact showing beside the chat right now and its version (0 when it has none), so its card says so; null when none is. */

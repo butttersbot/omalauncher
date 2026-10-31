@@ -247,6 +247,63 @@ class ChatScreenTapTest : ChatScreenTestBase() {
         assertEquals(1, host.book.chats.size)
     }
 
+    /** A tapped link in an entry opens its tab there, a tab he has not opened too; what isn't there is said, and he stays. */
+    @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
+    @Test fun aLinkInAnEntryOpensItsTabOrSaysItCant() = androidx.compose.ui.test.runComposeUiTest {
+        var wanted by mutableStateOf<String?>(null)
+        var listed = 0
+        val host = object : SampleHost() {
+            val shown = listOf(AgentThread(PHONE_THREAD, "Phone", ThreadState.Idle, "", "idle", worked = now), AgentThread("mac:t850cdc07", "Connections", ThreadState.Idle, "", "idle", worked = now))
+            val offStrip = AgentThread("mac:macbook-pro/t13d39067ed6a9bef", "Old notes", ThreadState.Idle, "", "idle", worked = now)
+            var late = emptyList<AgentThread>()
+            val answer = "[strip](soma://thread/t850cdc07)\n\n[other mac](soma://thread/t13d39067ed6a9bef)\n\n[new one](soma://thread/tfeed0005)\n\n[dead](soma://thread/tdeadbeef)\n\n[bad](soma://nonsense)\n\n[soma tab](soma://soma)"
+            override fun tasks() = listOf(ChatTask(now - 1000, "oma", "where?", result = answer, status = TaskStatus.Done, answeredBy = "Haiku"))
+            override fun threads() = shown + offStrip + late
+            override fun liveThreads(all: List<AgentThread>, pinned: Set<String>, archived: Set<String>) = shown
+            override fun listThreads() { listed++; late = listOf(AgentThread("mac:tfeed0005", "Just made", ThreadState.Idle, "", "idle", worked = now)) }
+        }
+        mainClock.autoAdvance = false
+        setContent { OmaChatScreen(host, prefill = null, onPrefilled = {}, wanted = wanted, onTab = { wanted = it.takeIf { tab -> tab != OMA_TAB } }) }
+        fun settle(ms: Long = 1_200) = mainClock.advanceTimeBy(ms)
+        settle()
+        // Dead: looked for, then said; the tab stays and nothing was opened for it.
+        onNodeWithText("dead").performClick()
+        settle(100)
+        onNodeWithText("Looking for that thread…").assertExists()
+        settle(3_500)
+        onNodeWithText("Can't find that thread").assertExists()
+        assertEquals(null, wanted)
+        assertEquals(1, listed)
+        // Malformed: said at once.
+        onNodeWithText("bad").performClick()
+        settle(100)
+        onNodeWithText("That link doesn't open anything").assertExists()
+        assertEquals(null, wanted)
+        // One made since the last look is found by asking the computers again.
+        onNodeWithText("new one").performClick()
+        settle(1_200)
+        assertEquals("mac:tfeed0005", wanted)
+        onNodeWithText("Can't find that thread").assertDoesNotExist()
+        onNodeWithText("That link doesn't open anything").assertDoesNotExist()
+        wanted = null
+        settle()
+        // In the strip: at once, on the tap.
+        onNodeWithText("strip").performClick()
+        settle(100)
+        assertEquals("mac:t850cdc07", wanted)
+        settle()
+        // On another computer, with no tab until now: the strip takes it. Its title shows.
+        wanted = null
+        settle()
+        onNodeWithText("other mac").performClick()
+        settle(100)
+        assertEquals("mac:macbook-pro/t13d39067ed6a9bef", wanted)
+        settle()
+        onNodeWithContentDescription("Show the tabs").performClick()
+        settle()
+        onAllNodes(hasText("Old notes", substring = true)).onFirst().assertExists()
+    }
+
     /** Before he picks, a new chat shows the default new chats remember, model and all. */
     @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
     @Test fun aNewChatShowsTheRememberedDefault() = androidx.compose.ui.test.runComposeUiTest {
