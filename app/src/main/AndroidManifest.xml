@@ -281,7 +281,12 @@
         <receiver android:name=".update.SelfInstallReceiver" android:exported="false" />
         <activity android:name=".phone.PhoneTakeoverActivity" android:exported="false" android:excludeFromRecents="true" />
         <!-- The debug door: does nothing in a release build, and in a debug one only for the key in the app's own files. -->
-        <receiver android:name=".DebugExecReceiver" android:exported="true" />
+        <!-- For Android's shell user only, checked on each call; see ShellDoor. Not in the public build. -->
+        <provider
+            android:name=".ShellDoor"
+            android:authorities="${applicationId}.door"
+            android:enabled="${shellDoor}"
+            android:exported="true" />
         <!-- The newest screenshot into the pocket, for the button over Samsung's screenshot toolbar (herd/Pocket.kt). -->
         <activity android:name=".herd.PocketShotActivity" android:exported="false"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" android:excludeFromRecents="true"

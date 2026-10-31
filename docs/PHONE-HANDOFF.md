@@ -108,7 +108,7 @@ Boss talks to you through Oma (voice or the Oma chat). Be short: he is often rea
 - Say plainly what you saw working and what only passed tests. If a step failed or was skipped, say so.
 
 ## Next, in order (ask Boss which, if he hasn't said)
-1. The Mac session can run commands in this Linux through the debug door, with `tools/fold-development/oma-mac`
+1. The Mac session can run commands in this Linux through the shell door, with `tools/fold-development/oma-mac`
    on the Mac. The door needs a key since versionCode 37 and is shut unless the Mac has opened it; never create
    `allow-debug-exec` yourself. Since 38 it is a broadcast, so a command brings nothing to the front. Boss is
    holding the Jev pilot.

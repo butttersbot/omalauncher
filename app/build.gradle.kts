@@ -18,6 +18,9 @@ android {
         manifestPlaceholders["appLabel"] = "Soma"
         // Added to the names of the app's other entries in the app list, so a second copy can be told apart.
         manifestPlaceholders["labelSuffix"] = ""
+        // The working launcher's tools for adb (the shell door): never in the public build.
+        manifestPlaceholders["shellDoor"] = "false"
+        buildConfigField("boolean", "WORKING_BUILD", "false")
         minSdk = 29
         targetSdk = 37
         versionCode = 29
@@ -58,6 +61,11 @@ android {
             applicationIdSuffix = ".boss"
             manifestPlaceholders["appLabel"] = "Soma"
             versionNameSuffix = "-boss-preview.19"
+            // Not debuggable (Boss, 2026-10-30): a debuggable app runs Soma chat's first open about four times slower.
+            // -PsomaDebuggable on an emulator gives a debugger, run-as and the old speed. docs/NON-DEBUGGABLE.md.
+            isDebuggable = providers.gradleProperty("somaDebuggable").isPresent
+            manifestPlaceholders["shellDoor"] = "true"
+            buildConfigField("boolean", "WORKING_BUILD", "true")
         }
         release {
             // Shrinks the APK and drops what the app doesn't use, like the owl module's unused parts.

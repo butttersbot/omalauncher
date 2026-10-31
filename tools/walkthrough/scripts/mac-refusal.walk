@@ -2,8 +2,8 @@
 # fixture is chat/build/render/mac-refusal.json. Push it to /data/local/tmp/mac-refusal.json.
 # Back up emulator files/oma-chat.json before this walk and restore it afterward.
 # No runner key or real session is needed; network parsing/persistence is covered by MacThreadsTest.
-shell am force-stop dev.omalauncher.boss
-shell run-as dev.omalauncher.boss cp /data/local/tmp/mac-refusal.json files/oma-chat.json
+# As root, in one step with the stop: the home app restarts at once after a force-stop.
+shell 'am force-stop dev.omalauncher.boss; d=/data/data/dev.omalauncher.boss; cp /data/local/tmp/mac-refusal.json $d/files/oma-chat.json && chown $(stat -c %u:%g $d) $d/files/oma-chat.json && restorecon $d/files/oma-chat.json'
 fold folded
 launch dev.omalauncher.boss/dev.omalauncher.oma.OmaChatActivity
 expect Continue the project

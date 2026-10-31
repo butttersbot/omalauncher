@@ -74,6 +74,17 @@ class InstallerPreflightTest(unittest.TestCase):
                 self.assertTrue(all(0 < timeout <= 3 for args, timeout in calls if args[0]=='adb'))
                 self.assertFalse(any('install' in args or 'push' in args for args, _ in calls))
 
+    def test_it_says_what_going_back_means(self):
+        full = pathlib.Path(__file__).with_name('oma-install.py').read_text()
+        self.assertIn('build the old commit with a higher version code', full)
+        self.assertIn("if version<=installed:", full)
+        self.assertIn('nothing is half installed', full)
+
+    def test_phone_control_is_read_through_the_door_with_run_as_for_a_rescue(self):
+        full = pathlib.Path(__file__).with_name('oma-install.py').read_text()
+        self.assertIn('content call --uri content://__PACKAGE__.door --method phone-control-wanted', full)
+        self.assertIn('run-as __PACKAGE__ cat shared_prefs/phone-control-heal.xml', full)
+
 
 if __name__ == '__main__':
     unittest.main()

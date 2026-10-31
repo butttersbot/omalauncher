@@ -494,7 +494,7 @@ class WidgetEngine(
                         event: Int,
                         path: String?,
                     ) {
-                        if (path != null && path.endsWith(".themes") && BuildConfig.DEBUG) {
+                        if (path != null && path.endsWith(".themes") && BuildConfig.WORKING_BUILD) {
                             File(checkDir, path).delete()
                             scope.launch { previewThemes(path.removeSuffix(".themes")) }
                             return

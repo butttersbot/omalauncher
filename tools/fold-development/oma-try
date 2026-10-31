@@ -1,4 +1,6 @@
 #!/bin/sh
+# Builds and puts the working launcher on the phone. It goes forward only: an older version can't go back on, so going
+# back means building the old commit with a higher version code (docs/NON-DEBUGGABLE.md).
 set -eu
 oma-build
 exec oma-install

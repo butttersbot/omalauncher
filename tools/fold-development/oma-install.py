@@ -13,12 +13,12 @@ service=package+'/dev.omalauncher.phone.PhoneService'
 # as Android's shell, only when the switch is still on and the service is not bound; switched off, it is left off.
 # Switched off while the launcher's own record says Boss wants it on (a force-stop drops it from the list), the
 # launcher puts it back itself at start and respects his own switch-off, so the job leaves it to the launcher.
-# The working launcher is a debug build, so Android's shell can read that record with run-as.
+# Android's shell asks the launcher's shell door for that record. A build from before the door (a rescue) has run-as.
 # The log line it leaves is one of PHONE_CONTROL_OFF, _LEFT_TO_LAUNCHER, _BOUND, _HEALED, _STILL_DISCONNECTED.
 # Android prints each bound service on a line of its own, so the whole block is read: with a second service
 # bound (Oma Dev's), a look at the first line alone missed this one and turned a working service off and on.
 HEAL=r'''  svc=__SERVICE__
-  wanted() { run-as __PACKAGE__ cat shared_prefs/phone-control-heal.xml 2>/dev/null | grep -q 'name="wanted-since"'; }
+  wanted() { content call --uri content://__PACKAGE__.door --method phone-control-wanted 2>/dev/null | grep -q 'wanted=true' || run-as __PACKAGE__ cat shared_prefs/phone-control-heal.xml 2>/dev/null | grep -q 'name="wanted-since"'; }
   bound() { dumpsys accessibility | sed -n '/Bound services:/,/Enabled services:/p' | grep -q "id=$svc[,}]"; }
   tries=0
   until bound || [ $tries -ge 10 ]; do sleep 2; tries=$((tries+1)); done
@@ -51,6 +51,8 @@ def run(args, timeout=30):
   if args[0]!='adb':raise
   return subprocess.CompletedProcess(args,124,'','ADB unavailable: '+str(error))
 USAGE='Usage: oma-install [--no-open|--status] [--self] [--apk FILE]'
+# The working launcher isn't debuggable, so Android never takes a lower version over it: an old APK can't go back on.
+ROLLBACK='There is no installing an older version: to go back, build the old commit with a higher version code (docs/NON-DEBUGGABLE.md).'
 args=sys.argv[1:]
 # --apk FILE: another APK than the launcher build: the launcher's, Soma Messages' (dev.omalauncher.messages) or Soma
 # Notes' (dev.omalauncher.notes).
@@ -157,12 +159,13 @@ if '--status' in sys.argv:
    print('ADB update log unavailable; showing the last self-install record instead.')
    self_status();sys.exit(0)
   print(log.stdout.strip() or 'Update has not completed yet.')
+  if 'INSTALL_FAILED' in log.stdout:print('Android refused it and the launcher is as it was; nothing is half installed. '+ROLLBACK)
   if installed==plan['version'] and 'INSTALL_SUCCESS' in log.stdout:print('In-place launcher update verified.')
   for mark,told in [('PHONE_CONTROL_BOUND','Phone control reconnected by itself.'),('PHONE_CONTROL_HEALED','Phone control did not reconnect; the installer turned it off and on, and it is connected.'),('PHONE_CONTROL_STILL_DISCONNECTED','Phone control is DISCONNECTED: turning it off and on did not reconnect it. Boss needs to toggle it in Accessibility settings or restart the phone.'),('PHONE_CONTROL_LEFT_TO_LAUNCHER','Phone control was found switched off, but Boss had it on: left to the launcher, which turns it back on by itself.'),('PHONE_CONTROL_OFF','Phone control is switched off in Accessibility settings; left off.')]:
    if mark in log.stdout:print(told)
  sys.exit(0)
 if version<=installed:
- sys.exit('Build a newer update first: APK version '+str(version)+', installed '+str(installed)+'. Run oma-build then oma-install.')
+ sys.exit('Not installed; the launcher is unchanged. APK version '+str(version)+', installed '+str(installed)+'. '+ROLLBACK+' For a new build: oma-build then oma-install. Was the installed one put on by hand? Then set next-version-code above it first.')
 uid=uuid.uuid4().hex
 remote='/data/local/tmp/oma-update-'+uid+'.apk'
 remote_script='/data/local/tmp/oma-update-'+uid+'.sh'

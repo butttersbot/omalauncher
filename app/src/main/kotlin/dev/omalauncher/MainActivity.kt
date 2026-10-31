@@ -148,19 +148,9 @@ class MainActivity : ComponentActivity() {
         startActivityForResult(roles.createRequestRoleIntent(RoleManager.ROLE_HOME), 1)
     }
 
-    /**
-     * Debug builds: `adb shell am start -n dev.omalauncher/.MainActivity --es key KEY --es exec foot`,
-     * or `--es theme kanagawa` to apply a theme (scripts/collage-captures.sh).
-     */
-    private val debugExecSwitch = DEBUG_EXEC_SWITCH
-
+    /** Working builds: `--es theme kanagawa` applies a theme (scripts/collage-captures.sh). */
     private fun handleDebugExec(intent: Intent) {
-        if (!BuildConfig.DEBUG) return
-        // Any app can send this activity an intent, so a guest command from one is taken only while the owner has
-        // left a key in the switch file in the app's own files, which only adb's run-as can write or read, and the
-        // intent brings the same key: off unless he turns it on, and then open only to who he gave the key.
-        val key = runCatching { java.io.File(filesDir, debugExecSwitch).readText() }.getOrNull()
-        if (debugExecAllowed(key, intent.getStringExtra("key"))) intent.getStringExtra("exec")?.let(runtime::launch)
+        if (!BuildConfig.WORKING_BUILD) return
         intent.getStringExtra("theme")?.let { name ->
             lifecycleScope.launch {
                 snapshotFlow { runtime.themes.loaded }.first { it }
@@ -312,41 +302,4 @@ class MainActivity : ComponentActivity() {
         }
         return true
     }
-}
-
-/** The switch file of the debug door, in the app's own files. */
-const val DEBUG_EXEC_SWITCH = "allow-debug-exec"
-
-/**
- * The debug door without the activity: `adb shell am broadcast -n <package>/dev.omalauncher.DebugExecReceiver
- * --es key KEY --es exec COMMAND` runs a guest command as the intent to [MainActivity] does, behind the same key,
- * and brings nothing to the front, so a screen being looked at stays as it is. Debug builds only.
- */
-class DebugExecReceiver : android.content.BroadcastReceiver() {
-    override fun onReceive(
-        context: android.content.Context,
-        intent: Intent,
-    ) {
-        if (!BuildConfig.DEBUG) return
-        val key = runCatching { java.io.File(context.filesDir, DEBUG_EXEC_SWITCH).readText() }.getOrNull()
-        if (debugExecAllowed(key, intent.getStringExtra("key"))) intent.getStringExtra("exec")?.let((context.applicationContext as App).runtime::launch)
-    }
-}
-
-/** The fewest characters a key for the debug door may have: a guess is not worth making. */
-const val DEBUG_EXEC_KEY_LENGTH = 32
-
-/**
- * Whether a guest command from an intent is run: the switch file holds a [kept] key of at least
- * [DEBUG_EXEC_KEY_LENGTH] characters and the intent [offered] the same one. No file, an empty file (how the
- * switch used to be turned on) or a short key keeps the door shut. Compared without stopping at the first
- * character that differs.
- */
-fun debugExecAllowed(
-    kept: String?,
-    offered: String?,
-): Boolean {
-    val key = kept?.trim().orEmpty()
-    if (key.length < DEBUG_EXEC_KEY_LENGTH || offered == null) return false
-    return java.security.MessageDigest.isEqual(key.toByteArray(), offered.toByteArray())
 }

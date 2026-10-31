@@ -762,7 +762,8 @@ def golden_add(apks, seeds, opens=()):
             adb(serial, "shell", "am", "force-stop", package)
             subprocess.run(["adb", "-s", serial, "push", tar, "/data/local/tmp/seed.tar"], capture_output=True, check=True)
             adb(serial, "shell", "chmod", "644", "/data/local/tmp/seed.tar")
-            adb(serial, "shell", "run-as", package, "tar", "xf", "/data/local/tmp/seed.tar")
+            # As root: the working launcher isn't debuggable, so run-as has nothing to say to it.
+            adb(serial, "shell", "cd /data/data/%s && tar xf /data/local/tmp/seed.tar && chown -R $(stat -c %%u:%%g .) . && restorecon -R ." % package)
             adb(serial, "shell", "rm", "/data/local/tmp/seed.tar")
         for opened in opens:
             # An app that keeps what it fetched: its walks start with that, as they do on a used emulator, and don't
@@ -780,7 +781,7 @@ def wait_for_arch(serial, seconds=2400):
     say("Arch Linux (about ten minutes)")
     end, still = time.monotonic() + seconds, 0
     while time.monotonic() < end:
-        steps = adb(serial, "shell", "run-as", "dev.omalauncher.boss", "cat", "files/rootfs-steps.json")
+        steps = adb(serial, "shell", "cat", "/data/data/dev.omalauncher.boss/files/rootfs-steps.json")
         busy = "Installing Linux" in adb(serial, "shell", "dumpsys", "notification", "--noredact")
         still = still + 1 if '"rootfs"' in steps and '"setup":true' in steps and not busy else 0
         if still >= 3:

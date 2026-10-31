@@ -1,71 +1,74 @@
 #!/bin/bash
-# oma-mac: run a command in the launcher's Linux from the Mac, over adb, through the debug build's keyed door.
+# oma-mac: run a command in the launcher's Linux from the Mac, over adb, through the launcher's shell door.
 #
-#   oma-mac open            make a key, keep it here (mode 600) and in the app's own files on the phone
+#   oma-mac open            open the door
 #   oma-mac run COMMAND...  run it in the guest as the launcher would, print its output, exit with its status
 #   oma-mac phone ARGS...   the same for oma-phone (oma-mac phone board, oma-mac phone press "All apps")
 #   oma-mac script FILE     send a local bash script over and run it whole in the guest
 #   oma-mac status          whether the door is open
-#   oma-mac close           take the key off the phone and off this Mac
+#   oma-mac close           close it, and empty its folder on the phone
 #
-# The door is MainActivity's debug exec: it runs a guest command from an intent only while the switch file in the
-# app's files holds a key and the intent brings the same one. Only adb's run-as can write or read that file, so
-# with the door open it is still shut to every other app on the phone. Leave it closed when not working.
-# A run is a broadcast (versionCode 38 on): nothing comes to the front, so the screen being looked at stays.
-# ADB_SERIAL names the phone when more than one is attached. The key is never printed.
+# The door is ShellDoor in the launcher: a content provider that answers only Android's shell user, so with it open it
+# is still shut to every other app on the phone and to the launcher's own Linux. No key: being adb is the proof, as with
+# run-as, which it replaces. Leave it closed when not working. Nothing comes to the front, so the screen stays as it is.
+# ADB_SERIAL names the phone when more than one is attached.
 set -euo pipefail
 PACKAGE=${OMA_PACKAGE:-dev.omalauncher.boss}
-KEYFILE=${OMA_MAC_KEY:-$HOME/.config/oma-mac/key}
-GUEST=files/arch/root/.cache/oma-mac
+URI=content://$PACKAGE.door
 adb_() { if [ -n "${ADB_SERIAL:-}" ]; then adb -s "$ADB_SERIAL" "$@"; else adb "$@"; fi; }
-app() { adb_ shell run-as "$PACKAGE" "$@"; }
+# An emulator under adb root is uid 0, which the door refuses: back to the shell user. A phone is the shell user already.
+as_shell=$(adb_ shell id -u | tr -d '\r\n')
+[ "$as_shell" = 0 ] && as_shell='su 2000 ' || as_shell=''
+door() { adb_ shell "${as_shell}content call --uri $URI --method $*"; }
+put() { adb_ shell "${as_shell}content write --uri $URI/guest/$1"; }
+get() { adb_ shell "${as_shell}content read --uri $URI/guest/$1"; }
+drop() { adb_ shell "${as_shell}content delete --uri $URI/guest/$1" >/dev/null 2>&1 || true; }
+is_open() { [[ $(door status 2>/dev/null) == *state=open* ]]; }
+# A launcher from before the door (a rescue build) has run-as instead: git log tools/fold-development/oma-mac has that oma-mac.
+[[ $(door status 2>&1) == *state=* ]] || { echo "No door on $PACKAGE here. A build from before it? Use the oma-mac of that commit." >&2; exit 2; }
 case "${1:-}" in
 open)
-  mkdir -p "$(dirname "$KEYFILE")"; chmod 700 "$(dirname "$KEYFILE")"
-  (umask 077; openssl rand -hex 32 > "$KEYFILE")
-  adb_ shell run-as "$PACKAGE" sh -c "'umask 077; cat > files/allow-debug-exec'" < "$KEYFILE"
-  app sh -c "'mkdir -p $GUEST'"
+  door open >/dev/null 2>&1 || true
+  is_open || { echo 'The door refused to open.' >&2; exit 1; }
   echo 'Door open. Close it with: oma-mac close';;
 close)
-  app rm -f files/allow-debug-exec || true
-  app sh -c "'rm -rf $GUEST'" || true
-  rm -f "$KEYFILE"
+  door close >/dev/null
   echo 'Door closed.';;
 status)
-  if [ -f "$KEYFILE" ] && app sh -c "'test -s files/allow-debug-exec'" 2>/dev/null; then echo open; else echo closed; fi;;
+  if is_open; then echo open; else echo closed; fi;;
 phone)
   shift; exec "$0" run oma-phone "$@";;
 script)
   # A local bash script, sent over and run whole in the guest: several steps in one go.
   [ -f "${2:-}" ] || { echo 'Script file required' >&2; exit 2; }
-  [ -f "$KEYFILE" ] || { echo 'The door is closed. Run: oma-mac open' >&2; exit 2; }
+  is_open || { echo 'The door is closed. Run: oma-mac open' >&2; exit 2; }
   name=step-$(openssl rand -hex 4).sh
-  adb_ shell run-as "$PACKAGE" sh -c "'cat > $GUEST/$name'" < "$2"
-  exec "$0" run bash "/root/.cache/oma-mac/$name";;
+  put "$name" < "$2"
+  "$0" run bash "/root/.cache/oma-mac/$name" && code=0 || code=$?
+  drop "$name"
+  exit "$code";;
 run)
   shift
   [ "$#" -ge 1 ] || { echo 'Command required' >&2; exit 2; }
-  [ -f "$KEYFILE" ] || { echo 'The door is closed. Run: oma-mac open' >&2; exit 2; }
   id=$(openssl rand -hex 8)
-  # OMA_DOOR=activity is the door of versionCode 37, which brings the launcher to the front on every run.
-  if [ "${OMA_DOOR:-}" = activity ]; then DOOR="am start -n $PACKAGE/dev.omalauncher.MainActivity"; else DOOR="am broadcast -n $PACKAGE/dev.omalauncher.DebugExecReceiver"; fi
   # The command goes over as a file, each word quoted, so nothing in it is read by a shell on the way.
   {
     printf 'cd /root\n{ '
     printf '%q ' "$@"
     printf '; } > /root/.cache/oma-mac/%s.out 2>&1\necho $? > /root/.cache/oma-mac/%s.code\n' "$id" "$id"
-  } | adb_ shell run-as "$PACKAGE" sh -c "'cat > $GUEST/$id.sh'"
-  # One string for the phone's shell, so the command stays one word of the intent. The key is hex and the id too.
-  adb_ shell "$DOOR --es key $(cat "$KEYFILE") --es exec 'bash /root/.cache/oma-mac/$id.sh'" >/dev/null 2>&1
+  } | put "$id.sh" >/dev/null 2>&1 || true
+  said=$(door run --arg "$id" 2>&1 || true)
+  case $said in *closed*) echo 'The door is closed. Run: oma-mac open' >&2; exit 2;; esac
+  # Each ask to the door starts a Java process on the phone: this one waits there for the run's end, a few seconds a go.
   code=''
-  for _ in $(seq 1 "${OMA_MAC_WAIT:-150}"); do
-    code=$(app sh -c "'cat $GUEST/$id.code 2>/dev/null'" | tr -d '\r\n' || true)
+  for _ in $(seq 1 $(( ${OMA_MAC_WAIT:-150} / 25 + 1 ))); do
+    code=$(door wait --arg "$id" 2>/dev/null | sed -n 's/.*code=\([0-9]*\).*/\1/p' || true)
     [ -n "$code" ] && break
-    sleep 0.2
   done
-  app sh -c "'cat $GUEST/$id.out 2>/dev/null'" || true
-  app sh -c "'rm -f $GUEST/$id.sh $GUEST/$id.out $GUEST/$id.code'" || true
-  [ -n "$code" ] || { echo 'No answer: is this build'"'"'s door a receiver (versionCode 38 on), and Linux running?' >&2; exit 1; }
+  get "$id.out" 2>/dev/null || true
+  # Gone in the background: its answer isn't waited for.
+  { drop "$id.sh"; drop "$id.out"; drop "$id.code"; } </dev/null >/dev/null 2>&1 &
+  [ -n "$code" ] || { echo 'No answer: is Linux running?' >&2; exit 1; }
   exit "$code";;
 *)
   sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 2;;

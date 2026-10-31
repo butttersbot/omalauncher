@@ -155,6 +155,9 @@ object PhoneControlHeal {
 
     private fun prefs(context: Context) = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
+    /** Whether he wants it on, for oma-install, which asks through the shell door. */
+    fun wanted(context: Context): Boolean = prefs(context).contains(WANTED)
+
     /** The service connected: he wants it on, unless it came up still paused from the app. Main thread. */
     fun connected(context: Context, paused: Boolean) {
         val edit = prefs(context).edit().remove(TRIED).remove(TRIES).remove(BOOT)

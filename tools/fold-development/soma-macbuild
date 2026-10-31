@@ -359,7 +359,7 @@ if [ ${#walks[@]} -gt 0 ]; then
         ./gradlew --console=plain :chat:desktopTest --tests dev.omalauncher.oma.ChatScreenRenderTest >"$wdir/mac-refusal-fixture.log" 2>&1 &&
           adb -s $emu push chat/build/render/mac-refusal.json /data/local/tmp/mac-refusal.json >>"$wdir/mac-refusal-fixture.log" 2>&1 &&
           adb -s $emu shell chmod 644 /data/local/tmp/mac-refusal.json && refusal_ready=1
-        adb -s $emu shell run-as dev.omalauncher.boss cat files/oma-chat.json >"$wdir/oma-chat.before.json" 2>/dev/null
+        adb -s $emu shell cat /data/data/dev.omalauncher.boss/files/oma-chat.json >"$wdir/oma-chat.before.json" 2>/dev/null
       done
       line="Walks on the emulator:"
       for w in "${walks[@]}"; do
@@ -389,7 +389,7 @@ if [ ${#walks[@]} -gt 0 ]; then
       done
       if [ -s "$wdir/oma-chat.before.json" ]; then
         adb -s $emu push "$wdir/oma-chat.before.json" /data/local/tmp/oma-chat.before.json >/dev/null 2>&1 &&
-          adb -s $emu shell run-as dev.omalauncher.boss cp /data/local/tmp/oma-chat.before.json files/oma-chat.json
+          adb -s $emu shell 'd=/data/data/dev.omalauncher.boss; cp /data/local/tmp/oma-chat.before.json $d/files/oma-chat.json && chown $(stat -c %u:%g $d) $d/files/oma-chat.json && restorecon $d/files/oma-chat.json' 
       fi
       echo "${line%;} ($(( $(date +%s) - started )) s)." | tee "$wdir/summary.txt"
       grep -h '^FAIL' "$wdir"/*.log | sed 's/^/  /' | tee -a "$wdir/summary.txt"
