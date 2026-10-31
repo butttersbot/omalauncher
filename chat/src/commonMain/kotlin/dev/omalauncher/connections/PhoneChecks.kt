@@ -63,7 +63,10 @@ const val MAIL_UNDELIVERED_KEEP_MS = 24 * 3_600_000L
  */
 fun mailReading(receipts: List<MailReceipt>, builderBusy: Boolean, now: Long): ConnectionReading {
     val stuck = receipts.filter { it.state == "queued" && !builderBusy && now - it.updated > MAIL_STUCK_MS }
-    val lost = receipts.filter { it.state == "not-delivered" && now - it.updated < MAIL_UNDELIVERED_KEEP_MS }
+    // Mail an interruption dropped is not redelivered (the queue is memory only and the sender's id is already seen): it stays an incident only until
+    // something from that sender is delivered after it, which shows the route works again.
+    val lost = receipts.filter { r -> r.state == "not-delivered" && now - r.updated < MAIL_UNDELIVERED_KEEP_MS &&
+        receipts.none { d -> d.state == "delivered" && d.sender == r.sender && d.updated > r.updated } }
     val bad = stuck + lost
     if (bad.isEmpty()) {
         val waiting = receipts.count { it.state == "queued" }
@@ -72,7 +75,7 @@ fun mailReading(receipts: List<MailReceipt>, builderBusy: Boolean, now: Long): C
     val routes = bad.map { it.sender.ifBlank { "unknown sender" } }.distinct().joinToString(", ")
     val oldest = bad.minOf { it.updated }
     val words = (if (stuck.isNotEmpty()) "${stuck.size} mail from $routes has waited ${ageWords(now - stuck.minOf { it.updated })} with nothing working to take it. " else "") +
-        (if (lost.isNotEmpty()) "${lost.size} mail was left undelivered when the app was interrupted (${lost.map { it.sender.ifBlank { "unknown sender" } }.distinct().joinToString(", ")}). " else "") +
+        (if (lost.isNotEmpty()) "${lost.size} mail was dropped when the app restarted before it was delivered (${lost.map { it.sender.ifBlank { "unknown sender" } }.distinct().joinToString(", ")}); it is not sent again, so the sender has to resend it. " else "") +
         "Oldest: ${ageWords(now - oldest)} ago."
     val check = ConnectionCheck("mail_delivery", "phone", result = "fail", fields = mapOf("code" to if (stuck.isNotEmpty()) "mail_stuck" else "mail_undelivered", "routes" to routes.take(200)))
     return ConnectionReading(Capability.Mail, ConnectionState.Failed, words.trim(), now, "mail:phone", checks = listOf(check))

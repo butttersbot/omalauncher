@@ -8,7 +8,8 @@ class ConnectionsCopyTest {
     private fun outage(route: Boolean, state: ConnectionState = ConnectionState.Failed, root: String = "runner:mac"): ConnectionsSnapshot =
         ConnectionsSnapshot(Capability.entries.map { c ->
             val hit = c == Capability.Agents || c == Capability.Builds
-            ConnectionReading(c, if (hit) state else ConnectionState.Ready, "x", now, if (hit) root else null, if (hit) "Mac Pro" else "", if (hit) "mac-pro" else "")
+            val here = hit || c in setOf(Capability.GitHub, Capability.Disk) // the per-device rows hear from this Mac too
+            ConnectionReading(c, if (hit) state else ConnectionState.Ready, "x", now, if (hit) root else null, if (here) "Mac Pro" else "", if (here) "mac-pro" else "")
         } + listOfNotNull(if (route) ConnectionReading(Capability.Network, ConnectionState.Ready, "route", now, "network", "Mac Pro", "mac-pro") else null), now)
 
     @Test fun statusWordsAndColoursFollowTheCards() {
@@ -17,8 +18,11 @@ class ConnectionsCopyTest {
         assertEquals(ConnectionStatus("✓", "Connected", ConnectionTone.Good), connectionStatus(rows.getValue(Capability.Network), emptyList(), card = true))
         // The sheet says Connected too, as the small card does (Boss, 2026-10-30).
         assertEquals("✓ Connected", connectionStatus(rows.getValue(Capability.Network), emptyList()).text)
-        assertEquals("✓ Synced", connectionStatus(rows.getValue(Capability.Sync), emptyList()).text)
-        assertEquals("✓ Synced", connectionStatus(rows.getValue(Capability.Canvas), emptyList()).text)
+        // Only what was checked: a reachable Canvas or a sync with no sync check is not "synced".
+        assertEquals("✓ Reachable", connectionStatus(rows.getValue(Capability.Sync), emptyList()).text)
+        assertEquals("✓ Reachable", connectionStatus(rows.getValue(Capability.Canvas), emptyList()).text)
+        val synced = ConnectionReading(Capability.Sync, ConnectionState.Ready, "x", now, checks = listOf(ConnectionCheck("soma_sync", "mac", result = "pass")))
+        assertEquals("✓ Synced", connectionStatus(synced, emptyList()).text)
         assertEquals("✓ Available", connectionStatus(rows.getValue(Capability.Optional), emptyList()).text)
         assertEquals("✓ Healthy", connectionStatus(rows.getValue(Capability.Models), emptyList()).text)
         assertEquals("✓ Ready", connectionStatus(rows.getValue(Capability.Phone), emptyList()).text)

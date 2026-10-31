@@ -53,7 +53,7 @@ shot connections-medium-cover card=connections-medium-cover
 tap Large
 expect Device connections
 expect Needs repair
-expect Synced
+expect Reachable
 expect Design Canvas
 shot connections-large-cover card=connections-large-cover
 tap [ Restore ]

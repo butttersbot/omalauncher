@@ -687,7 +687,7 @@ class Probes(unittest.TestCase):
                 return 200, dict(body)
             check, incoming = S._probe('imessage-api', fetch=fetch, run=self.run)
             self.assertEqual(check['result'], 'pass')
-            self.assertEqual((incoming['check'], incoming['code'], incoming['result']), ('imessage_incoming', 'cant_tell', 'unverified'))  # never a false healthy
+            self.assertEqual((incoming['check'], incoming['code'], incoming['result']), ('imessage_incoming', 'cant_tell', 'not_checked'))  # never a false healthy
             self.assertEqual(sent[0], {'Authorization': 'Bearer imessage-bearer-abcdef'})
             for leak in ('+1555', 'me@example.com', 'imessage-bearer'):
                 self.assertNotIn(leak, json.dumps(check))
@@ -1069,7 +1069,7 @@ class RunnerCapabilities(unittest.TestCase):
     def test_incoming_imessage_is_cant_tell_unless_the_watcher_is_down_and_never_sends(self):
         self.assertEqual(S.imessage_incoming({'watching': False}, connect=lambda: (_ for _ in ()).throw(OSError()))['code'], 'watcher_not_running')
         quiet = S.imessage_incoming({'watching': True}, connect=lambda: (_ for _ in ()).throw(OSError()))
-        self.assertEqual((quiet['code'], quiet['result']), ('cant_tell', 'unverified'))
+        self.assertEqual((quiet['code'], quiet['result']), ('cant_tell', 'not_checked'))
         self.assertIn("Can't tell", quiet['fields']['detail'])
 
         class Conn:
@@ -1093,9 +1093,18 @@ class RunnerCapabilities(unittest.TestCase):
         try:
             self.assertTrue(S.installed('whisper'))
             (c,) = S.capability_probe('whisper', fetch=lambda *a, **k: (_ for _ in ()).throw(AssertionError('nothing is probed')))
-            self.assertEqual((c['check'], c['code'], c['result']), ('not_checked', 'not_checked_on_this_host', 'unverified'))
+            self.assertEqual((c['check'], c['code'], c['result']), ('not_checked', 'not_checked_on_this_host', 'not_checked'))
         finally:
             S.sys = saved
+
+    def test_a_host_with_no_sdk_builds_nothing_so_no_build_check_reads_pass(self):
+        checks = [S.mkcheck('build_toolchain.jdk', 'runner', 'ok', 'pass', {}), S.mkcheck('build_toolchain.android_sdk', 'runner', 'no_sdk', 'not_installed', {}),
+                  S.mkcheck('build_toolchain.locks', 'runner', 'readable', 'pass', {}), S.mkcheck('runner_self', 'runner', 'ok', 'pass', {})]
+        got = {c['check']: c['result'] for c in S._no_builds_here(checks)}
+        self.assertEqual(got, {'build_toolchain.jdk': 'not_installed', 'build_toolchain.android_sdk': 'not_installed',
+                               'build_toolchain.locks': 'not_installed', 'runner_self': 'pass'})
+        with_sdk = [S.mkcheck('build_toolchain.jdk', 'runner', 'ok', 'pass', {}), S.mkcheck('build_toolchain.android_sdk', 'runner', 'ok', 'pass', {})]
+        self.assertEqual(S._no_builds_here(with_sdk), with_sdk)
 
     def test_a_failed_address_lookup_is_unverified_not_down(self):
         def run(argv, **k):

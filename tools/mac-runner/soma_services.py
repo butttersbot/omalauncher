@@ -209,7 +209,7 @@ CAPABILITY_SCOPES = {'agent_turn.': 'Agents', 'build_toolchain.': 'Builds', 'sou
 def mkcheck(check, target, code, result, fields=None, stderr=None):
     """One check in the phone incident schema: {check, target, code, result, fields, stderr_tail}.
     result is pass | fail | auth | unverified (reachable, evidence incomplete) | unsupported (no probe exists) | not_installed
-    (nothing to check on this host) | quiet (answering, and no real traffic lately to prove more with; not a problem)."""
+    (nothing to check on this host) | not_checked (this host can't tell: neutral, and never read as passing) | quiet (answering, and no real traffic lately to prove more with; not a problem)."""
     scope = next((name for prefix, name in CAPABILITY_SCOPES.items() if check.startswith(prefix)), None)
     if scope:  # the runner's own scoped rows say which capability they belong to (a JDK problem is Builds, not Agents)
         fields = {'capability': scope, **(fields or {})}
@@ -780,6 +780,14 @@ def toolchain_checks(run=subprocess.run, env=None, home=None, mirror=None):
     return out
 
 
+def _no_builds_here(checks):
+    """A host with no Android SDK builds nothing: every build check there is "not installed", so its passing JDK and idle locks can't make
+    Builds read Ready (an overclaim) on a machine that has no build to run."""
+    if any(c['check'] == 'build_toolchain.android_sdk' and c['code'] == 'no_sdk' for c in checks):
+        return [{**c, 'result': 'not_installed'} if c['check'].startswith('build_toolchain.') else c for c in checks]
+    return checks
+
+
 def build_locks(gate=None):
     state = (gate or WorkGate()).lock_state()
     return mkcheck('build_toolchain.locks', 'runner', 'readable', 'pass', {'locks': len(state), 'held': [x['name'] for x in state if x['held']][:16]})
@@ -924,7 +932,7 @@ def imessage_incoming(health, db=None, now=None, connect=None):
     fields = {'watching': watching if isinstance(watching, bool) else None, 'newest_incoming_at': newest}
     if watching is False:
         return mkcheck('imessage_incoming', 'imessage-api', 'watcher_not_running', 'fail', fields)
-    return mkcheck('imessage_incoming', 'imessage-api', 'cant_tell', 'unverified',
+    return mkcheck('imessage_incoming', 'imessage-api', 'cant_tell', 'not_checked',
                    {**fields, 'detail': "Can't tell whether messages arrive: the watcher is up, and quiet hours look the same as a break."})
 
 
@@ -1105,7 +1113,7 @@ def capability_probe(service, fetch=http_json, run=subprocess.run, state=None, k
     A service this host doesn't have gets one neutral not_installed result and is never probed: absence is not an outage."""
     if sys.platform != 'darwin' and service != 'runner':
         # A Linux host's services are not read here (no launchd): the row says "not checked", never "not installed" or a failure.
-        return [mkcheck('not_checked', service, 'not_checked_on_this_host', 'unverified', {'reason': 'this host has no checks for %s yet' % service})]
+        return [mkcheck('not_checked', service, 'not_checked_on_this_host', 'not_checked', {'reason': 'this host has no checks for %s yet' % service})]
     if not installed(service):
         return [mkcheck('installed', service, 'disabled' if service in OPTIONAL else 'not_installed', 'not_installed', {'optional': service in OPTIONAL})]
     checks = _probe(service, fetch, run, state, keys) + evidence_checks(service, fetch, run, state or launchd_state)
@@ -1137,8 +1145,8 @@ def _probe(service, fetch=http_json, run=subprocess.run, state=None, keys=None):
 
     try:
         if service == 'runner':
-            return ([check('runner_self', 'ok', True, {'host': host_identity()})] + agent_checks() + toolchain_checks(run)
-                    + [build_locks(), source_mirror(run), github_check(run), disk_check()])
+            return _no_builds_here([check('runner_self', 'ok', True, {'host': host_identity()})] + agent_checks() + toolchain_checks(run)
+                                   + [build_locks(), source_mirror(run), github_check(run), disk_check()])
         if service == 'soma':
             base = os.environ.get('OMA_RUNNER_SOMA_SERVICE', '').rstrip('/')
             if not base:

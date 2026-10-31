@@ -7,7 +7,7 @@ import dev.omalauncher.oma.TaskStatus
  * What Connections says about an agent comes from its real turns (Boss, 2026-10-30): a turn that fails with a common API
  * error sets the status, naming the agent and the error, and a later good turn clears it. No check of its own, no ping.
  */
-val NEUTRAL_RESULTS = setOf("not_installed", "quiet")
+val NEUTRAL_RESULTS = setOf("not_installed", "quiet", "not_checked")
 
 data class AgentTrouble(val agent: String, val code: String, val error: String) {
     val words get() = when (code) {

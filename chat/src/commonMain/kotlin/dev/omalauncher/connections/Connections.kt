@@ -4,7 +4,9 @@ package dev.omalauncher.connections
 enum class ConnectionState(val label: String, val mark: String) {
     Ready("Ready", "✓"), Degraded("Degraded", "~"), Failed("Unavailable", "△"),
     Auth("Auth required", "!"), Unknown("Unknown", "?"), Stale("Stale", "◷"),
-    Disabled("Disabled", "–"), Paused("Paused", "Ⅱ"), Sleeping("Sleeping", "z")
+    Disabled("Disabled", "–"), Paused("Paused", "Ⅱ"), Sleeping("Sleeping", "z"),
+    /** This device can't tell (a Linux host with no checks for it yet, incoming messages in quiet hours): never read as passing, and it never outranks another device's Ready. */
+    NotChecked("Not checked", "–")
 }
 enum class Capability(val title: String, val band: String? = null) {
     Network("Device connections", "Network"),
@@ -32,6 +34,9 @@ private const val CLOCK_TOLERANCE_MS = 10_000L
 
 /** The row a capability is drawn in: the agent runners' health sits under Device connections. */
 val Capability.shown get() = if (this == Capability.Agents) Capability.Network else this
+
+/** The capabilities whose reading comes once per device: the row says Ready only when every device has reported. */
+private val PER_DEVICE = setOf(Capability.GitHub, Capability.Disk)
 
 /** An incident only its owner can fix (a login, free space, an agent to install): Restore is not offered for it. */
 val ConnectionIncident.ownerOnly get() = readings.isNotEmpty() && readings.all { it.capability in setOf(Capability.GitHub, Capability.Disk, Capability.Mail) ||
@@ -80,18 +85,24 @@ data class ConnectionsSnapshot(val readings: List<ConnectionReading> = emptyList
         // The runners' Unknowns (the phone keeper's protocol check) are not the device connection's own word: they stand aside while anything else has spoken.
         if (c == Capability.Network && parts.any { it.capability == Capability.Network && it.state != ConnectionState.Unknown })
             parts = parts.filterNot { it.capability == Capability.Agents && it.state == ConnectionState.Unknown }
+        // Ready outranks a device that can't tell (it is no failure and not a pass): so one Linux host with no checks never turns every row Unknown.
         val priority = listOf(ConnectionState.Failed, ConnectionState.Auth, ConnectionState.Stale, ConnectionState.Degraded,
-            ConnectionState.Unknown, ConnectionState.Paused, ConnectionState.Sleeping, ConnectionState.Ready, ConnectionState.Disabled)
+            ConnectionState.Unknown, ConnectionState.Paused, ConnectionState.Sleeping, ConnectionState.Ready, ConnectionState.NotChecked, ConnectionState.Disabled)
         // An agent with no run yet says nothing about the others' health.
         val judged = if (c == Capability.Models && parts.any { it.state != ConnectionState.Unknown }) parts.filter { it.state != ConnectionState.Unknown } else parts
-        val worst = judged.minByOrNull { priority.indexOf(it.state) }
-        worst?.copy(capability = c, detail = parts.joinToString("\n\n") { listOf(it.host, it.detail).filter(String::isNotBlank).joinToString(": ") })
+        var worst = judged.minByOrNull { priority.indexOf(it.state) }
+        // A per-device row (GitHub, disk space) can't claim every device from one that reported: a device not heard from is not checked.
+        val silent = if (c in PER_DEVICE) deviceHosts().filter { h -> parts.none { it.host == h } } else emptyList()
+        if (silent.isNotEmpty() && (worst == null || worst.state in setOf(ConnectionState.Ready, ConnectionState.Disabled, ConnectionState.NotChecked, ConnectionState.Unknown))) {
+            worst = ConnectionReading(c, ConnectionState.NotChecked, "", now)
+        }
+        val said = parts.joinToString("\n\n") { listOf(it.host, it.detail).filter(String::isNotBlank).joinToString(": ") } +
+            silent.joinToString("") { "\n\n$it: not checked yet (it has not reported)." }
+        worst?.copy(capability = c, detail = said.trim())
             ?: ConnectionReading(c, ConnectionState.Unknown, "Not checked yet.", now)
     }
-    /**
-     * A reading that says Failed, Auth or Degraded stays an incident however old it is: a stale reading never hides a real
-     * failure. Only a fresh check that says otherwise clears it. Its detail says the last check is no longer current.
-     */
+    /** Every computer a runner has been heard from, by its display name. */
+    private fun deviceHosts() = readings.filter { it.sourceHost.isNotBlank() && it.host.isNotBlank() }.map { it.host }.distinct()
     /** True when no reading is fresh: nothing has been checked lately, which a header must not call fine. */
     fun nothingFresh(now: Long) = readings.none { it.checkedAt > 0 && it.checkedAt - now <= CLOCK_TOLERANCE_MS && now - it.checkedAt <= FRESH_MS }
 

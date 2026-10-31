@@ -32,8 +32,8 @@ fun ConnectionsPreview() {
                 affected -> "Fictional runner evidence; agent runs and builds share one incident."
                 c == Capability.Canvas -> "Fictional CORE Design Canvas board and workspace sync verified."
                 c == Capability.Optional -> "Fictional optional tools available."
-                else -> "Fictional end-to-end capability verified." }, clock, if (login) "service:fictional-mac:runner:GitHub" else if (affected) "runner:fixture" else null, if (affected || login) "Fictional Mac" else "",
-            if (affected || login) "fictional-mac" else "", if (login) listOf(ConnectionCheck("github_access", "fictional-mac", result = "fail", fields = mapOf("code" to "github_login_invalid"))) else emptyList())
+                else -> "Fictional end-to-end capability verified." }, clock, if (login) "service:fictional-mac:runner:GitHub" else if (affected) "runner:fixture" else null, if (affected || login || c == Capability.Disk || c == Capability.GitHub) "Fictional Mac" else "",
+            if (affected || login || c == Capability.Disk || c == Capability.GitHub) "fictional-mac" else "", if (login) listOf(ConnectionCheck("github_access", "fictional-mac", result = "fail", fields = mapOf("code" to "github_login_invalid"))) else emptyList())
     } + ConnectionReading(Capability.Network, ConnectionState.Ready, "Fictional route to the Mac responded; capability status is checked separately.",
         clock, "network", "Fictional Mac", "fictional-mac") + fictionalModels(clock, modelsTrouble), clock) }
     fun show(s: String) {

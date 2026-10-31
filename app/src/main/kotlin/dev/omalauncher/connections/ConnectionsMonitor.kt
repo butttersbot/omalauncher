@@ -35,6 +35,8 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
     private val readers = Executors.newFixedThreadPool(3) { r -> Thread(r, "connections-check").apply { isDaemon = true } }
     private val running = AtomicBoolean(false)
     @Volatile private var lastKeeperRestart = 0L
+    private val startedAt = System.currentTimeMillis()
+    @Volatile private var keeperMisses = 0
     @Volatile private var keeperAt = 0L
     @Volatile private var keeperLast: ConnectionCheck? = null
     @Volatile private var githubAt = 0L
@@ -228,11 +230,17 @@ class ConnectionsMonitor(private val context: Context, private val runtime: Runt
                     else -> "Existing trusted ADB transport is unverified. No server, scan, pairing or display was started." },
                 if (adb.result in setOf("auth", "pass")) "phone-adb" else null, checks = listOf(adb))
             }
-            // Asking starts a guest process, so it is asked every two minutes, not every round.
-            val keeper = (if (System.currentTimeMillis() - keeperAt < 120_000) keeperLast else null) ?: connectionKeeperProbe(runtime).also { keeperLast = it; keeperAt = System.currentTimeMillis() }
-            rows += keeperReading(keeper, System.currentTimeMillis())
-            // A keeper that is not there comes back by itself (Soma owns it): at most once in five minutes.
-            if (keeper.result == "fail" && System.currentTimeMillis() - lastKeeperRestart > 300_000) { lastKeeperRestart = System.currentTimeMillis(); runCatching { runtime.connectionsRestartKeeper() } }
+            // The keeper starts with Linux: for its first three minutes nothing is asked and nothing restarted (a probe that lands before it is up would
+            // read it dead, and restarting a keeper that is only starting is the harm). After that it is asked every two minutes, and only a second
+            // miss in a row is a failure that restarts it, at most once in five minutes.
+            val now0 = System.currentTimeMillis()
+            val keeper = when {
+                now0 - startedAt < 180_000 -> keeperCheck(null, "").let { ConnectionCheck(it.name, it.target, result = "unverified", fields = mapOf("code" to "starting")) }
+                now0 - keeperAt < 120_000 && keeperLast != null -> keeperLast!!
+                else -> connectionKeeperProbe(runtime).also { keeperLast = it; keeperAt = now0; keeperMisses = if (it.result == "fail") keeperMisses + 1 else 0 }
+            }
+            rows += keeperReading(if (keeper.result == "fail" && keeperMisses < 2) keeper.copy(result = "unverified", fields = keeper.fields + ("code" to "first_miss")) else keeper, System.currentTimeMillis())
+            if (keeper.result == "fail" && keeperMisses >= 2 && now0 - lastKeeperRestart > 300_000) { lastKeeperRestart = now0; runCatching { runtime.connectionsRestartKeeper() } }
             rows += githubReading(phoneGithub(), System.currentTimeMillis())
         } else add(Capability.Agents, ConnectionState.Disabled, "Phone Linux runtime is off intentionally.")
         rows += diskReading(runCatching { android.os.StatFs(context.filesDir.path).availableBytes }.getOrNull(), System.currentTimeMillis())

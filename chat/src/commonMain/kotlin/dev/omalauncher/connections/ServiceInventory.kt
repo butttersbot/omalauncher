@@ -55,6 +55,8 @@ fun serviceInventoryReadings(reply: ConnectionReply, displayHost: String, source
                 val state = when {
                     // Absence is not an outage, and not an unknown either: an Unknown would outrank another host's Ready.
                     notInstalled || (evidence.isNotEmpty() && evidence.all { it.result == "not_installed" }) -> ConnectionState.Disabled
+                    // Nothing here could be checked (a Linux host with no checks for it): neither a pass nor a failure, and it says so.
+                    proofTime > 0 && evidence.isNotEmpty() && evidence.all { it.result in setOf("not_checked", "not_installed") } -> ConnectionState.NotChecked
                     proofTime <= 0 -> ConnectionState.Unknown
                     required.any { it.code in setOf(401, 403) || it.result == "auth" } -> ConnectionState.Auth
                     evidence.any { it.result == "fail" } -> ConnectionState.Failed
@@ -67,7 +69,8 @@ fun serviceInventoryReadings(reply: ConnectionReply, displayHost: String, source
                     specific != null -> specific
                     trouble != null -> trouble.sentence
                     else -> when (state) {
-                    ConnectionState.Ready -> "$id: all required ${scope.title.lowercase()} checks passed."
+                    ConnectionState.Ready -> "$id: all required ${scope.title.lowercase()} checks passed." + evidence.mapNotNull { it.takeIf { c -> c.result == "not_checked" }?.deviceDetail(displayHost, id) }.joinToString("") { " $it" }
+                    ConnectionState.NotChecked -> evidence.firstNotNullOfOrNull { it.deviceDetail(displayHost, id) } ?: "$id: not checked on $displayHost."
                     ConnectionState.Auth -> "$id: reachable, but authenticated ${scope.title.lowercase()} is not verified."
                     ConnectionState.Failed -> "$id: a required ${scope.title.lowercase()} check failed."
                     ConnectionState.Disabled -> if (id == "syncthing") "$id: optional service is not installed/configured on this host."

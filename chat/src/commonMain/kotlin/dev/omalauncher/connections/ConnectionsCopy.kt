@@ -15,7 +15,9 @@ fun connectionStatus(row: ConnectionReading, incidents: List<ConnectionIncident>
     if (state == ConnectionState.Ready) return ConnectionStatus("✓", when (row.capability) {
         Capability.Network -> "Connected"
         Capability.Models -> "Healthy"
-        Capability.Sync, Capability.Canvas -> "Synced"
+        // Only what was checked: Canvas answering says it is reachable, not that it is in sync; sync says synced only on a real sync check.
+        Capability.Canvas -> "Reachable"
+        Capability.Sync -> if (row.checks.any { it.name in setOf("soma_sync", "source_freshness.mirror") && it.result == "pass" }) "Synced" else "Reachable"
         Capability.Optional -> "Available"
         else -> "Ready"
     }, ConnectionTone.Good)
@@ -114,7 +116,7 @@ fun incidentCopy(incident: ConnectionIncident, snapshot: ConnectionsSnapshot, no
         owner == Capability.Disk -> IncidentCopy("$host / disk space", "$host is low on disk space.\nBuilds and sync may fail.",
             readings.first().detail + " Nothing was deleted.", listOf("Free space on $host", "Empty its trash or old builds", "Check again"), "Only you decide what to delete.")
         owner == Capability.Mail -> IncidentCopy("$host / agent mail", "Mail to $host isn't being delivered.\nIt was handed off but never arrived.",
-            readings.first().detail, listOf("Check $host is awake and its agent is running", "Check again"), "Nothing was resent.")
+            readings.first().detail, listOf("Ask the sender to send it again", "Check again"), "Nothing was resent; a later delivered mail from the same sender clears this.")
         missing != null -> IncidentCopy("$host / $missing", "$missing isn't installed on ${if (host == "This phone") "this phone" else host}.\nWork that needs it can't start.",
             readings.first().detail.ifBlank { "$missing is missing." } + " Nothing was changed.",
             listOf("Install $missing in Omalauncher", "Sign it in if it asks", "Check again"), note)
